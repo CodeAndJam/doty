@@ -9,7 +9,14 @@ import argparse
 from typing import Optional, List, Dict
 from pathlib import Path
 
-from audio_capture import AudioCapture
+# Import modules (audio_capture might not be available without PyAudio)
+try:
+    from audio_capture import AudioCapture
+    AUDIO_AVAILABLE = True
+except ImportError:
+    AUDIO_AVAILABLE = False
+    print("Warning: PyAudio not available. Audio capture will be disabled.")
+
 from transcription import Transcriber
 from llm_client import LLMClient
 from music_manager import MusicManager
@@ -30,11 +37,15 @@ class MusicRecommendationApp:
         
         # Initialize components
         audio_config = self.config.get('audio', {})
-        self.audio_capture = AudioCapture(
-            sample_rate=audio_config.get('sample_rate', 16000),
-            chunk_duration=audio_config.get('chunk_duration', 5),
-            device_index=audio_config.get('device_index')
-        )
+        if AUDIO_AVAILABLE:
+            self.audio_capture = AudioCapture(
+                sample_rate=audio_config.get('sample_rate', 16000),
+                chunk_duration=audio_config.get('chunk_duration', 5),
+                device_index=audio_config.get('device_index')
+            )
+        else:
+            self.audio_capture = None
+            print("⚠️  Audio capture not available. Install PyAudio to enable audio features.")
         
         transcription_config = self.config.get('transcription', {})
         self.transcriber = Transcriber(
@@ -150,6 +161,12 @@ class MusicRecommendationApp:
         Args:
             mode: Operating mode ('copilot' or 'auto'), overrides config
         """
+        if not AUDIO_AVAILABLE:
+            print("❌ Cannot run: PyAudio is not installed.")
+            print("Install it with: pip install pyaudio")
+            print("On macOS: brew install portaudio && pip install pyaudio")
+            return
+        
         if mode:
             self.mode = mode
         
@@ -229,6 +246,11 @@ def main():
     
     if args.list_devices:
         # Just list devices and exit
+        if not AUDIO_AVAILABLE:
+            print("❌ PyAudio is not installed. Cannot list audio devices.")
+            print("Install it with: pip install pyaudio")
+            return
+        
         capture = AudioCapture()
         print("Available audio input devices:")
         for device in capture.list_devices():
