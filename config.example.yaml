@@ -1,0 +1,30 @@
+# Configuration for the music recommendation system
+# Copy this to config.yaml and update with your settings
+
+# LLM Configuration
+llm:
+  provider: "openai"  # Options: "openai", "ollama"
+  api_key: "your-api-key-here"  # Required for OpenAI, not needed for Ollama
+  base_url: "https://api.openai.com/v1"  # For OpenAI or custom endpoint
+  model: "gpt-3.5-turbo"  # Model name (e.g., "gpt-4", "llama2" for Ollama)
+
+# Audio Capture Configuration
+audio:
+  sample_rate: 16000  # Sample rate for audio capture
+  chunk_duration: 5  # Duration in seconds to capture before processing
+  device_index: null  # Specific device index, null for default
+
+# Music Sources
+music:
+  local_folder: null  # Path to local music folder (e.g., "/path/to/music")
+  youtube_playlist: null  # YouTube playlist URL
+
+# Mode Configuration
+mode:
+  default: "copilot"  # Options: "copilot", "auto"
+  auto_switch_delay: 30  # Seconds to wait before auto-switching in auto mode
+
+# Transcription Configuration
+transcription:
+  language: "en-US"  # Language for speech recognition
+  energy_threshold: 4000  # Energy level for considering audio

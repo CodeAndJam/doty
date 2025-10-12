@@ -1,0 +1,7 @@
+pyaudio>=0.2.11
+openai>=1.0.0
+requests>=2.31.0
+pyyaml>=6.0
+yt-dlp>=2023.0.0
+numpy>=1.24.0
+SpeechRecognition>=3.10.0
