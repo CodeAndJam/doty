@@ -11,17 +11,29 @@ from typing import Optional
 class Transcriber:
     """Handles speech-to-text transcription."""
     
-    def __init__(self, language: str = "en-US", energy_threshold: int = 4000):
+    def __init__(self, language: str = "pt-PT", energy_threshold: int = 4000):
         """
         Initialize the transcriber.
         
         Args:
-            language: Language code for recognition
+            language: Language code for recognition (e.g., "pt-PT", "pt-BR", "en-US")
             energy_threshold: Energy level for considering audio
         """
         self.recognizer = sr.Recognizer()
         self.language = language
         self.recognizer.energy_threshold = energy_threshold
+        
+        # Print language configuration on startup
+        language_names = {
+            "pt-PT": "Portuguese (Portugal)",
+            "pt-BR": "Portuguese (Brazil)",
+            "en-US": "English (United States)",
+            "es-ES": "Spanish (Spain)",
+            "fr-FR": "French (France)",
+            "de-DE": "German (Germany)"
+        }
+        lang_name = language_names.get(language, language)
+        print(f"🗣️  Transcription language: {lang_name}")
         
     def transcribe(self, audio_data: bytes, sample_rate: int = 16000) -> Optional[str]:
         """
@@ -50,11 +62,16 @@ class Transcriber:
                 audio = self.recognizer.record(source)
             
             # Transcribe using Google Speech Recognition (free)
+            # Google's service supports Portuguese well with pt-PT or pt-BR
             text = self.recognizer.recognize_google(audio, language=self.language)
             return text
             
         except sr.UnknownValueError:
             # Speech was unintelligible
+            # For Portuguese, this might happen if:
+            # - Audio quality is poor
+            # - Background noise is high
+            # - Wrong language code is configured (pt-PT vs pt-BR)
             return None
         except sr.RequestError as e:
             print(f"Could not request results from speech recognition service; {e}")

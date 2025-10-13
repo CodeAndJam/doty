@@ -70,6 +70,7 @@ class MusicRecommendationApp:
         self.current_transcript = ""
         self.last_recommendation_time = 0
         self.current_music = None
+        self.last_rankings = []
         
     def _load_config(self, config_path: str) -> dict:
         """Load configuration from YAML file."""
@@ -135,7 +136,10 @@ class MusicRecommendationApp:
             print(f"   Reason: {item['reason']}")
         
         print("\n" + "=" * 60)
-        print("\nEnter the number to play (1-5), or 's' to skip: ", end='', flush=True)
+        print("\nEnter number to play (1-5), 's' to skip, 'stop' to stop music, 'q' to quit: ", end='', flush=True)
+        
+        # Store rankings for user selection
+        self.last_rankings = rankings
     
     def _auto_mode(self, rankings: List[Dict[str, any]]):
         """Auto mode: Automatically select and play music."""
@@ -204,11 +208,22 @@ class MusicRecommendationApp:
                     user_input = input()
                     if user_input.lower() == 'q':
                         break
+                    elif user_input.lower() == 'stop':
+                        self.music_manager.stop_music()
+                    elif user_input.lower() == 's':
+                        print("Skipped. Listening for more conversation...")
                     elif user_input.isdigit():
                         idx = int(user_input) - 1
-                        # This would require storing the last rankings
-                        # For now, just acknowledge
-                        print("Selection acknowledged!")
+                        if 0 <= idx < len(self.last_rankings):
+                            selected = self.last_rankings[idx]
+                            music_item = self.music_manager.get_music_by_title(selected['title'])
+                            if music_item:
+                                self.music_manager.play_music(music_item)
+                                self.current_music = music_item
+                            else:
+                                print("❌ Could not find that track")
+                        else:
+                            print("❌ Invalid selection")
             else:
                 # In auto mode, just keep running
                 while True:

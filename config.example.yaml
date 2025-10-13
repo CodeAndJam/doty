@@ -27,4 +27,11 @@ mode:
 # Transcription Configuration
 transcription:
   language: "en-US"  # Language for speech recognition
+  # Common language codes:
+  # - "pt-PT" for Portuguese (Portugal)
+  # - "pt-BR" for Portuguese (Brazil)
+  # - "en-US" for English (United States)
+  # - "es-ES" for Spanish (Spain)
+  # - "fr-FR" for French (France)
+  # - "de-DE" for German (Germany)
   energy_threshold: 4000  # Energy level for considering audio

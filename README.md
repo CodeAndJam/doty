@@ -6,8 +6,10 @@ An intelligent music recommendation system that listens to conversations and sug
 
 - 🎤 **Real-time Audio Capture**: Captures audio from all available microphones (optimized for macOS)
 - 🗣️ **Speech-to-Text**: Automatically transcribes conversations using Google Speech Recognition
+- 🌍 **Multi-language Support**: Supports Portuguese (PT/BR), English, Spanish, French, German, and more
 - 🤖 **AI-Powered Recommendations**: Uses LLMs (OpenAI or Ollama) to analyze context and recommend music
 - 🎵 **Multiple Music Sources**: Supports local music folders and YouTube playlists
+- 🔊 **Audio Playback**: Built-in music player with volume control
 - 🎮 **Two Operating Modes**:
   - **Copilot Mode**: Shows recommendations for manual selection
   - **Auto Mode**: Automatically switches music based on conversation
@@ -100,6 +102,17 @@ audio:
   chunk_duration: 5  # Seconds to capture before processing
   device_index: null  # Specific device index or null for default
 ```
+
+#### Transcription & Language
+```yaml
+transcription:
+  language: "pt-PT"  # Language code for speech recognition
+  # Options: "pt-PT" (Portuguese-Portugal), "pt-BR" (Portuguese-Brazil),
+  #          "en-US" (English), "es-ES" (Spanish), "fr-FR" (French), etc.
+  energy_threshold: 4000  # Energy level for considering audio
+```
+
+See [PORTUGUESE_SUPPORT.md](PORTUGUESE_SUPPORT.md) for detailed Portuguese language configuration.
 
 #### Music Sources
 ```yaml
