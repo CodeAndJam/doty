@@ -1,1 +1,3 @@
---- Transcription Started ---
+--- Sessão iniciada em 2025-12-31 09:04:41 ---
+--- Modelo: nvidia/parakeet-tdt-0.6b-v3 ---
+

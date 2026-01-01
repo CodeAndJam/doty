@@ -1,7 +1,26 @@
 [project]
 name = "doty"
 version = "0.1.0"
-description = "Add your description here"
+description = "GM Music Assistant with Parakeet-MLX"
 readme = "README.md"
-requires-python = ">=3.13"
-dependencies = []
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pipecat-ai[daily,silero]",
+    "parakeet-mlx>=0.2.0",
+    "mlx>=0.21.0",
+    "mlx-audio",
+    "loguru",
+    "python-dotenv",
+    "pyaudio",
+    "soundfile",
+    "torch",
+    "torchaudio",
+    "websockets",
+    "python-multipart>=0.0.21",
+    "numpy>=2.2.6",
+]
+
+[[tool.uv.index]]
+url = "https://gitlab.cicd.man/api/v4/projects/13388/packages/pypi/simple"
