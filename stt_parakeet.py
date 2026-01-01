@@ -63,7 +63,10 @@ class ContinuousSTT:
         # Session setup
         self.session_dir = Path("transcriptions")
         self.session_dir.mkdir(exist_ok=True)
+        self.audio_dir = Path("recordings")
+        self.audio_dir.mkdir(exist_ok=True)
         self.session_start = datetime.now()
+        self.session_id = self.session_start.strftime('%Y%m%d_%H%M%S')
         self.transcript_count = 0
         self.session_log = []
 
@@ -98,8 +101,67 @@ class ContinuousSTT:
             logger.error(f"Transcribe failed: {e}")
             return ""
 
-    def save_transcript(self, text):
-        """Save transcript with timestamp."""
+    def merge_audio_files(self):
+        """Merge all segment audio files into one."""
+        audio_files = sorted(self.audio_dir.glob(f"session_{self.session_id}_segment_*.wav"))
+        
+        if not audio_files:
+            logger.warning("No audio files to merge")
+            return None
+        
+        logger.info(f"Merging {len(audio_files)} audio segments...")
+        
+        merged_audio = []
+        for audio_file in audio_files:
+            audio, sr = sf.read(audio_file)
+            merged_audio.append(audio)
+        
+        # Concatenate all audio segments
+        merged = np.concatenate(merged_audio)
+        
+        # Save merged audio
+        merged_file = self.audio_dir / f"session_{self.session_id}_merged.wav"
+        sf.write(merged_file, merged, 16000)
+        logger.info(f"✓ Merged audio saved: {merged_file.name}")
+        
+        return merged_file
+
+    def transcribe_best_quality(self, audio_file):
+        """Transcribe with best quality settings."""
+        try:
+            logger.info("🎯 Running best-quality transcription...")
+            result = self.model.transcribe(str(audio_file))
+            return result.text.strip()
+        except Exception as e:
+            logger.error(f"Transcribe failed: {e}")
+            return ""
+
+    def save_clean_transcript(self, text):
+        """Save clean transcript to separate file."""
+        if not text:
+            return None
+        
+        clean_file = self.session_dir / f"session_{self.session_id}_clean.txt"
+        with open(clean_file, "w") as f:
+            f.write(text)
+        
+        logger.info(f"✓ Clean transcript saved: {clean_file.name}")
+        return clean_file
+
+    @staticmethod
+    def prompt_yes_no(question: str) -> bool:
+        """Ask yes/no question."""
+        while True:
+            response = input(f"\n{question} (y/n): ").strip().lower()
+            if response in ["y", "yes"]:
+                return True
+            elif response in ["n", "no"]:
+                return False
+            else:
+                logger.warning("Please enter 'y' or 'n'")
+
+    def save_transcript(self, text, audio_file):
+        """Save transcript with timestamp and audio reference."""
         if not text:
             return None
         
@@ -107,12 +169,14 @@ class ContinuousSTT:
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         # Save to session file
-        session_file = self.session_dir / f"session_{self.session_start.strftime('%Y%m%d_%H%M%S')}.txt"
+        session_file = self.session_dir / f"session_{self.session_id}.txt"
         with open(session_file, "a") as f:
             f.write(f"[{timestamp}] {text}\n")
+            f.write(f"  Audio: {audio_file.name}\n")
         
-        self.session_log.append({"time": timestamp, "text": text})
+        self.session_log.append({"time": timestamp, "text": text, "audio": str(audio_file)})
         logger.info(f"📝 [{timestamp}] {text}")
+        logger.info(f"   🎵 Saved: {audio_file.name}")
         
         return session_file
 
@@ -120,35 +184,61 @@ class ContinuousSTT:
         """Run continuous recording loop."""
         logger.info("=" * 50)
         logger.info("Continuous STT Session")
-        logger.info(f"Session dir: {self.session_dir}")
+        logger.info(f"Transcripts: {self.session_dir}")
+        logger.info(f"Audio: {self.audio_dir}")
         logger.info("Press Ctrl+C to stop")
         logger.info("=" * 50)
         
+        segment_num = 0
         try:
             while True:
-                logger.info("🎤 Recording 5s...")
+                segment_num += 1
+                logger.info(f"🎤 Recording segment {segment_num} (5s)...")
                 audio = self.record_segment(5.0)
                 
-                # Transcribe
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                    path = f.name
-                    sf.write(path, audio, 16000)
+                # Save audio
+                logger.debug(f"Saving audio to {self.audio_dir}")
+                audio_file = self.save_audio(audio, segment_num)
+                logger.info(f"💾 Saved: {audio_file}")
                 
-                text = self.transcribe(path)
-                Path(path).unlink()
+                # Transcribe
+                text = self.transcribe(str(audio_file))
                 
                 if text:
-                    self.save_transcript(text)
+                    self.save_transcript(text, audio_file)
                 else:
                     logger.debug("⏭ No speech detected")
                 
         except KeyboardInterrupt:
             logger.info("\n" + "=" * 50)
-            logger.info(f"Session ended - {self.transcript_count} transcripts")
-            session_file = self.session_dir / f"session_{self.session_start.strftime('%Y%m%d_%H%M%S')}.txt"
+            logger.info(f"Session ended - {self.transcript_count} transcripts, {segment_num} segments")
+            session_file = self.session_dir / f"session_{self.session_id}.txt"
             if session_file.exists():
-                logger.info(f"Saved to: {session_file}")
+                logger.info(f"Transcripts: {session_file}")
+            logger.info(f"Audio files: {self.audio_dir}/session_{self.session_id}_*.wav")
             logger.info("=" * 50)
+            
+            # Post-session processing
+            self.post_session_processing(segment_num)
+
+    def post_session_processing(self, segment_num):
+        """Handle post-session merging and clean transcription."""
+        if segment_num < 2:
+            logger.info("Only 1 segment recorded, skipping merge")
+            return
+        
+        # Ask about merging
+        if self.prompt_yes_no("Merge all recordings into a single audio file?"):
+            merged_file = self.merge_audio_files()
+            
+            if merged_file and self.prompt_yes_no("Generate clean transcript from merged audio?"):
+                text = self.transcribe_best_quality(merged_file)
+                if text:
+                    self.save_clean_transcript(text)
+                else:
+                    logger.warning("Failed to generate clean transcript")
+        
+        logger.info("Session complete!")
 
 
 def main():
