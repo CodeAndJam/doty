@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
-Pure MLX STT - Minimal dependencies, works on macOS Apple Silicon.
+Continuous STT using Parakeet-MLX with session-based file management.
+
+Records until stopped (Ctrl+C), saving transcriptions with timestamps.
+Each session creates timestamped files for organization.
 
 Usage:
-  python stt_parakeet.py
+  uv run --python 3.10 stt_parakeet.py
 """
 
 # /// script
@@ -23,7 +26,7 @@ import os
 import logging
 from pathlib import Path
 import tempfile
-import subprocess
+from datetime import datetime
 
 # Disable numba JIT to avoid llvmlite issues
 os.environ["NUMBA_DISABLE_JIT"] = "1"
@@ -45,8 +48,8 @@ except ImportError as e:
     sys.exit(1)
 
 
-class SimpleSTT:
-    """Parakeet-MLX STT - Minimal, reliable."""
+class ContinuousSTT:
+    """Continuous STT with session-based file management."""
 
     def __init__(self):
         logger.info("Loading model...")
@@ -56,11 +59,16 @@ class SimpleSTT:
         except Exception as e:
             logger.error(f"Load failed: {e}")
             raise
-
-    def record(self, seconds=5.0):
-        """Record audio from mic."""
-        logger.info(f"🎤 Recording {int(seconds)}s...")
         
+        # Session setup
+        self.session_dir = Path("transcriptions")
+        self.session_dir.mkdir(exist_ok=True)
+        self.session_start = datetime.now()
+        self.transcript_count = 0
+        self.session_log = []
+
+    def record_segment(self, duration=5.0):
+        """Record a single audio segment."""
         p = pyaudio.PyAudio()
         stream = p.open(
             format=pyaudio.paInt16,
@@ -71,7 +79,7 @@ class SimpleSTT:
         )
         
         frames = []
-        for _ in range(int(16000 * seconds / 4096)):
+        for _ in range(int(16000 * duration / 4096)):
             frames.append(stream.read(4096, exception_on_overflow=False))
         
         stream.stop_stream()
@@ -84,37 +92,70 @@ class SimpleSTT:
     def transcribe(self, audio_file):
         """Transcribe audio file."""
         try:
-            logger.info("Transcribing...")
             result = self.model.transcribe(audio_file)
             return result.text.strip()
         except Exception as e:
-            logger.error(f"Failed: {e}")
+            logger.error(f"Transcribe failed: {e}")
             return ""
+
+    def save_transcript(self, text):
+        """Save transcript with timestamp."""
+        if not text:
+            return None
+        
+        self.transcript_count += 1
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        # Save to session file
+        session_file = self.session_dir / f"session_{self.session_start.strftime('%Y%m%d_%H%M%S')}.txt"
+        with open(session_file, "a") as f:
+            f.write(f"[{timestamp}] {text}\n")
+        
+        self.session_log.append({"time": timestamp, "text": text})
+        logger.info(f"📝 [{timestamp}] {text}")
+        
+        return session_file
+
+    def run_continuous(self):
+        """Run continuous recording loop."""
+        logger.info("=" * 50)
+        logger.info("Continuous STT Session")
+        logger.info(f"Session dir: {self.session_dir}")
+        logger.info("Press Ctrl+C to stop")
+        logger.info("=" * 50)
+        
+        try:
+            while True:
+                logger.info("🎤 Recording 5s...")
+                audio = self.record_segment(5.0)
+                
+                # Transcribe
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                    path = f.name
+                    sf.write(path, audio, 16000)
+                
+                text = self.transcribe(path)
+                Path(path).unlink()
+                
+                if text:
+                    self.save_transcript(text)
+                else:
+                    logger.debug("⏭ No speech detected")
+                
+        except KeyboardInterrupt:
+            logger.info("\n" + "=" * 50)
+            logger.info(f"Session ended - {self.transcript_count} transcripts")
+            session_file = self.session_dir / f"session_{self.session_start.strftime('%Y%m%d_%H%M%S')}.txt"
+            if session_file.exists():
+                logger.info(f"Saved to: {session_file}")
+            logger.info("=" * 50)
 
 
 def main():
-    logger.info("=" * 50)
-    logger.info("Parakeet-MLX Local STT")
-    logger.info("=" * 50)
-    
+    """Main entry point."""
     try:
-        stt = SimpleSTT()
-        audio = stt.record(5.0)
-        
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-            path = f.name
-            sf.write(path, audio, 16000)
-        
-        text = stt.transcribe(path)
-        Path(path).unlink()
-        
-        if text:
-            logger.info(f"📝 {text}")
-        else:
-            logger.warning("No speech")
-            
-    except KeyboardInterrupt:
-        logger.info("Cancelled")
+        stt = ContinuousSTT()
+        stt.run_continuous()
     except Exception as e:
         logger.error(f"Error: {e}")
         import traceback
