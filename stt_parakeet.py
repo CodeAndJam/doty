@@ -25,7 +25,6 @@ import sys
 import os
 import logging
 from pathlib import Path
-import tempfile
 from datetime import datetime
 
 # Disable numba JIT to avoid llvmlite issues
