@@ -40,7 +40,6 @@ try:
     import numpy as np
     import soundfile as sf
     import pyaudio
-    import mlx.core as mx  # noqa
     from parakeet_mlx import from_pretrained
 except ImportError as e:
     logger.error(f"Import failed: {e}")
