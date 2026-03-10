@@ -3,3 +3,8 @@ recordings/
 __pycache__/
 .python-version
 .venv/
+node_modules/
+out/
+dist/
+*.dmg
+*.tgz
