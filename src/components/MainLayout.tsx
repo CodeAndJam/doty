@@ -57,7 +57,7 @@ export default function MainLayout() {
 
   async function submitDmPrompt() {
     const text = dmPrompt.trim()
-    if (!text || dmPending || modelStatus === 'loading') return
+    if (!text || dmPending) return
     setDmPending(true)
     try {
       const files = await window.doty.listMusic()
@@ -215,20 +215,20 @@ export default function MainLayout() {
             />
             <button
               onClick={submitDmPrompt}
-              disabled={dmPending || !dmPrompt.trim() || modelStatus === 'loading'}
+              disabled={dmPending || !dmPrompt.trim()}
               style={{
                 fontFamily: "'Cinzel', serif",
                 fontSize: '13px',
                 letterSpacing: '0.1em',
-                color: dmPending || !dmPrompt.trim() || modelStatus === 'loading' ? '#3a2e1a' : '#c8922a',
+                color: dmPending || !dmPrompt.trim() ? '#3a2e1a' : '#c8922a',
                 border: '1px solid #2e2416',
                 padding: '8px 14px',
                 background: 'transparent',
-                cursor: dmPending || !dmPrompt.trim() || modelStatus === 'loading' ? 'default' : 'pointer',
+                cursor: dmPending || !dmPrompt.trim() ? 'default' : 'pointer',
                 transition: 'color 0.2s',
               }}
             >
-              {modelStatus === 'loading' ? 'Loading…' : dmPending ? '…' : 'Attune'}
+              {dmPending ? '…' : 'Attune'}
             </button>
           </div>
         </div>
