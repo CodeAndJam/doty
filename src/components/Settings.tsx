@@ -13,12 +13,12 @@ export default function Settings({ onClose, onFolderChange }: Props) {
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
       setFolder(f)
-      if (f) refreshTrackCount(f)
+      if (f) refreshTrackCount()
     })
     window.doty.modelStatus().then(({ ready }) => setModelReady(ready))
   }, [])
 
-  async function refreshTrackCount(f: string) {
+  async function refreshTrackCount() {
     const files = await window.doty.listMusic()
     setTrackCount(files.length)
   }
@@ -28,7 +28,7 @@ export default function Settings({ onClose, onFolderChange }: Props) {
     if (picked) {
       setFolder(picked)
       onFolderChange(picked)
-      refreshTrackCount(picked)
+      refreshTrackCount()
     }
   }
 
