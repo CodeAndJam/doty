@@ -144,11 +144,20 @@ ipcMain.handle('stt:transcribe-chunk', (_e, buffer: ArrayBuffer) => {
   }
 })
 
+let isRecommending = false
+let pendingRecommendation = false
+
 async function triggerRecommendation(newText: string) {
   transcriptBuffer = (transcriptBuffer + ' ' + newText).slice(-2000)
+  if (isRecommending) {
+    pendingRecommendation = true  // new text arrived — re-run after current finishes
+    return
+  }
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return
 
+  isRecommending = true
+  pendingRecommendation = false
   try {
     const files = listMusicFiles(musicFolder)
     if (files.length === 0) return
@@ -157,6 +166,10 @@ async function triggerRecommendation(newText: string) {
     mainWindow?.webContents.send('music:recommendations', recommendations)
   } catch (e) {
     console.error('Recommendation error:', e)
+  } finally {
+    isRecommending = false
+    // If new transcript arrived while we were running, fire again immediately
+    if (pendingRecommendation) triggerRecommendation('')
   }
 }
 
