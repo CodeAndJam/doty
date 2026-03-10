@@ -37,4 +37,9 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('model:status', handler)
     return () => ipcRenderer.removeListener('model:status', handler)
   },
+
+  // Transcripts
+  getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),
+  pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),
+  saveTranscript: (text: string) => ipcRenderer.invoke('transcript:save', text),
 })

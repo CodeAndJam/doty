@@ -5,6 +5,7 @@ import fs from 'fs'
 interface StoreData {
   musicFolder?: string
   modelPath?: string
+  transcriptFolder?: string
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')

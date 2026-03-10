@@ -9,9 +9,39 @@ import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
 
+const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
+
+function listMusicFiles(dir: string, root?: string): string[] {
+  const base = root ?? dir
+  const results: string[] = []
+  try {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = `${dir}/${entry.name}`
+      if (entry.isDirectory()) {
+        results.push(...listMusicFiles(full, base))
+      } else if (AUDIO_RE.test(entry.name)) {
+        results.push(full.slice(base.length + 1))
+      }
+    }
+  } catch { /* skip unreadable dirs */ }
+  return results
+}
+
 const qwen = new QwenManager()
 let mainWindow: BrowserWindow | null = null
 let transcriptBuffer = ''
+let sessionTranscriptFile: string | null = null
+
+function getSessionTranscriptFile(): string | null {
+  const folder = store.get('transcriptFolder', '') as string
+  if (!folder) return null
+  if (!sessionTranscriptFile) {
+    fs.mkdirSync(folder, { recursive: true })
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    sessionTranscriptFile = join(folder, `transcript-${ts}.txt`)
+  }
+  return sessionTranscriptFile
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -72,7 +102,10 @@ app.on('window-all-closed', () => {
 // Audio is recorded in the renderer via getUserMedia/AudioWorklet.
 // The renderer sends Float32Array PCM chunks here for transcription.
 
-ipcMain.handle('stt:start', () => ({ ok: true }))
+ipcMain.handle('stt:start', () => {
+  sessionTranscriptFile = null // new session → new file
+  return { ok: true }
+})
 ipcMain.handle('stt:stop', () => ({ ok: true }))
 
 // Renderer sends a 5s PCM segment as a Float32Array buffer
@@ -83,6 +116,8 @@ ipcMain.handle('stt:transcribe-chunk', (_e, buffer: ArrayBuffer) => {
     if (text) {
       mainWindow?.webContents.send('stt:transcript', text)
       triggerRecommendation(text)
+      const file = getSessionTranscriptFile()
+      if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
     }
     return { text }
   } catch (e) {
@@ -97,9 +132,7 @@ async function triggerRecommendation(newText: string) {
   if (!musicFolder) return
 
   try {
-    const files = fs.readdirSync(musicFolder).filter((f) =>
-      /\.(mp3|flac|wav|m4a|ogg|aac)$/i.test(f)
-    )
+    const files = listMusicFiles(musicFolder)
     if (files.length === 0) return
     const recommendations = await qwen.recommend(transcriptBuffer, files)
     mainWindow?.webContents.send('music:recommendations', recommendations)
@@ -132,11 +165,37 @@ ipcMain.handle('music:pick-folder', async () => {
 ipcMain.handle('music:list', () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return []
+  return listMusicFiles(musicFolder)
+})
+
+// ── IPC: Transcripts ──────────────────────────────────────────────────────────
+
+ipcMain.handle('transcript:get-folder', () => store.get('transcriptFolder', ''))
+
+ipcMain.handle('transcript:pick-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory'],
+    title: 'Select Transcript Folder',
+  })
+  if (!result.canceled && result.filePaths[0]) {
+    store.set('transcriptFolder', result.filePaths[0])
+    return result.filePaths[0]
+  }
+  return null
+})
+
+ipcMain.handle('transcript:save', (_e, text: string) => {
+  const folder = store.get('transcriptFolder', '') as string
+  if (!folder) return { ok: false, reason: 'no folder set' }
   try {
-    return fs.readdirSync(musicFolder).filter((f) =>
-      /\.(mp3|flac|wav|m4a|ogg|aac)$/i.test(f)
-    )
-  } catch { return [] }
+    fs.mkdirSync(folder, { recursive: true })
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    const file = join(folder, `transcript-${ts}.txt`)
+    fs.writeFileSync(file, text, 'utf-8')
+    return { ok: true, file }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
 })
 
 // ── IPC: Model download ───────────────────────────────────────────────────────

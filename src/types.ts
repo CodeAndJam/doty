@@ -23,6 +23,11 @@ export interface DotyAPI {
   downloadModel: () => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
+
+  // Transcripts
+  getTranscriptFolder: () => Promise<string>
+  pickTranscriptFolder: () => Promise<string | null>
+  saveTranscript: (text: string) => Promise<{ ok: boolean; file?: string; reason?: string }>
 }
 
 declare global {

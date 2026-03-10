@@ -9,6 +9,7 @@ export default function Settings({ onClose, onFolderChange }: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
   const [modelReady, setModelReady] = useState(false)
+  const [transcriptFolder, setTranscriptFolder] = useState('')
 
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
@@ -16,6 +17,7 @@ export default function Settings({ onClose, onFolderChange }: Props) {
       if (f) refreshTrackCount()
     })
     window.doty.modelStatus().then(({ ready }) => setModelReady(ready))
+    window.doty.getTranscriptFolder().then(setTranscriptFolder)
   }, [])
 
   async function refreshTrackCount() {
@@ -30,6 +32,11 @@ export default function Settings({ onClose, onFolderChange }: Props) {
       onFolderChange(picked)
       refreshTrackCount()
     }
+  }
+
+  async function pickTranscriptFolder() {
+    const picked = await window.doty.pickTranscriptFolder()
+    if (picked) setTranscriptFolder(picked)
   }
 
   return (
@@ -48,7 +55,7 @@ export default function Settings({ onClose, onFolderChange }: Props) {
         </div>
 
         {/* Music folder */}
-        <div className="mb-6">
+        <div className="mb-5">
           <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
             Music Folder
           </label>
@@ -64,7 +71,28 @@ export default function Settings({ onClose, onFolderChange }: Props) {
             </button>
           </div>
           {folder && (
-            <p className="text-xs text-gray-500 mt-1.5">{trackCount} audio files found</p>
+            <p className="text-xs text-gray-500 mt-1.5">{trackCount} audio files found (including subfolders)</p>
+          )}
+        </div>
+
+        {/* Transcript folder */}
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+            Transcript Folder
+          </label>
+          <div className="flex gap-2">
+            <div className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-sm text-gray-300 truncate">
+              {transcriptFolder || <span className="text-gray-600">No folder selected</span>}
+            </div>
+            <button
+              onClick={pickTranscriptFolder}
+              className="px-3 py-2 bg-accent hover:bg-accent/80 rounded-lg text-sm font-medium transition-colors shrink-0"
+            >
+              Browse
+            </button>
+          </div>
+          {transcriptFolder && (
+            <p className="text-xs text-gray-500 mt-1.5">Transcripts saved automatically as .txt files</p>
           )}
         </div>
 
