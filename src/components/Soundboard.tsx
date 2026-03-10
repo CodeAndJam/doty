@@ -72,6 +72,15 @@ function BrowsePanel({
     window.doty.listMusic().then(setAllFiles)
   }, [])
 
+  // Escape key to close
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
+
   const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
   const filtered = tokens.length === 0
     ? allFiles
@@ -104,7 +113,7 @@ function BrowsePanel({
         <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>
           {filtered.length}
         </span>
-        <button onClick={onClose} className="p-1 hover:opacity-80">
+        <button onClick={(e) => { e.stopPropagation(); onClose() }} className="p-2 hover:opacity-80" style={{ cursor: 'pointer' }}>
           <CloseIcon />
         </button>
       </div>
@@ -442,7 +451,7 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
   const hasTracks = pinned.length > 0 || suggestions.length > 0
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
       {/* Header */}
       <div className="flex items-center justify-between mb-3 shrink-0">
         <span style={{
