@@ -24,6 +24,14 @@ export function useRecorder(deviceId?: string) {
     const ctx = new AudioContext({ sampleRate: 16000 })
     contextRef.current = ctx
 
+    // Disable audio output — we only capture PCM, never play back
+    // setSinkId({ type: 'none' }) is available in Chromium 110+ / Electron 31+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (typeof (ctx as any).setSinkId === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (ctx as any).setSinkId({ type: 'none' })
+    }
+
     await ctx.audioWorklet.addModule('./pcm-capture.worklet.js')
 
     const source = ctx.createMediaStreamSource(stream)
