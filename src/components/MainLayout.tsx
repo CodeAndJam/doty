@@ -27,8 +27,16 @@ export default function MainLayout() {
   const [dmPrompt, setDmPrompt] = useState('')
   const [dmPending, setDmPending] = useState(false)
   const transcriptBufferRef = useRef('')
+  const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { start, stop } = useRecorder(micDeviceId)
   const { recommend, modelStatus } = useQwen()
+
+  async function runRecommendation() {
+    const files = await window.doty.listMusic()
+    if (files.length === 0) return
+    const results = await recommend(transcriptBufferRef.current, files)
+    setRecommendations(results)
+  }
 
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
@@ -36,10 +44,14 @@ export default function MainLayout() {
     const unsubTranscript = window.doty.onTranscript((text) => {
       setTranscripts((prev) => [...prev, text])
       transcriptBufferRef.current = (transcriptBufferRef.current + ' ' + text).slice(-2000)
+      // Debounce STT-triggered recommendations — run via Web Worker, not main process
+      if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
     })
 
     return () => {
       unsubTranscript()
+      if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
     }
   }, [])
 

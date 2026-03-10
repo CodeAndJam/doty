@@ -2,11 +2,9 @@ import { app, BrowserWindow, ipcMain, protocol, dialog, net } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { store } from './store'
-import { QwenManager, onQwenStatus, killQwenChild } from './qwen'
 import { isModelReady, MODEL_URL, MODEL_DIR } from './model-paths'
 import { initRecognizer, transcribeFloat32, freeRecognizer } from './asr'
-import { startScanner, stopScanner, forceRescan, getMetadata } from './scanner'
-import { getCache } from './metadata-cache'
+import { startScanner, stopScanner, getMetadata } from './scanner'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -36,9 +34,7 @@ function listMusicFiles(dir: string, root?: string): string[] {
   return results
 }
 
-const qwen = new QwenManager()
 let mainWindow: BrowserWindow | null = null
-let transcriptBuffer = ''
 let sessionTranscriptFile: string | null = null
 
 function getSessionTranscriptFile(): string | null {
@@ -110,10 +106,6 @@ app.whenReady().then(async () => {
   registerMusicProtocol()
   createWindow()
 
-  onQwenStatus((status) => {
-    mainWindow?.webContents.send('qwen:status', { status })
-  })
-
   const ready = isModelReady()
   mainWindow?.webContents.send('model:status', { ready })
 
@@ -130,7 +122,6 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   freeRecognizer()
   stopScanner()
-  killQwenChild()
 })
 
 app.on('window-all-closed', () => {
@@ -139,23 +130,22 @@ app.on('window-all-closed', () => {
 })
 
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
-// Audio is recorded in the renderer via getUserMedia/AudioWorklet.
-// The renderer sends Float32Array PCM chunks here for transcription.
 
 ipcMain.handle('stt:start', () => {
-  sessionTranscriptFile = null // new session → new file
+  sessionTranscriptFile = null
   return { ok: true }
 })
 ipcMain.handle('stt:stop', () => ({ ok: true }))
 
-// Renderer sends a 5s PCM segment as a Float32Array buffer
+// Renderer sends a 5s PCM segment as a Float32Array buffer.
+// Transcription result is sent back via 'stt:transcript' — the renderer
+// accumulates it and triggers recommendations via the Web Worker.
 ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
   try {
     const samples = new Float32Array(buffer)
     const text = await transcribeFloat32(samples, 16000)
     if (text) {
       mainWindow?.webContents.send('stt:transcript', text)
-      triggerRecommendation(text)
       const file = getSessionTranscriptFile()
       if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
     }
@@ -164,65 +154,6 @@ ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
     console.error('Transcribe error:', e)
     return { text: '' }
   }
-})
-
-let recommendDebounce: ReturnType<typeof setTimeout> | null = null
-let isRecommending = false
-let pendingAfterRun = false
-
-function triggerRecommendation(newText: string) {
-  transcriptBuffer = (transcriptBuffer + ' ' + newText).slice(-2000)
-
-  if (isRecommending) {
-    // A run is in progress — flag so it re-runs when done
-    pendingAfterRun = true
-    return
-  }
-
-  if (recommendDebounce) clearTimeout(recommendDebounce)
-  recommendDebounce = setTimeout(runRecommendation, 300)
-}
-
-async function runRecommendation() {
-  const musicFolder = store.get('musicFolder', '') as string
-  if (!musicFolder) { console.log('[main] runRecommendation: no music folder set'); return }
-
-  isRecommending = true
-  pendingAfterRun = false
-  try {
-    const files = listMusicFiles(musicFolder)
-    console.log(`[main] runRecommendation: ${files.length} files, transcript length=${transcriptBuffer.length}`)
-    if (files.length === 0) return
-    const metadata = getCache()
-    console.log('[main] calling qwen.recommend...')
-    const recommendations = await qwen.recommend(transcriptBuffer, files, metadata)
-    console.log('[main] recommendations:', recommendations)
-    mainWindow?.webContents.send('music:recommendations', recommendations)
-  } catch (e) {
-    console.error('Recommendation error:', e)
-  } finally {
-    isRecommending = false
-    if (pendingAfterRun) {
-      pendingAfterRun = false
-      runRecommendation()
-    }
-  }
-}
-
-ipcMain.handle('music:recommend-manual', async (_e, prompt: string) => {
-  const musicFolder = store.get('musicFolder', '') as string
-  console.log(`[main] recommend-manual: prompt="${prompt}", folder="${musicFolder}"`)
-  if (!musicFolder) return { ok: false }
-  const files = listMusicFiles(musicFolder)
-  console.log(`[main] recommend-manual: ${files.length} files`)
-  if (files.length === 0) return { ok: false }
-  const metadata = getCache()
-  const combined = [transcriptBuffer, prompt].filter(Boolean).join('\n\nDM note: ')
-  console.log('[main] recommend-manual: calling qwen.recommend...')
-  const recommendations = await qwen.recommend(combined, files, metadata)
-  console.log('[main] recommend-manual: result:', recommendations)
-  mainWindow?.webContents.send('music:recommendations', recommendations)
-  return { ok: true }
 })
 
 // ── IPC: Music ────────────────────────────────────────────────────────────────

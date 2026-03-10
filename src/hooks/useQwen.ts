@@ -15,10 +15,12 @@ let _currentStatus: Status = 'loading'
 
 function getWorker(): Worker {
   if (_worker) return _worker
+  console.log('[qwen-hook] creating worker...')
   _worker = new Worker(new URL('../workers/qwen-worker.ts', import.meta.url))
   _worker.onmessage = (e) => {
     const msg = e.data
     if (msg.type === 'status') {
+      console.log('[qwen-hook] status:', msg.status, msg.message ?? '')
       _currentStatus = msg.status
       _statusListeners.forEach(cb => cb(msg.status))
       return
@@ -30,13 +32,17 @@ function getWorker(): Worker {
     else p.resolve(msg.output)
   }
   _worker.onerror = (e) => {
-    console.error('[qwen-hook] worker error:', e.message, e.filename, e.lineno, e.error)
+    console.error('[qwen-hook] worker onerror:', e.message, e.filename, e.lineno, e.error)
     for (const [id, p] of _pending) {
       _pending.delete(id)
       p.reject(new Error(e.message || 'worker error'))
     }
     _worker = null
   }
+  _worker.onmessageerror = (e) => {
+    console.error('[qwen-hook] worker messageerror:', e)
+  }
+  console.log('[qwen-hook] worker created')
   return _worker
 }
 
