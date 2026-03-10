@@ -6,6 +6,7 @@ import { useRecorder } from '../hooks/useRecorder'
 import { useQwen } from '../hooks/useQwen'
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
+const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
 
 function GearIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
@@ -23,6 +24,9 @@ export default function MainLayout() {
   const [musicFolder, setMusicFolder] = useState('')
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(
     () => localStorage.getItem(MIC_STORAGE_KEY) ?? undefined
+  )
+  const [speakerDeviceId, setSpeakerDeviceId] = useState<string | undefined>(
+    () => localStorage.getItem(SPEAKER_STORAGE_KEY) ?? undefined
   )
   const [dmPrompt, setDmPrompt] = useState('')
   const [dmPending, setDmPending] = useState(false)
@@ -199,6 +203,7 @@ export default function MainLayout() {
             <Soundboard
               recommendations={recommendations}
               musicFolder={musicFolder}
+              speakerDeviceId={speakerDeviceId}
               onNoFolder={() => setShowSettings(true)}
             />
           </div>
@@ -254,7 +259,13 @@ export default function MainLayout() {
             else localStorage.removeItem(MIC_STORAGE_KEY)
             setMicDeviceId(id ?? undefined)
           }}
+          onSpeakerChange={(id) => {
+            if (id) localStorage.setItem(SPEAKER_STORAGE_KEY, id)
+            else localStorage.removeItem(SPEAKER_STORAGE_KEY)
+            setSpeakerDeviceId(id ?? undefined)
+          }}
           micDeviceId={micDeviceId}
+          speakerDeviceId={speakerDeviceId}
         />
       )}
     </div>

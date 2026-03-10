@@ -5,6 +5,7 @@ const PINS_KEY = 'doty:pinnedTracks'
 interface Props {
   recommendations: string[]
   musicFolder: string
+  speakerDeviceId?: string
   onNoFolder: () => void
 }
 
@@ -175,11 +176,28 @@ function PlayerBar({
   onSeek: (pct: number) => void
 }) {
   const barRef = useRef<HTMLDivElement>(null)
+  const draggingRef = useRef(false)
 
-  function handleClick(e: React.MouseEvent) {
+  function seekFromEvent(e: MouseEvent | React.MouseEvent) {
     if (!barRef.current) return
     const rect = barRef.current.getBoundingClientRect()
-    onSeek((e.clientX - rect.left) / rect.width)
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    onSeek(pct)
+  }
+
+  function handlePointerDown(e: React.PointerEvent) {
+    draggingRef.current = true
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    seekFromEvent(e)
+  }
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (!draggingRef.current) return
+    seekFromEvent(e)
+  }
+
+  function handlePointerUp() {
+    draggingRef.current = false
   }
 
   return (
@@ -205,15 +223,18 @@ function PlayerBar({
         </span>
         <div
           ref={barRef}
-          onClick={handleClick}
-          className="mt-1 h-1 cursor-pointer"
-          style={{ background: 'rgba(200,146,42,0.15)' }}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          className="mt-1 h-3 cursor-pointer flex items-center"
+          style={{ touchAction: 'none' }}
         >
-          <div className="h-full" style={{
-            width: `${progress * 100}%`,
-            background: 'linear-gradient(to right, #6b4e15, #c8922a)',
-            transition: 'width 0.3s linear',
-          }} />
+          <div className="w-full h-1 relative" style={{ background: 'rgba(200,146,42,0.15)' }}>
+            <div className="h-full" style={{
+              width: `${progress * 100}%`,
+              background: 'linear-gradient(to right, #6b4e15, #c8922a)',
+            }} />
+          </div>
         </div>
       </div>
 
@@ -334,7 +355,7 @@ function TrackCard({
 
 // ── Soundboard ────────────────────────────────────────────────────────────────
 
-export default function Soundboard({ recommendations, musicFolder, onNoFolder }: Props) {
+export default function Soundboard({ recommendations, musicFolder, speakerDeviceId, onNoFolder }: Props) {
   const [playing, setPlaying] = useState<string | null>(null)
   const [isAudioPlaying, setIsAudioPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -345,6 +366,36 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
 
   // Persist pins
   useEffect(() => { savePins(pinned) }, [pinned])
+
+  // Update audio output device when speaker selection changes
+  useEffect(() => {
+    if (audioRef.current && speakerDeviceId) {
+      (audioRef.current as any).setSinkId(speakerDeviceId).catch((e: unknown) => {
+        console.warn('[music] setSinkId update failed:', e)
+      })
+    }
+  }, [speakerDeviceId])
+
+  // Space bar to toggle play/pause when a track is loaded
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key !== ' ') return
+      // Don't intercept when typing in an input/textarea/select
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (!playing || !audioRef.current) return
+      e.preventDefault()
+      if (isAudioPlaying) {
+        audioRef.current.pause()
+        setIsAudioPlaying(false)
+      } else {
+        audioRef.current.play()
+        setIsAudioPlaying(true)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [playing, isAudioPlaying])
 
   // Progress tracking
   const updateProgress = useCallback(() => {
@@ -384,6 +435,11 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
     }
 
     const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
+    if (speakerDeviceId) {
+      (audio as any).setSinkId(speakerDeviceId).catch((e: unknown) => {
+        console.warn('[music] setSinkId failed:', e)
+      })
+    }
     audio.onended = () => { setPlaying(null); setIsAudioPlaying(false); setProgress(0) }
     audio.onerror = () => { setPlaying(null); setIsAudioPlaying(false); setProgress(0) }
     audio.play()

@@ -5,7 +5,9 @@ interface Props {
   onClose: () => void
   onFolderChange: (folder: string) => void
   onMicChange: (deviceId: string | null) => void
+  onSpeakerChange: (deviceId: string | null) => void
   micDeviceId?: string
+  speakerDeviceId?: string
 }
 
 interface AudioDevice {
@@ -29,7 +31,7 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function Settings({ onClose, onFolderChange, onMicChange, micDeviceId }: Props) {
+export default function Settings({ onClose, onFolderChange, onMicChange, onSpeakerChange, micDeviceId, speakerDeviceId }: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
   const [modelReady, setModelReady] = useState(false)
@@ -38,7 +40,9 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
   const [scanDone, setScanDone] = useState(false)
   const [lastScanTime, setLastScanTime] = useState<string | null>(null)
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([])
+  const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([])
   const [selectedMic, setSelectedMic] = useState<string>(micDeviceId ?? '')
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string>(speakerDeviceId ?? '')
 
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
@@ -65,11 +69,24 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
           .filter((d) => d.kind === 'audioinput')
           .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }))
         setAudioDevices(inputs)
+        const outputs = devices
+          .filter((d) => d.kind === 'audiooutput')
+          .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }))
+        setOutputDevices(outputs)
       })
       .catch(() => {})
 
     return () => { unsubProgress(); unsubComplete() }
   }, [])
+
+  // Escape key to close
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
 
   async function refreshTrackCount() {
     const files = await window.doty.listMusic()
@@ -101,6 +118,11 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
   function handleMicChange(deviceId: string) {
     setSelectedMic(deviceId)
     onMicChange(deviceId || null)
+  }
+
+  function handleSpeakerChange(deviceId: string) {
+    setSelectedSpeaker(deviceId)
+    onSpeakerChange(deviceId || null)
   }
 
   const scanPercent = scanProgress && scanProgress.total > 0
@@ -172,6 +194,21 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
             <select value={selectedMic} onChange={(e) => handleMicChange(e.target.value)} style={inputStyle}>
               <option value="">System default</option>
               {audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Speaker */}
+        <div className="mb-5">
+          <Label>Sound Conduit</Label>
+          {outputDevices.length === 0 ? (
+            <div style={{ ...inputStyle, color: '#3a2e1a', fontStyle: 'italic' }}>No devices found</div>
+          ) : (
+            <select value={selectedSpeaker} onChange={(e) => handleSpeakerChange(e.target.value)} style={inputStyle}>
+              <option value="">System default</option>
+              {outputDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
               ))}
             </select>
