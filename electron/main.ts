@@ -13,7 +13,8 @@ import { exec } from 'child_process'
 // This makes the renderer a secure context (like https://) so the Cache API
 // is available — transformers.js uses it to cache model weights between launches.
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
+  { scheme: 'music', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
