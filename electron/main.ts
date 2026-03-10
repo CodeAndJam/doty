@@ -14,7 +14,7 @@ import { exec } from 'child_process'
 // is available — transformers.js uses it to cache model weights between launches.
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
-  { scheme: 'music', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
+  { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
@@ -96,17 +96,14 @@ function createWindow() {
 function registerMusicProtocol() {
   protocol.handle('music', (request) => {
     const musicFolder = store.get('musicFolder', '') as string
-    // With music:// as a standard scheme, URLs are parsed like http://
-    // music://play/Campfire.mp3 → host='play', pathname='/Campfire.mp3'
-    const url = new URL(request.url)
-    const filename = decodeURIComponent(url.pathname.slice(1)) // remove leading /
+    // music:// is NOT a standard scheme, so the URL is opaque.
+    // music://play/Campfire.mp3 → raw string, extract after "music://play/"
+    const raw = request.url
+    const prefix = 'music://play/'
+    const filename = decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
     const filePath = join(musicFolder, filename)
-    const fileUrl = pathToFileURL(filePath).toString()
-    const exists = fs.existsSync(filePath)
-    console.log('[music] request:', request.url)
-    console.log('[music] parsed pathname:', url.pathname, '→ filename:', filename)
-    console.log('[music] resolved:', filePath, '| exists:', exists)
-    return net.fetch(fileUrl)
+    console.log('[music] request:', raw, '→', filePath, '| exists:', fs.existsSync(filePath))
+    return net.fetch(pathToFileURL(filePath).toString())
   })
 }
 
