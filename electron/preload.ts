@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('doty', {
   getMusicFolder: () => ipcRenderer.invoke('music:get-folder'),
   setMusicFolder: (path: string) => ipcRenderer.invoke('music:set-folder', path),
   listMusic: () => ipcRenderer.invoke('music:list'),
+  getAllMetadata: () => ipcRenderer.invoke('music:get-all-metadata'),
   recommendManual: (prompt: string) => ipcRenderer.invoke('music:recommend-manual', prompt),
   onRecommendations: (cb: (files: string[]) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, files: string[]) => cb(files)

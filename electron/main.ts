@@ -4,7 +4,7 @@ import { pathToFileURL } from 'url'
 import { store } from './store'
 import { isModelReady, MODEL_URL, MODEL_DIR } from './model-paths'
 import { initRecognizer, transcribeFloat32, freeRecognizer } from './asr'
-import { startScanner, stopScanner, getMetadata } from './scanner'
+import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -194,6 +194,10 @@ ipcMain.handle('music:scan', () => {
 
 ipcMain.handle('music:get-metadata', (_e, relPath: string) => {
   return getMetadata(relPath)
+})
+
+ipcMain.handle('music:get-all-metadata', () => {
+  return getAllMetadata()
 })
 
 // ── IPC: Transcripts ──────────────────────────────────────────────────────────

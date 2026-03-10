@@ -150,3 +150,7 @@ export function getMetadata(relativeOrAbsPath: string): TrackMetadata | null {
     : relativeOrAbsPath
   return getCached(rel)
 }
+
+export function getAllMetadata(): Record<string, TrackMetadata> {
+  return getCache()
+}

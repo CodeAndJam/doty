@@ -22,6 +22,7 @@ export interface DotyAPI {
   getMusicFolder: () => Promise<string>
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
+  getAllMetadata: () => Promise<Record<string, unknown>>
   recommendManual: (prompt: string) => Promise<{ ok: boolean }>
   onRecommendations: (cb: (files: string[]) => void) => () => void
 

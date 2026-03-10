@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { heuristicRecommend, type TrackMeta } from '../lib/heuristicRecommend'
 
 type Status = 'loading' | 'ready'
 type StatusCb = (status: Status) => void
@@ -71,6 +72,14 @@ export function useQwen() {
 
   const recommend = useCallback(async (transcript: string, files: string[]): Promise<string[]> => {
     if (files.length === 0) return []
+
+    // While model is loading or if it errors, use the heuristic ranker
+    if (_currentStatus === 'loading') {
+      console.log('[qwen-hook] model loading — using heuristic ranker')
+      const metadata = await window.doty.getAllMetadata() as Record<string, TrackMeta>
+      return heuristicRecommend(transcript, files, metadata)
+    }
+
     try {
       const messages = [
         {
@@ -92,15 +101,25 @@ export function useQwen() {
       console.log('[qwen-hook] raw output:', text.slice(0, 300))
 
       const match = text.match(/\[[\s\S]*\]/)
-      if (!match) return files.slice(0, 5)
+      if (!match) {
+        console.log('[qwen-hook] no JSON — falling back to heuristic')
+        const metadata = await window.doty.getAllMetadata() as Record<string, TrackMeta>
+        return heuristicRecommend(transcript, files, metadata)
+      }
 
       const parsed: string[] = JSON.parse(match[0])
       const normalised = parsed.map(f => f.replace(/^\d+\.\s*/, '').trim())
       const valid = normalised.filter(f => files.includes(f)).slice(0, 5)
-      return valid.length > 0 ? valid : files.slice(0, 5)
+      if (valid.length === 0) {
+        console.log('[qwen-hook] no valid filenames — falling back to heuristic')
+        const metadata = await window.doty.getAllMetadata() as Record<string, TrackMeta>
+        return heuristicRecommend(transcript, files, metadata)
+      }
+      return valid
     } catch (e) {
       console.error('[qwen-hook] recommend error:', e)
-      return files.slice(0, 5)
+      const metadata = await window.doty.getAllMetadata() as Record<string, TrackMeta>
+      return heuristicRecommend(transcript, files, metadata)
     }
   }, [])
 
