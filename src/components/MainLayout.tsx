@@ -49,8 +49,18 @@ export default function MainLayout() {
       recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
     })
 
+    // Cmd+, opens Settings (standard macOS convention)
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+        e.preventDefault()
+        setShowSettings(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+
     return () => {
       unsubTranscript()
+      window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
     }
   }, [])

@@ -101,8 +101,12 @@ function registerMusicProtocol() {
     const url = new URL(request.url)
     const filename = decodeURIComponent(url.pathname.slice(1)) // remove leading /
     const filePath = join(musicFolder, filename)
-    console.log('[music] request:', request.url, '→', filePath)
-    return net.fetch(pathToFileURL(filePath).toString())
+    const fileUrl = pathToFileURL(filePath).toString()
+    const exists = fs.existsSync(filePath)
+    console.log('[music] request:', request.url)
+    console.log('[music] parsed pathname:', url.pathname, '→ filename:', filename)
+    console.log('[music] resolved:', filePath, '| exists:', exists)
+    return net.fetch(fileUrl)
   })
 }
 
