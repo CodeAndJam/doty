@@ -1,5 +1,6 @@
 import { join } from 'path'
 import { app } from 'electron'
+import type { TrackMetadata } from './analyzer'
 
 // Use the Node.js CJS build of transformers.js directly
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -28,23 +29,33 @@ async function loadGenerator() {
   return generator
 }
 
+function formatTrack(filename: string, meta: TrackMetadata | null, index: number): string {
+  if (!meta) return `${index + 1}. ${filename}`
+  const key = meta.scale === 'minor' ? `${meta.key}m` : meta.key
+  return `${index + 1}. ${filename} — BPM: ${meta.bpm}, Key: ${key}, Danceability: ${meta.danceability}, Energy: ${meta.energy}`
+}
+
 export class QwenManager {
-  async recommend(transcript: string, files: string[]): Promise<string[]> {
+  async recommend(
+    transcript: string,
+    files: string[],
+    metadata: Record<string, TrackMetadata> = {},
+  ): Promise<string[]> {
     if (files.length === 0) return []
 
     try {
       const gen = await loadGenerator()
 
       const numbered = files
-        .slice(0, 100) // cap list to avoid huge prompts
-        .map((f, i) => `${i + 1}. ${f}`)
+        .slice(0, 100)
+        .map((f, i) => formatTrack(f, metadata[f] ?? null, i))
         .join('\n')
 
       const messages = [
         {
           role: 'system',
           content:
-            'You are a music mood matcher. Given a conversation transcript, pick the 10 best matching songs. Return ONLY a valid JSON array of exactly 10 filenames from the provided list. No explanation, no markdown, no code block.',
+            'You are a music mood matcher. Given a conversation transcript and a list of songs with audio features, pick the 10 best matching songs. Return ONLY a valid JSON array of exactly 10 filenames from the provided list. No explanation, no markdown, no code block.',
         },
         {
           role: 'user',

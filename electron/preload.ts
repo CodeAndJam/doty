@@ -42,4 +42,17 @@ contextBridge.exposeInMainWorld('doty', {
   getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),
   pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),
   saveTranscript: (text: string) => ipcRenderer.invoke('transcript:save', text),
+
+  // Scanner
+  triggerScan: () => ipcRenderer.invoke('music:scan'),
+  onScanProgress: (cb: (p: { done: number; total: number; current: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: { done: number; total: number; current: string }) => cb(p)
+    ipcRenderer.on('scan:progress', handler)
+    return () => ipcRenderer.removeListener('scan:progress', handler)
+  },
+  onScanComplete: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('scan:complete', handler)
+    return () => ipcRenderer.removeListener('scan:complete', handler)
+  },
 })

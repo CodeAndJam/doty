@@ -4,6 +4,12 @@ export interface ProgressPayload {
   totalMB: number
 }
 
+export interface ScanProgress {
+  done: number
+  total: number
+  current: string
+}
+
 export interface DotyAPI {
   // STT
   sttStart: () => Promise<{ ok: boolean }>
@@ -28,6 +34,11 @@ export interface DotyAPI {
   getTranscriptFolder: () => Promise<string>
   pickTranscriptFolder: () => Promise<string | null>
   saveTranscript: (text: string) => Promise<{ ok: boolean; file?: string; reason?: string }>
+
+  // Scanner
+  triggerScan: () => Promise<{ ok: boolean }>
+  onScanProgress: (cb: (p: ScanProgress) => void) => () => void
+  onScanComplete: (cb: () => void) => () => void
 }
 
 declare global {

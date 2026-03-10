@@ -5,6 +5,8 @@ import { store } from './store'
 import { QwenManager } from './qwen'
 import { isModelReady, MODEL_URL, MODEL_DIR } from './model-paths'
 import { initRecognizer, transcribeFloat32, freeRecognizer } from './asr'
+import { startScanner, stopScanner, forceRescan, getMetadata } from './scanner'
+import { getCache } from './metadata-cache'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -41,6 +43,19 @@ function getSessionTranscriptFile(): string | null {
     sessionTranscriptFile = join(folder, `transcript-${ts}.txt`)
   }
   return sessionTranscriptFile
+}
+
+function launchScanner(folder: string, force = false) {
+  startScanner(
+    folder,
+    (done, total, current) => {
+      mainWindow?.webContents.send('scan:progress', { done, total, current })
+    },
+    () => {
+      mainWindow?.webContents.send('scan:complete')
+    },
+    force,
+  )
 }
 
 function createWindow() {
@@ -82,15 +97,18 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   if (ready) {
-    // Pre-load recognizer in background so first transcription is fast
     setTimeout(() => {
       try { initRecognizer() } catch (e) { console.error('ASR init error:', e) }
     }, 2000)
   }
+
+  const musicFolder = store.get('musicFolder', '') as string
+  if (musicFolder) launchScanner(musicFolder)
 })
 
 app.on('before-quit', () => {
   freeRecognizer()
+  stopScanner()
 })
 
 app.on('window-all-closed', () => {
@@ -134,7 +152,8 @@ async function triggerRecommendation(newText: string) {
   try {
     const files = listMusicFiles(musicFolder)
     if (files.length === 0) return
-    const recommendations = await qwen.recommend(transcriptBuffer, files)
+    const metadata = getCache()
+    const recommendations = await qwen.recommend(transcriptBuffer, files, metadata)
     mainWindow?.webContents.send('music:recommendations', recommendations)
   } catch (e) {
     console.error('Recommendation error:', e)
@@ -145,6 +164,7 @@ async function triggerRecommendation(newText: string) {
 
 ipcMain.handle('music:set-folder', (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
+  launchScanner(folderPath)
   return { ok: true }
 })
 
@@ -157,6 +177,7 @@ ipcMain.handle('music:pick-folder', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
+    launchScanner(result.filePaths[0])
     return result.filePaths[0]
   }
   return null
@@ -166,6 +187,17 @@ ipcMain.handle('music:list', () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return []
   return listMusicFiles(musicFolder)
+})
+
+ipcMain.handle('music:scan', () => {
+  const musicFolder = store.get('musicFolder', '') as string
+  if (!musicFolder) return { ok: false }
+  launchScanner(musicFolder, true)
+  return { ok: true }
+})
+
+ipcMain.handle('music:get-metadata', (_e, relPath: string) => {
+  return getMetadata(relPath)
 })
 
 // ── IPC: Transcripts ──────────────────────────────────────────────────────────
