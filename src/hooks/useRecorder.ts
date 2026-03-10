@@ -40,7 +40,7 @@ export function useRecorder(deviceId?: string) {
     }
 
     source.connect(worklet)
-    worklet.connect(ctx.destination)
+    // Do NOT connect worklet to destination — we only want to capture, not play back
   }, [deviceId])
 
   const stop = useCallback(() => {
