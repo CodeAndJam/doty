@@ -96,8 +96,12 @@ function createWindow() {
 function registerMusicProtocol() {
   protocol.handle('music', (request) => {
     const musicFolder = store.get('musicFolder', '') as string
-    const filename = decodeURIComponent(request.url.slice('music://'.length))
+    // With music:// as a standard scheme, URLs are parsed like http://
+    // music://play/Campfire.mp3 → host='play', pathname='/Campfire.mp3'
+    const url = new URL(request.url)
+    const filename = decodeURIComponent(url.pathname.slice(1)) // remove leading /
     const filePath = join(musicFolder, filename)
+    console.log('[music] request:', request.url, '→', filePath)
     return net.fetch(pathToFileURL(filePath).toString())
   })
 }

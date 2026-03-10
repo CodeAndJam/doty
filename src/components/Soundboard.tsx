@@ -264,7 +264,7 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
       cancelAnimationFrame(rafRef.current)
     }
 
-    const audio = new Audio(`music://${encodeURIComponent(filename)}`)
+    const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
     audio.onended = () => { setPlaying(null); setIsAudioPlaying(false); setProgress(0) }
     audio.onerror = () => { setPlaying(null); setIsAudioPlaying(false); setProgress(0) }
     audio.play()
