@@ -22,6 +22,7 @@ export interface DotyAPI {
   getMusicFolder: () => Promise<string>
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
+  recommendManual: (prompt: string) => Promise<{ ok: boolean }>
   onRecommendations: (cb: (files: string[]) => void) => () => void
 
   // Model
@@ -29,6 +30,7 @@ export interface DotyAPI {
   downloadModel: () => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
+  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void
 
   // Transcripts
   getTranscriptFolder: () => Promise<string>

@@ -1,38 +1,67 @@
-# doty - Continuous Speech-to-Text Recorder
+# Doty
 
-Local speech recognition using Parakeet-MLX with audio merging and clean transcription.
+AI-powered music recommender for tabletop RPG sessions. Listens to your table via continuous speech-to-text, then uses a local LLM to pick the best matching tracks from your music library in real time.
 
-## Usage
+## How it works
 
-```bash
-uv run --python 3.10 stt_parakeet.py
-```
+1. **STT** — Parakeet TDT v3 (sherpa-onnx, runs fully offline) transcribes your microphone in 5-second chunks.
+2. **Recommendations** — Qwen3-0.6B ONNX analyses the rolling transcript and picks 5 tracks from your library that match the mood.
+3. **Soundboard** — Recommended tracks appear as playable cards. Click to preview.
+4. **DM prompt** — Type a scene description ("dark dungeon", "campfire") to trigger a manual recommendation.
 
-The script will:
-
-1. Record 5-second audio segments from your microphone
-2. Transcribe each segment in real-time
-3. Save timestamps and audio files
-4. On exit (Ctrl+C), ask if you want to:
-   - **Merge** all audio into a single file
-   - **Generate clean transcript** from the merged audio
+Everything runs locally. No API keys, no internet required after first model download.
 
 ## Requirements
 
-- `portaudio`: `brew install portaudio`
-- Python 3.10 (managed by `uv`)
+- macOS (arm64 or x64)
+- Node.js 20+
 
-## Features
+## Local development
 
-- Offline local transcription (no API)
-- Portuguese & English support
-- Continuous recording with session management
-- Audio merging and batch transcription
-- Simple, minimal dependencies
+```bash
+# Install deps and rebuild native addons against Electron
+npm install
 
-## Output Files
+# Run in dev mode (hot reload)
+npm run dev
 
-- `transcriptions/session_YYYYMMDD_HHMMSS.txt` - Timestamped transcripts
-- `transcriptions/session_YYYYMMDD_HHMMSS_clean.txt` - Clean merged transcript
-- `recordings/session_YYYYMMDD_HHMMSS_segment_*.wav` - Individual segments
-- `recordings/session_YYYYMMDD_HHMMSS_merged.wav` - Merged audio file
+# Run unit tests
+npm test
+
+# Run e2e tests (requires a prior build)
+npm run build && npm run test:e2e
+```
+
+## First launch
+
+On first launch the app will prompt you to download the **Parakeet TDT v3** ASR model (~640 MB). It is saved to `~/.doty/models/` and only downloaded once.
+
+The **Qwen3-0.6B** recommendation model (~400 MB) is downloaded automatically on the first recommendation request and cached to `~/.doty/hf-cache/`.
+
+## Settings
+
+- **Music folder** — point Doty at your local music library (mp3, flac, wav, m4a, ogg, aac).
+- **Transcript folder** — optional folder where session transcripts are saved automatically.
+- **Microphone** — select the input device used for transcription.
+
+## Architecture
+
+| Component | Technology |
+|---|---|
+| UI | React + Tailwind CSS (Electron renderer) |
+| STT | sherpa-onnx-node (Parakeet TDT v3 int8) |
+| Recommendations | @huggingface/transformers (Qwen3-0.6B ONNX q4) |
+| Audio analysis | essentia.js + ffmpeg-static |
+| LLM process isolation | Electron `utilityProcess` (separate heap from ASR) |
+
+## Building a DMG
+
+```bash
+npm run dist
+```
+
+Produces a universal macOS DMG in `dist/`.
+
+## Release process
+
+Releases are fully automated via `release-please`. Every merge to `main` bumps the version, updates `CHANGELOG.md`, and triggers a DMG build. See `AGENTS.md` for the full branching and commit convention.

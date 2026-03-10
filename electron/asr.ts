@@ -1,46 +1,52 @@
 import { join } from 'path'
+import { Worker } from 'worker_threads'
 import { MODEL_DIR } from './model-paths'
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const sherpa = require('sherpa-onnx-node')
+const WORKER_PATH = join(__dirname, 'asr-worker.js')
 
-let recognizer: ReturnType<typeof createRecognizer> | null = null
+let worker: Worker | null = null
+let nextId = 0
+const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
-function createRecognizer() {
-  return new sherpa.OfflineRecognizer({
-    featConfig: { sampleRate: 16000, featureDim: 80 },
-    modelConfig: {
-      transducer: {
-        encoder: join(MODEL_DIR, 'encoder.int8.onnx'),
-        decoder: join(MODEL_DIR, 'decoder.int8.onnx'),
-        joiner: join(MODEL_DIR, 'joiner.int8.onnx'),
-      },
-      tokens: join(MODEL_DIR, 'tokens.txt'),
-      numThreads: 2,
-      debug: 0,
-    },
-    decodingMethod: 'greedy_search',
+function getWorker(): Worker {
+  if (worker) return worker
+
+  worker = new Worker(WORKER_PATH, { workerData: { modelDir: MODEL_DIR } })
+
+  worker.on('message', ({ id, text, error }: { id: number; text?: string; error?: string }) => {
+    const p = pending.get(id)
+    if (!p) return
+    pending.delete(id)
+    if (error) p.reject(new Error(error))
+    else p.resolve(text ?? '')
   })
+
+  worker.on('error', (e) => {
+    for (const p of pending.values()) p.reject(e)
+    pending.clear()
+    worker = null
+  })
+
+  worker.on('exit', () => { worker = null })
+
+  return worker
 }
 
 export function initRecognizer(): void {
-  if (!recognizer) {
-    recognizer = createRecognizer()
-  }
+  getWorker() // warm up
 }
 
-export function transcribeFloat32(samples: Float32Array, sampleRate = 16000): string {
-  if (!recognizer) initRecognizer()
-  const stream = recognizer!.createStream()
-  stream.acceptWaveform({ samples, sampleRate })
-  recognizer!.decode(stream)
-  const result = recognizer!.getResult(stream)
-  return (result.text as string).trim()
+export function transcribeFloat32(samples: Float32Array, sampleRate = 16000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const id = nextId++
+    pending.set(id, { resolve, reject })
+    const buffer = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+    getWorker().postMessage({ id, buffer, sampleRate }, [buffer])
+  })
 }
 
 export function freeRecognizer(): void {
-  if (recognizer) {
-    recognizer.free?.()
-    recognizer = null
-  }
+  worker?.terminate()
+  worker = null
+  pending.clear()
 }

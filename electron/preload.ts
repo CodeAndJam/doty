@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('doty', {
   getMusicFolder: () => ipcRenderer.invoke('music:get-folder'),
   setMusicFolder: (path: string) => ipcRenderer.invoke('music:set-folder', path),
   listMusic: () => ipcRenderer.invoke('music:list'),
+  recommendManual: (prompt: string) => ipcRenderer.invoke('music:recommend-manual', prompt),
   onRecommendations: (cb: (files: string[]) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, files: string[]) => cb(files)
     ipcRenderer.on('music:recommendations', handler)
@@ -42,6 +43,13 @@ contextBridge.exposeInMainWorld('doty', {
   getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),
   pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),
   saveTranscript: (text: string) => ipcRenderer.invoke('transcript:save', text),
+
+  // Qwen recommendation model status
+  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, s: { status: 'loading' | 'ready' }) => cb(s)
+    ipcRenderer.on('qwen:status', handler)
+    return () => ipcRenderer.removeListener('qwen:status', handler)
+  },
 
   // Scanner
   triggerScan: () => ipcRenderer.invoke('music:scan'),

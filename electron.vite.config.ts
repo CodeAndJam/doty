@@ -10,6 +10,9 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'electron/main.ts'),
           'analyze-worker': resolve(__dirname, 'electron/analyze-worker.ts'),
+          'asr-worker': resolve(__dirname, 'electron/asr-worker.ts'),
+          'qwen-worker': resolve(__dirname, 'electron/qwen-worker.ts'),
+          'qwen-child': resolve(__dirname, 'electron/qwen-child.ts'),
         }
       }
     }
@@ -31,7 +34,7 @@ export default defineConfig({
     },
     plugins: [react()],
     worker: {
-      format: 'es'
+      format: 'iife'
     }
   }
 })

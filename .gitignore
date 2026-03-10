@@ -8,3 +8,5 @@ out/
 dist/
 *.dmg
 *.tgz
+test-results/
+public/ort-wasm-simd-threaded*.wasm

@@ -93,6 +93,6 @@ npm run rebuild
 ## Model Files
 
 - Parakeet TDT v3 ONNX (~640 MB) — downloaded on first launch to `~/.doty/models/`
-- Qwen2.5-0.5B ONNX (~500 MB) — downloaded on first recommendation to `~/.doty/hf-cache/`
+- Qwen3-0.6B ONNX (~400 MB q4) — downloaded on first recommendation to `~/.doty/hf-cache/`
 
 These are never committed to the repository.
