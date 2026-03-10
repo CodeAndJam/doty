@@ -40,6 +40,115 @@ function ChevronUp() {
 function ChevronDown() {
   return <svg className="w-3 h-3" fill="#6b4e15" viewBox="0 0 24 24"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" /></svg>
 }
+function BrowseIcon() {
+  return <svg className="w-4 h-4" fill="none" stroke="#6b4e15" strokeWidth="2" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+}
+function CloseIcon() {
+  return <svg className="w-4 h-4" fill="none" stroke="#6b4e15" strokeWidth="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+}
+function SearchIcon() {
+  return <svg className="w-3.5 h-3.5" fill="none" stroke="#6b4e15" strokeWidth="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" /></svg>
+}
+
+// ── Browse Panel ──────────────────────────────────────────────────────────────
+
+function BrowsePanel({
+  pinned,
+  playing,
+  onPlay,
+  onPin,
+  onClose,
+}: {
+  pinned: string[]
+  playing: string | null
+  onPlay: (f: string) => void
+  onPin: (f: string) => void
+  onClose: () => void
+}) {
+  const [allFiles, setAllFiles] = useState<string[]>([])
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    window.doty.listMusic().then(setAllFiles)
+  }, [])
+
+  const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
+  const filtered = tokens.length === 0
+    ? allFiles
+    : allFiles.filter(f => {
+        const lower = f.toLowerCase()
+        return tokens.every(t => lower.includes(t))
+      })
+
+  return (
+    <div className="absolute inset-0 z-10 flex flex-col" style={{
+      background: '#080705',
+      border: '1px solid #2e2416',
+    }}>
+      {/* Header */}
+      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #2e2416' }}>
+        <SearchIcon />
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search tracks..."
+          autoFocus
+          className="flex-1 bg-transparent outline-none text-sm"
+          style={{
+            fontFamily: "'Crimson Text', serif",
+            fontSize: '14px',
+            color: '#c8922a',
+          }}
+        />
+        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+          {filtered.length}
+        </span>
+        <button onClick={onClose} className="p-1 hover:opacity-80">
+          <CloseIcon />
+        </button>
+      </div>
+
+      {/* File list */}
+      <div className="flex-1 overflow-y-auto">
+        {filtered.map(f => {
+          const isPinned = pinned.includes(f)
+          const isPlaying = playing === f
+          return (
+            <div
+              key={f}
+              className="flex items-center gap-2 px-3 py-1.5 group"
+              style={{
+                borderBottom: '1px solid rgba(46,36,22,0.3)',
+                background: isPlaying ? 'rgba(200,146,42,0.06)' : 'transparent',
+              }}
+            >
+              <button onClick={() => onPlay(f)} className="w-5 h-5 flex items-center justify-center shrink-0" style={{
+                border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416'}`,
+              }}>
+                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <span className="flex-1 min-w-0 truncate" style={{
+                fontFamily: "'Crimson Text', serif",
+                fontSize: '14px',
+                color: isPlaying ? '#e8d5a3' : '#8a7050',
+              }}>
+                {trackName(f)}
+              </span>
+              <button
+                onClick={() => onPin(f)}
+                className="p-0.5 opacity-50 hover:opacity-100 transition-opacity"
+                title={isPinned ? 'Unpin' : 'Pin'}
+              >
+                <PinIcon filled={isPinned} />
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 // ── Player Bar ────────────────────────────────────────────────────────────────
 
@@ -221,6 +330,7 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
   const [isAudioPlaying, setIsAudioPlaying] = useState(false)
   const [progress, setProgress] = useState(0)
   const [pinned, setPinned] = useState<string[]>(loadPins)
+  const [browsing, setBrowsing] = useState(false)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const rafRef = useRef<number>(0)
 
@@ -344,11 +454,23 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
         }}>
           Melodic Compendium
         </span>
-        {hasTracks && (
-          <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-            {pinned.length > 0 ? `${pinned.length} pinned` : ''}{pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}{suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {hasTracks && (
+            <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+              {pinned.length > 0 ? `${pinned.length} pinned` : ''}{pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}{suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
+            </span>
+          )}
+          {musicFolder && (
+            <button
+              onClick={() => setBrowsing(true)}
+              className="p-1.5 hover:opacity-80 transition-opacity"
+              title="Browse all tracks"
+              style={{ border: '1px solid #2e2416' }}
+            >
+              <BrowseIcon />
+            </button>
+          )}
+        </div>
       </div>
 
       {!musicFolder
@@ -417,6 +539,17 @@ export default function Soundboard({ recommendations, musicFolder, onNoFolder }:
             </div>
           )
       }
+
+      {/* Browse all tracks panel */}
+      {browsing && musicFolder && (
+        <BrowsePanel
+          pinned={pinned}
+          playing={playing}
+          onPlay={playTrack}
+          onPin={togglePin}
+          onClose={() => setBrowsing(false)}
+        />
+      )}
 
       {/* Persistent player bar */}
       {playing && (
