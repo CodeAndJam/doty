@@ -1,6 +1,6 @@
 import { useRef, useCallback } from 'react'
 
-export function useRecorder() {
+export function useRecorder(deviceId?: string) {
   const contextRef = useRef<AudioContext | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const workletRef = useRef<AudioWorkletNode | null>(null)
@@ -11,15 +11,19 @@ export function useRecorder() {
     if (activeRef.current) return
     activeRef.current = true
 
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true },
-    })
+    const audioConstraints: MediaTrackConstraints = {
+      sampleRate: 16000,
+      channelCount: 1,
+      echoCancellation: true,
+    }
+    if (deviceId) audioConstraints.deviceId = { exact: deviceId }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
     streamRef.current = stream
 
     const ctx = new AudioContext({ sampleRate: 16000 })
     contextRef.current = ctx
 
-    // Load worklet from public URL (Vite copies it to /assets)
     await ctx.audioWorklet.addModule('./pcm-capture.worklet.js')
 
     const source = ctx.createMediaStreamSource(stream)
@@ -31,14 +35,13 @@ export function useRecorder() {
     worklet.port.onmessage = async (e) => {
       if (!activeRef.current) return
       if (e.data?.type === 'segment') {
-        // Send to main process for transcription
         await window.doty.sttTranscribeChunk(e.data.buffer)
       }
     }
 
     source.connect(worklet)
     worklet.connect(ctx.destination)
-  }, [])
+  }, [deviceId])
 
   const stop = useCallback(() => {
     activeRef.current = false

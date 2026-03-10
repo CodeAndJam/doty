@@ -25,8 +25,8 @@ async function getEssentia() {
   if (essentiaInstance) return essentiaInstance
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { EssentiaWASM, Essentia } = require('essentia.js')
-  const wasm = await EssentiaWASM()
-  essentiaInstance = new Essentia(wasm)
+  // EssentiaWASM is the WASM module object — pass directly to Essentia constructor
+  essentiaInstance = new Essentia(EssentiaWASM)
   return essentiaInstance
 }
 

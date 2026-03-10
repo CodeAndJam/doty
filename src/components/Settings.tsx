@@ -4,9 +4,16 @@ import type { ScanProgress } from '../types'
 interface Props {
   onClose: () => void
   onFolderChange: (folder: string) => void
+  onMicChange: (deviceId: string | null) => void
+  micDeviceId?: string
 }
 
-export default function Settings({ onClose, onFolderChange }: Props) {
+interface AudioDevice {
+  deviceId: string
+  label: string
+}
+
+export default function Settings({ onClose, onFolderChange, onMicChange, micDeviceId }: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
   const [modelReady, setModelReady] = useState(false)
@@ -14,6 +21,8 @@ export default function Settings({ onClose, onFolderChange }: Props) {
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanDone, setScanDone] = useState(false)
   const [lastScanTime, setLastScanTime] = useState<string | null>(null)
+  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([])
+  const [selectedMic, setSelectedMic] = useState<string>(micDeviceId ?? '')
 
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
@@ -32,6 +41,21 @@ export default function Settings({ onClose, onFolderChange }: Props) {
       setScanDone(true)
       setLastScanTime(new Date().toLocaleTimeString())
     })
+
+    // Enumerate audio input devices — requires mic permission first
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(() => navigator.mediaDevices.enumerateDevices())
+      .then((devices) => {
+        const inputs = devices
+          .filter((d) => d.kind === 'audioinput')
+          .map((d, i) => ({
+            deviceId: d.deviceId,
+            label: d.label || `Microphone ${i + 1}`,
+          }))
+        setAudioDevices(inputs)
+      })
+      .catch(() => { /* permission denied — leave list empty */ })
+
     return () => {
       unsubProgress()
       unsubComplete()
@@ -65,13 +89,18 @@ export default function Settings({ onClose, onFolderChange }: Props) {
     await window.doty.triggerScan()
   }
 
+  function handleMicChange(deviceId: string) {
+    setSelectedMic(deviceId)
+    onMicChange(deviceId || null)
+  }
+
   const scanPercent = scanProgress && scanProgress.total > 0
     ? Math.round((scanProgress.done / scanProgress.total) * 100)
     : 0
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-panel border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl">
+      <div className="bg-panel border border-border rounded-2xl w-full max-w-md p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-base font-semibold">Settings</h2>
           <button
@@ -82,6 +111,31 @@ export default function Settings({ onClose, onFolderChange }: Props) {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
+
+        {/* Microphone */}
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
+            Microphone
+          </label>
+          {audioDevices.length === 0 ? (
+            <div className="bg-surface border border-border rounded-lg px-3 py-2 text-sm text-gray-500">
+              No microphones found or permission denied
+            </div>
+          ) : (
+            <select
+              value={selectedMic}
+              onChange={(e) => handleMicChange(e.target.value)}
+              className="w-full bg-surface border border-border rounded-lg px-3 py-2 text-sm text-gray-300 focus:outline-none focus:border-accent transition-colors"
+            >
+              <option value="">System default</option>
+              {audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         {/* Music folder */}

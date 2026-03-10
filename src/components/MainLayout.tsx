@@ -4,13 +4,18 @@ import Soundboard from './Soundboard'
 import Settings from './Settings'
 import { useRecorder } from '../hooks/useRecorder'
 
+const MIC_STORAGE_KEY = 'doty:micDeviceId'
+
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
-  const { start, stop } = useRecorder()
+  const [micDeviceId, setMicDeviceId] = useState<string | undefined>(
+    () => localStorage.getItem(MIC_STORAGE_KEY) ?? undefined
+  )
+  const { start, stop } = useRecorder(micDeviceId)
 
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
@@ -111,6 +116,12 @@ export default function MainLayout() {
         <Settings
           onClose={() => setShowSettings(false)}
           onFolderChange={setMusicFolder}
+          onMicChange={(id) => {
+            if (id) localStorage.setItem(MIC_STORAGE_KEY, id)
+            else localStorage.removeItem(MIC_STORAGE_KEY)
+            setMicDeviceId(id ?? undefined)
+          }}
+          micDeviceId={micDeviceId}
         />
       )}
     </div>
