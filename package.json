@@ -2,7 +2,6 @@
   "name": "doty",
   "version": "1.0.0",
   "description": "Continuous STT + AI music recommender",
-  "type": "module",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -11,7 +10,8 @@
     "start": "electron .",
     "rebuild": "electron-rebuild --only sherpa-onnx-node",
     "postinstall": "npm run rebuild",
-    "dist": "npm run build && electron-builder --mac dmg"
+    "dist": "npm run build && electron-builder --mac dmg",
+    "pack": "electron-builder --mac dmg"
   },
   "build": {
     "appId": "com.codeandiam.doty",
