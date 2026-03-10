@@ -20,7 +20,7 @@ export function useRecorder() {
     contextRef.current = ctx
 
     // Load worklet from public URL (Vite copies it to /assets)
-    await ctx.audioWorklet.addModule('/pcm-capture.worklet.js')
+    await ctx.audioWorklet.addModule('./pcm-capture.worklet.js')
 
     const source = ctx.createMediaStreamSource(stream)
     sourceRef.current = source
