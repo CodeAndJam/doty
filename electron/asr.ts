@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { Worker } from 'worker_threads'
-import { MODEL_DIR, VAD_MODEL_PATH } from './model-paths'
+import { MODEL_DIR, VAD_MODEL_PATH, DENOISER_MODEL_PATH, PUNCT_MODEL_PATH } from './model-paths'
 import { store } from './store'
 import fs from 'fs'
 
@@ -24,6 +24,8 @@ function getWorker(): Worker {
       modelDir: MODEL_DIR,
       vadModelPath: VAD_MODEL_PATH,
       hotwordsFile: resolveHotwordsFile(),
+      denoiserModelPath: DENOISER_MODEL_PATH,
+      punctModelPath: PUNCT_MODEL_PATH,
     },
   })
 

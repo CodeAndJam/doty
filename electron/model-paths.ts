@@ -12,6 +12,17 @@ export const VAD_MODEL_PATH = join(app.getPath('home'), '.doty', 'models', 'sile
 export const VAD_MODEL_URL =
   'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx'
 
+// GTCRN speech denoiser: ~/.doty/models/gtcrn_simple.onnx (~48K params, ultra-lightweight)
+export const DENOISER_MODEL_PATH = join(app.getPath('home'), '.doty', 'models', 'gtcrn_simple.onnx')
+export const DENOISER_MODEL_URL =
+  'https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx'
+
+// CT-Transformer punctuation model dir: ~/.doty/models/punct-ct-transformer/
+export const PUNCT_MODEL_DIR = join(app.getPath('home'), '.doty', 'models', 'punct-ct-transformer')
+export const PUNCT_MODEL_PATH = join(PUNCT_MODEL_DIR, 'model.onnx')
+export const PUNCT_MODEL_URL =
+  'https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2'
+
 export function isModelReady(): boolean {
   return (
     fs.existsSync(join(MODEL_DIR, 'encoder.int8.onnx')) &&
@@ -23,6 +34,14 @@ export function isModelReady(): boolean {
 
 export function isVadReady(): boolean {
   return fs.existsSync(VAD_MODEL_PATH)
+}
+
+export function isDenoiserReady(): boolean {
+  return fs.existsSync(DENOISER_MODEL_PATH)
+}
+
+export function isPunctReady(): boolean {
+  return fs.existsSync(PUNCT_MODEL_PATH)
 }
 
 /** Default hotwords file path: ~/.doty/hotwords.txt */
