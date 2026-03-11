@@ -75,7 +75,7 @@ parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: Arr
       const texts: string[] = []
 
       while (!vad.isEmpty()) {
-        const segment = vad.front()
+        const segment = vad.front(false)
         vad.pop()
         const text = transcribeSegment(segment.samples, sampleRate)
         if (text) texts.push(text)
