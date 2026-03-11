@@ -2,19 +2,12 @@ import { useState, useEffect, useRef } from 'react'
 import Transcript from './Transcript'
 import Soundboard from './Soundboard'
 import Settings from './Settings'
+import { GearIcon, EyeIcon, EyeOffIcon } from './Icons'
 import { useRecorder } from '../hooks/useRecorder'
 import { useQwen } from '../hooks/useQwen'
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
 const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
-
-function GearIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <svg className={className} style={style} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 15.5A3.5 3.5 0 018.5 12 3.5 3.5 0 0112 8.5a3.5 3.5 0 013.5 3.5 3.5 3.5 0 01-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.74-.07-1.08l2.32-1.82c.21-.16.27-.46.13-.7l-2.2-3.82c-.13-.24-.42-.32-.66-.24l-2.74 1.1c-.57-.44-1.18-.8-1.86-1.08L14.5 2.42c-.04-.26-.27-.42-.5-.42h-4c-.23 0-.46.16-.5.42L9.13 5.36C8.45 5.64 7.84 6 7.27 6.44L4.53 5.34c-.24-.08-.53 0-.66.24L1.67 9.4c-.14.24-.08.54.13.7l2.32 1.82c-.04.34-.07.69-.07 1.08s.03.74.07 1.08L1.8 15.9c-.21.16-.27.46-.13.7l2.2 3.82c.13.24.42.32.66.24l2.74-1.1c.57.44 1.18.8 1.86 1.08l.37 2.94c.04.26.27.42.5.42h4c.23 0 .46-.16.5-.42l.37-2.94c.68-.28 1.29-.64 1.86-1.08l2.74 1.1c.24.08.53 0 .66-.24l2.2-3.82c.14-.24.08-.54-.13-.7l-2.32-1.82z" />
-    </svg>
-  )
-}
 
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
@@ -29,16 +22,57 @@ export default function MainLayout() {
     () => localStorage.getItem(SPEAKER_STORAGE_KEY) ?? undefined
   )
   const [dmPrompt, setDmPrompt] = useState('')
-  const [dmPending, setDmPending] = useState(false)
+  const [rerankerCached, setRerankerCached] = useState<boolean | null>(null)
+  const [recommendCount, setRecommendCount] = useState(5)
+  const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const recommendCountRef = useRef(recommendCount)
   const { start, stop } = useRecorder(micDeviceId)
-  const { recommend, modelStatus } = useQwen()
+  const { recommend, modelStatus, downloadProgress } = useQwen()
+  const recommendRef = useRef(recommend)
+
+  // Keep refs in sync with latest values
+  useEffect(() => { recommendCountRef.current = recommendCount }, [recommendCount])
+  useEffect(() => { recommendRef.current = recommend }, [recommend])
+
+  // Load recommendation count from settings on mount
+  useEffect(() => {
+    window.doty.getRecommendationCount().then(setRecommendCount)
+  }, [])
+
+  // Check if reranker model is already cached on mount
+  useEffect(() => {
+    window.doty.rerankerStatus().then(({ cached }) => setRerankerCached(cached))
+  }, [])
+
+  // Once model is ready, mark as cached so the banner doesn't reappear
+  useEffect(() => {
+    if (modelStatus === 'ready') setRerankerCached(true)
+  }, [modelStatus])
+
+  const showRerankerDownload = rerankerCached === false && modelStatus === 'loading'
 
   async function runRecommendation() {
     const files = await window.doty.listMusic()
     if (files.length === 0) return
-    const results = await recommend(transcriptBufferRef.current, files)
+    // Use only the most recent transcript context for relevance
+    const recentTranscript = transcriptBufferRef.current.slice(-500).trim()
+    const results = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
+    setRecommendations(results)
+  }
+
+  async function runDmRecommendation(prompt: string) {
+    const files = await window.doty.listMusic()
+    if (files.length === 0) return
+    // DM input takes priority — put it first and repeat it for emphasis.
+    // Transcript provides secondary context (truncated to recent only).
+    const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
+    const parts = [prompt, prompt]  // repeat DM intent for weight
+    if (recentTranscript) parts.push(recentTranscript)
+    const combined = parts.join('\n')
+    const results = await recommendRef.current(combined, files, recommendCountRef.current)
     setRecommendations(results)
   }
 
@@ -47,7 +81,7 @@ export default function MainLayout() {
 
     const unsubTranscript = window.doty.onTranscript((text) => {
       setTranscripts((prev) => [...prev, text])
-      transcriptBufferRef.current = (transcriptBufferRef.current + ' ' + text).slice(-2000)
+      transcriptBufferRef.current = (transcriptBufferRef.current + ' ' + text).slice(-800)
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
@@ -66,20 +100,15 @@ export default function MainLayout() {
       unsubTranscript()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
     }
   }, [])
 
-  async function submitDmPrompt() {
-    const text = dmPrompt.trim()
-    if (!text || dmPending) return
-    setDmPending(true)
-    try {
-      const files = await window.doty.listMusic()
-      const combined = [transcriptBufferRef.current, text].filter(Boolean).join('\n\nDM note: ')
-      const results = await recommend(combined, files)
-      setRecommendations(results)
-    } finally {
-      setDmPending(false)
+  function handleDmChange(text: string) {
+    setDmPrompt(text)
+    if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
+    if (text.trim()) {
+      dmDebounceRef.current = setTimeout(() => runDmRecommendation(text.trim()), 500)
     }
   }
 
@@ -122,12 +151,6 @@ export default function MainLayout() {
             style={{ color: recording ? '#ef4444' : '#4a8a6a', fontSize: '16px' }}>
             {recording ? 'Transcribing' : 'Standby'}
           </span>
-          {modelStatus === 'loading' && (
-            <span className="flex items-center gap-1 ml-2" style={{ color: '#6b4e15', fontSize: '11px', letterSpacing: '0.08em' }}>
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#6b4e15' }} />
-              loading model…
-            </span>
-          )}
         </div>
 
         {/* Title */}
@@ -164,8 +187,32 @@ export default function MainLayout() {
       {/* Main content */}
       <div className="flex flex-1 gap-4 px-6 pb-6 overflow-hidden">
         {/* Left: Transcript + Record button */}
-        <div className="flex flex-col w-72 shrink-0 gap-3">
-          <Transcript lines={transcripts} recording={recording} />
+        <div className={`flex flex-col shrink-0 gap-3 ${showTranscript ? 'w-72' : 'w-auto'}`}>
+          {/* Transcript toggle + panel */}
+          {showTranscript ? (
+            <>
+              <div className="flex items-center justify-between shrink-0">
+                <button
+                  onClick={() => setShowTranscript(false)}
+                  className="p-1 opacity-50 hover:opacity-100 transition-opacity"
+                  title="Hide transcript"
+                  style={{ color: '#6b4e15' }}
+                >
+                  <EyeOffIcon />
+                </button>
+              </div>
+              <Transcript lines={transcripts} recording={recording} />
+            </>
+          ) : (
+            <button
+              onClick={() => setShowTranscript(true)}
+              className="p-2 opacity-50 hover:opacity-100 transition-opacity self-start"
+              title="Show transcript"
+              style={{ color: '#6b4e15', border: '1px solid #2e2416' }}
+            >
+              <EyeIcon />
+            </button>
+          )}
           <button
             onClick={toggleRecording}
             className="relative flex items-center justify-center gap-2.5 py-3 text-sm transition-all overflow-hidden"
@@ -209,42 +256,22 @@ export default function MainLayout() {
           </div>
 
           {/* DM chat input */}
-          <div className="shrink-0 flex gap-2" style={{ borderTop: '1px solid #2e2416', paddingTop: '12px' }}>
+          <div className="shrink-0" style={{ borderTop: '1px solid #2e2416', paddingTop: '12px' }}>
             <input
               type="text"
               data-testid="dm-input"
               value={dmPrompt}
-              onChange={(e) => setDmPrompt(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') submitDmPrompt() }}
+              onChange={(e) => handleDmChange(e.target.value)}
               placeholder="Describe the mood or scene…"
-              disabled={dmPending}
-              className="flex-1 bg-transparent outline-none text-sm"
+              className="flex-1 bg-transparent outline-none text-sm w-full"
               style={{
                 fontFamily: "'Crimson Text', serif",
                 fontSize: '15px',
                 color: '#c8922a',
                 border: '1px solid #2e2416',
                 padding: '8px 12px',
-                opacity: dmPending ? 0.5 : 1,
               }}
             />
-            <button
-              onClick={submitDmPrompt}
-              disabled={dmPending || !dmPrompt.trim()}
-              style={{
-                fontFamily: "'Cinzel', serif",
-                fontSize: '13px',
-                letterSpacing: '0.1em',
-                color: dmPending || !dmPrompt.trim() ? '#3a2e1a' : '#c8922a',
-                border: '1px solid #2e2416',
-                padding: '8px 14px',
-                background: 'transparent',
-                cursor: dmPending || !dmPrompt.trim() ? 'default' : 'pointer',
-                transition: 'color 0.2s',
-              }}
-            >
-              {dmPending ? '…' : 'Attune'}
-            </button>
           </div>
         </div>
       </div>
@@ -266,7 +293,71 @@ export default function MainLayout() {
           }}
           micDeviceId={micDeviceId}
           speakerDeviceId={speakerDeviceId}
+          qwenStatus={modelStatus}
+          recommendCount={recommendCount}
+          onRecommendCountChange={(count) => {
+            setRecommendCount(count)
+            window.doty.setRecommendationCount(count)
+          }}
         />
+      )}
+
+      {/* Reranker model download overlay */}
+      {showRerankerDownload && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}>
+          <div className="max-w-md w-full mx-8" style={{
+            background: 'linear-gradient(160deg, #0f0d09, #080705)',
+            border: '1px solid #2e2416',
+            boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
+            padding: '28px',
+          }}>
+            {/* Corner ornaments */}
+            <div className="absolute top-0 left-0 w-4 h-4" style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }} />
+            <div className="absolute top-0 right-0 w-4 h-4" style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }} />
+            <div className="absolute bottom-0 left-0 w-4 h-4" style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }} />
+            <div className="absolute bottom-0 right-0 w-4 h-4" style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }} />
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 flex items-center justify-center" style={{
+                background: 'rgba(200,146,42,0.1)',
+                border: '1px solid rgba(200,146,42,0.2)',
+              }}>
+                <svg className="w-5 h-5" style={{ color: '#c8922a' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                    d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <div>
+                <h2 style={{ fontFamily: "'Cinzel', serif", fontSize: '15px', letterSpacing: '0.15em', color: '#c8922a' }}>
+                  Summoning Reranker
+                </h2>
+                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", marginTop: '2px' }}>
+                  MiniLM-L-6-v2 Reranker (~80 MB) — first time only
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
+                <div style={{
+                  height: '100%',
+                  width: `${downloadProgress?.progress ?? 0}%`,
+                  background: '#c8922a',
+                  boxShadow: '0 0 6px rgba(200,146,42,0.6)',
+                  transition: 'width 0.3s',
+                }} />
+              </div>
+              <div className="flex justify-between mt-1.5" style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                <span className="truncate max-w-[70%]">{downloadProgress?.file ?? 'Preparing...'}</span>
+                <span>{downloadProgress?.progress ? `${downloadProgress.progress.toFixed(0)}%` : ''}</span>
+              </div>
+            </div>
+
+            <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}>
+              This model enables intelligent music recommendations. It downloads once and runs entirely on your machine.
+            </p>
+          </div>
+        </div>
       )}
     </div>
   )
