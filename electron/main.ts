@@ -2,14 +2,101 @@ import { app, BrowserWindow, ipcMain, protocol, dialog, net } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { store } from './store'
-import { isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR, VAD_MODEL_URL, VAD_MODEL_PATH, isVadReady, DEFAULT_HOTWORDS_PATH } from './model-paths'
-import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer } from './asr'
+import {
+  isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR,
+  VAD_MODEL_URL, VAD_MODEL_PATH, isVadReady,
+  DENOISER_MODEL_URL, DENOISER_MODEL_PATH, isDenoiserReady,
+  PUNCT_MODEL_URL, PUNCT_MODEL_DIR, isPunctReady,
+  DEFAULT_HOTWORDS_PATH,
+} from './model-paths'
+import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, setOnFlushText } from './asr'
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb } from './database'
 import { migrateFromJson } from './metadata-cache'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
+
+// ── Download helper ───────────────────────────────────────────────────────────
+/** Download a file from a URL (follows redirects). Ensures parent dir exists. */
+function downloadFile(url: string, destPath: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(join(destPath, '..'), { recursive: true })
+    const file = fs.createWriteStream(destPath)
+    const get = (u: string) => {
+      https.get(u, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          return get(res.headers.location!)
+        }
+        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
+        res.pipe(file)
+        file.on('finish', () => file.close(() => resolve()))
+        res.on('error', reject)
+      }).on('error', reject)
+    }
+    get(url)
+  })
+}
+
+/** Download a tar.bz2 archive, extract it, and optionally rename the extracted dir. */
+async function downloadAndExtractTarBz2(url: string, destDir: string, extractedName?: string, finalDir?: string): Promise<void> {
+  const tarPath = join(destDir, 'download.tar.bz2')
+  fs.mkdirSync(destDir, { recursive: true })
+  await downloadFile(url, tarPath)
+  await new Promise<void>((resolve, reject) => {
+    exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
+      if (err) return reject(err)
+      // Rename extracted directory if needed
+      if (extractedName && finalDir) {
+        const extracted = join(destDir, extractedName)
+        if (fs.existsSync(extracted) && extracted !== finalDir) {
+          fs.renameSync(extracted, finalDir)
+        }
+      }
+      try { fs.unlinkSync(tarPath) } catch { /* ignore */ }
+      resolve()
+    })
+  })
+}
+
+/** Download all auxiliary STT models (VAD, denoiser, punctuation) if not present. Non-fatal. */
+async function downloadAuxModels(): Promise<void> {
+  // Silero VAD (~2MB)
+  if (!isVadReady()) {
+    try {
+      await downloadFile(VAD_MODEL_URL, VAD_MODEL_PATH)
+      console.log('[main] Silero VAD model downloaded')
+    } catch (e) {
+      console.error('[main] VAD download failed (non-fatal):', e)
+    }
+  }
+
+  // GTCRN speech denoiser (~200KB)
+  if (!isDenoiserReady()) {
+    try {
+      await downloadFile(DENOISER_MODEL_URL, DENOISER_MODEL_PATH)
+      console.log('[main] GTCRN denoiser model downloaded')
+    } catch (e) {
+      console.error('[main] Denoiser download failed (non-fatal):', e)
+    }
+  }
+
+  // CT-Transformer punctuation model (~100MB tar.bz2)
+  if (!isPunctReady()) {
+    try {
+      const modelsDir = join(PUNCT_MODEL_DIR, '..')
+      await downloadAndExtractTarBz2(
+        PUNCT_MODEL_URL,
+        modelsDir,
+        'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12',
+        PUNCT_MODEL_DIR,
+      )
+      console.log('[main] CT-Transformer punctuation model downloaded')
+    } catch (e) {
+      console.error('[main] Punctuation model download failed (non-fatal):', e)
+    }
+  }
+}
 
 // Register app:// as a privileged scheme BEFORE app is ready.
 // This makes the renderer a secure context (like https://) so the Cache API
@@ -111,6 +198,14 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Set dock icon in dev mode (in production it comes from the .app bundle)
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = join(__dirname, '../../build/icon.png')
+    if (fs.existsSync(iconPath)) {
+      app.dock.setIcon(iconPath)
+    }
+  }
+
   // Initialize SQLite database and migrate legacy JSON cache
   getDb()
   migrateFromJson()
@@ -123,33 +218,19 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   if (ready) {
-    // Download Silero VAD model if not already present (small, ~2MB)
-    if (!isVadReady()) {
-      try {
-        await new Promise<void>((resolve, reject) => {
-          fs.mkdirSync(join(VAD_MODEL_PATH, '..'), { recursive: true })
-          const file = fs.createWriteStream(VAD_MODEL_PATH)
-          const get = (url: string) => {
-            https.get(url, (res) => {
-              if (res.statusCode === 301 || res.statusCode === 302) {
-                return get(res.headers.location!)
-              }
-              if (res.statusCode !== 200) return reject(new Error(`VAD HTTP ${res.statusCode}`))
-              res.pipe(file)
-              file.on('finish', () => file.close(() => resolve()))
-              res.on('error', reject)
-            }).on('error', reject)
-          }
-          get(VAD_MODEL_URL)
-        })
-        console.log('[main] Silero VAD model downloaded on startup')
-      } catch (e) {
-        console.error('[main] VAD download failed (non-fatal):', e)
-      }
-    }
+    // Download auxiliary STT models (VAD, denoiser, punctuation) if not present
+    await downloadAuxModels()
 
     setTimeout(() => {
-      try { initRecognizer() } catch (e) { console.error('ASR init error:', e) }
+      try {
+        initRecognizer()
+        // Forward VAD flush text to renderer (sentence tails after silence)
+        setOnFlushText((text) => {
+          mainWindow?.webContents.send('stt:transcript', text)
+          const file = getSessionTranscriptFile()
+          if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+        })
+      } catch (e) { console.error('ASR init error:', e) }
     }, 2000)
   }
 
@@ -379,31 +460,16 @@ ipcMain.handle('model:download', async () => {
   })
 
   initRecognizer()
+  // Forward VAD flush text to renderer (sentence tails after silence)
+  setOnFlushText((text) => {
+    mainWindow?.webContents.send('stt:transcript', text)
+    const file = getSessionTranscriptFile()
+    if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+  })
   mainWindow?.webContents.send('model:status', { ready: true })
 
-  // Download Silero VAD model if not already present
-  if (!isVadReady()) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const file = fs.createWriteStream(VAD_MODEL_PATH)
-        const get = (url: string) => {
-          https.get(url, (res) => {
-            if (res.statusCode === 301 || res.statusCode === 302) {
-              return get(res.headers.location!)
-            }
-            if (res.statusCode !== 200) return reject(new Error(`VAD HTTP ${res.statusCode}`))
-            res.pipe(file)
-            file.on('finish', () => file.close(() => resolve()))
-            res.on('error', reject)
-          }).on('error', reject)
-        }
-        get(VAD_MODEL_URL)
-      })
-      console.log('[main] Silero VAD model downloaded')
-    } catch (e) {
-      console.error('[main] VAD download failed (non-fatal):', e)
-    }
-  }
+  // Download auxiliary STT models (VAD, denoiser, punctuation)
+  await downloadAuxModels()
 
   return { ok: true }
 })

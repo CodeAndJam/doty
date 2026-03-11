@@ -1,6 +1,6 @@
 import { join } from 'path'
 import { Worker } from 'worker_threads'
-import { MODEL_DIR, VAD_MODEL_PATH } from './model-paths'
+import { MODEL_DIR, VAD_MODEL_PATH, DENOISER_MODEL_PATH, PUNCT_MODEL_PATH } from './model-paths'
 import { store } from './store'
 import fs from 'fs'
 
@@ -10,6 +10,12 @@ let worker: Worker | null = null
 let nextId = 0
 const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
+/** Callback for flushed transcript text (VAD silence flush). Set by main process. */
+let onFlushText: ((text: string) => void) | null = null
+
+export function setOnFlushText(cb: (text: string) => void): void {
+  onFlushText = cb
+}
 function resolveHotwordsFile(): string | null {
   const custom = store.get('hotwordsFile', '') as string
   if (custom && fs.existsSync(custom)) return custom
@@ -24,15 +30,23 @@ function getWorker(): Worker {
       modelDir: MODEL_DIR,
       vadModelPath: VAD_MODEL_PATH,
       hotwordsFile: resolveHotwordsFile(),
+      denoiserModelPath: DENOISER_MODEL_PATH,
+      punctModelPath: PUNCT_MODEL_PATH,
     },
   })
 
-  worker.on('message', ({ id, text, error }: { id: number; text?: string; error?: string }) => {
-    const p = pending.get(id)
+  worker.on('message', (msg: { type?: string; id?: number; text?: string; error?: string }) => {
+    // Handle VAD flush messages (no pending promise, forward directly)
+    if (msg.type === 'flush') {
+      if (msg.text && onFlushText) onFlushText(msg.text)
+      return
+    }
+
+    const p = pending.get(msg.id!)
     if (!p) return
-    pending.delete(id)
-    if (error) p.reject(new Error(error))
-    else p.resolve(text ?? '')
+    pending.delete(msg.id!)
+    if (msg.error) p.reject(new Error(msg.error))
+    else p.resolve(msg.text ?? '')
   })
 
   worker.on('error', (e) => {
