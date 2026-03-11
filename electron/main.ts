@@ -202,6 +202,14 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Set dock icon in dev mode (in production it comes from the .app bundle)
+  if (process.platform === 'darwin' && app.dock) {
+    const iconPath = join(__dirname, '../../build/icon.png')
+    if (fs.existsSync(iconPath)) {
+      app.dock.setIcon(iconPath)
+    }
+  }
+
   // Initialize SQLite database and migrate legacy JSON cache
   getDb()
   migrateFromJson()
