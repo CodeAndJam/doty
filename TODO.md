@@ -6,9 +6,11 @@
 - [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
 - [ ] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
 - [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
+- [ ] Test fp16 Parakeet model variant on Apple Silicon (may improve WER by 1-2%)
 
 ## Done
 
+- [x] Improve STT quality: Silero VAD, modelType, blankPenalty, hotwords support
 - [x] Replace `electron-rebuild` with `@electron/rebuild@4.0.3`
 - [x] Update `electron-vite` to v5
 - [x] Remove dead Python sidecar files

@@ -49,6 +49,7 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>(speakerDeviceId ?? '')
   const [showQwenLogs, setShowQwenLogs] = useState(false)
   const [qwenLogs, setQwenLogs] = useState<string[]>([])
+  const [hotwordsFile, setHotwordsFile] = useState('')
   const logEndRef = useRef<HTMLDivElement>(null)
 
   // Subscribe to verbose Qwen worker logs
@@ -72,6 +73,7 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
     })
     window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
+    window.doty.getHotwordsFile().then(setHotwordsFile)
 
     const unsubProgress = window.doty.onScanProgress((p) => {
       setScanProgress(p)
@@ -313,6 +315,52 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '6px', fontFamily: "'Crimson Text', serif" }}>
               Scrolls inscribed automatically
             </p>
+          )}
+        </div>
+
+        {/* Recommendation count */}
+        <div className="mb-5">
+          <Label>Arcane Lexicon (Hotwords)</Label>
+          <p style={{ fontSize: '14px', color: '#3a2e1a', marginBottom: '8px', fontFamily: "'Crimson Text', serif" }}>
+            Add campaign names, spells, and places to improve transcription accuracy
+          </p>
+          <div className="flex gap-2">
+            <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {hotwordsFile || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No lexicon selected</span>}
+            </div>
+            <button onClick={async () => {
+              const picked = await window.doty.pickHotwordsFile()
+              if (picked) setHotwordsFile(picked)
+            }} style={btnStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+              Browse
+            </button>
+          </div>
+          {!hotwordsFile && (
+            <button onClick={async () => {
+              const result = await window.doty.createDefaultHotwords()
+              if (result.ok && result.path) setHotwordsFile(result.path)
+            }} style={{ ...btnStyle, marginTop: '6px', fontSize: '13px', padding: '5px 10px' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+              Create default lexicon
+            </button>
+          )}
+          {hotwordsFile && (
+            <div className="flex items-center gap-2 mt-1.5">
+              <p style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", flex: 1 }}>
+                Beam search enabled with lexicon boosting
+              </p>
+              <button onClick={() => {
+                window.doty.setHotwordsFile('')
+                setHotwordsFile('')
+              }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a2e1a', fontSize: '12px', fontFamily: 'monospace' }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}>
+                clear
+              </button>
+            </div>
           )}
         </div>
 

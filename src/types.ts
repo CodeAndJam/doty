@@ -62,6 +62,12 @@ export interface DotyAPI {
   pickTranscriptFolder: () => Promise<string | null>
   saveTranscript: (text: string) => Promise<{ ok: boolean; file?: string; reason?: string }>
 
+  // Hotwords
+  getHotwordsFile: () => Promise<string>
+  setHotwordsFile: (path: string) => Promise<{ ok: boolean }>
+  pickHotwordsFile: () => Promise<string | null>
+  createDefaultHotwords: () => Promise<{ ok: boolean; path?: string; reason?: string }>
+
   // Scanner
   triggerScan: () => Promise<{ ok: boolean }>
   onScanProgress: (cb: (p: ScanProgress) => void) => () => void

@@ -2,8 +2,8 @@ import { app, BrowserWindow, ipcMain, protocol, dialog, net } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { store } from './store'
-import { isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR } from './model-paths'
-import { initRecognizer, transcribeFloat32, freeRecognizer } from './asr'
+import { isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR, VAD_MODEL_URL, VAD_MODEL_PATH, isVadReady, DEFAULT_HOTWORDS_PATH } from './model-paths'
+import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer } from './asr'
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb } from './database'
 import { migrateFromJson } from './metadata-cache'
@@ -123,6 +123,31 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   if (ready) {
+    // Download Silero VAD model if not already present (small, ~2MB)
+    if (!isVadReady()) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          fs.mkdirSync(join(VAD_MODEL_PATH, '..'), { recursive: true })
+          const file = fs.createWriteStream(VAD_MODEL_PATH)
+          const get = (url: string) => {
+            https.get(url, (res) => {
+              if (res.statusCode === 301 || res.statusCode === 302) {
+                return get(res.headers.location!)
+              }
+              if (res.statusCode !== 200) return reject(new Error(`VAD HTTP ${res.statusCode}`))
+              res.pipe(file)
+              file.on('finish', () => file.close(() => resolve()))
+              res.on('error', reject)
+            }).on('error', reject)
+          }
+          get(VAD_MODEL_URL)
+        })
+        console.log('[main] Silero VAD model downloaded on startup')
+      } catch (e) {
+        console.error('[main] VAD download failed (non-fatal):', e)
+      }
+    }
+
     setTimeout(() => {
       try { initRecognizer() } catch (e) { console.error('ASR init error:', e) }
     }, 2000)
@@ -151,9 +176,9 @@ ipcMain.handle('stt:start', () => {
 })
 ipcMain.handle('stt:stop', () => ({ ok: true }))
 
-// Renderer sends a 5s PCM segment as a Float32Array buffer.
-// Transcription result is sent back via 'stt:transcript' — the renderer
-// accumulates it and triggers recommendations via the Web Worker.
+// Renderer sends 1s PCM segments as Float32Array buffers.
+// The ASR worker uses Silero VAD to detect speech boundaries, then
+// transcribes each speech segment. Results are sent back via 'stt:transcript'.
 ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
   try {
     const samples = new Float32Array(buffer)
@@ -257,6 +282,55 @@ ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {
   return { ok: true }
 })
 
+// ── IPC: Hotwords ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('settings:get-hotwords-file', () => store.get('hotwordsFile', ''))
+
+ipcMain.handle('settings:set-hotwords-file', (_e, filePath: string) => {
+  store.set('hotwordsFile', filePath)
+  // Restart the ASR worker to pick up the new hotwords
+  try { restartRecognizer() } catch (e) { console.error('ASR restart error:', e) }
+  return { ok: true }
+})
+
+ipcMain.handle('settings:pick-hotwords-file', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openFile'],
+    title: 'Select Hotwords File',
+    filters: [{ name: 'Text Files', extensions: ['txt'] }],
+  })
+  if (!result.canceled && result.filePaths[0]) {
+    store.set('hotwordsFile', result.filePaths[0])
+    try { restartRecognizer() } catch (e) { console.error('ASR restart error:', e) }
+    return result.filePaths[0]
+  }
+  return null
+})
+
+ipcMain.handle('settings:create-default-hotwords', () => {
+  const defaultContent = `# Doty Hotwords — one phrase per line
+# Add campaign-specific names, places, spells, etc.
+# Lines starting with # are ignored by sherpa-onnx
+#
+# Examples:
+# Fireball
+# Eldritch Blast
+# Strahd
+# Waterdeep
+# Dungeons and Dragons
+`
+  try {
+    if (!fs.existsSync(DEFAULT_HOTWORDS_PATH)) {
+      fs.mkdirSync(join(DEFAULT_HOTWORDS_PATH, '..'), { recursive: true })
+      fs.writeFileSync(DEFAULT_HOTWORDS_PATH, defaultContent, 'utf-8')
+    }
+    store.set('hotwordsFile', DEFAULT_HOTWORDS_PATH)
+    return { ok: true, path: DEFAULT_HOTWORDS_PATH }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
+})
+
 ipcMain.handle('model:download', async () => {
   fs.mkdirSync(join(MODEL_DIR, '..'), { recursive: true })
   const tarPath = join(MODEL_DIR, '..', 'parakeet-v3-int8.tar.bz2')
@@ -306,5 +380,30 @@ ipcMain.handle('model:download', async () => {
 
   initRecognizer()
   mainWindow?.webContents.send('model:status', { ready: true })
+
+  // Download Silero VAD model if not already present
+  if (!isVadReady()) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const file = fs.createWriteStream(VAD_MODEL_PATH)
+        const get = (url: string) => {
+          https.get(url, (res) => {
+            if (res.statusCode === 301 || res.statusCode === 302) {
+              return get(res.headers.location!)
+            }
+            if (res.statusCode !== 200) return reject(new Error(`VAD HTTP ${res.statusCode}`))
+            res.pipe(file)
+            file.on('finish', () => file.close(() => resolve()))
+            res.on('error', reject)
+          }).on('error', reject)
+        }
+        get(VAD_MODEL_URL)
+      })
+      console.log('[main] Silero VAD model downloaded')
+    } catch (e) {
+      console.error('[main] VAD download failed (non-fatal):', e)
+    }
+  }
+
   return { ok: true }
 })
