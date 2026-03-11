@@ -48,6 +48,12 @@ contextBridge.exposeInMainWorld('doty', {
   pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),
   saveTranscript: (text: string) => ipcRenderer.invoke('transcript:save', text),
 
+  // Hotwords
+  getHotwordsFile: () => ipcRenderer.invoke('settings:get-hotwords-file'),
+  setHotwordsFile: (path: string) => ipcRenderer.invoke('settings:set-hotwords-file', path),
+  pickHotwordsFile: () => ipcRenderer.invoke('settings:pick-hotwords-file'),
+  createDefaultHotwords: () => ipcRenderer.invoke('settings:create-default-hotwords'),
+
   // Qwen recommendation model status
   onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, s: { status: 'loading' | 'ready' }) => cb(s)
