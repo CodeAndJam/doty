@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/CodeAndJam/doty/compare/v1.1.0...v1.2.0) (2026-03-11)
+
+
+### Features
+
+* **asr:** improve STT quality with denoiser, punctuation, and VAD tuning ([#15](https://github.com/CodeAndJam/doty/issues/15)) ([0284f4c](https://github.com/CodeAndJam/doty/commit/0284f4cd383d2c2af57d32d5254080ad17035930))
+* **asr:** improve STT quality with Silero VAD, hotwords, and tuned config ([#13](https://github.com/CodeAndJam/doty/issues/13)) ([dd9201c](https://github.com/CodeAndJam/doty/commit/dd9201ccb4d813e90f9d4d981cc699c9a0f9c340))
+
 ## 1.0.0 (2026-03-11)
 
 
