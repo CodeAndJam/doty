@@ -1,46 +1,52 @@
 /**
  * qwen-child.ts
  * Runs as an Electron utilityProcess child.
+ * Uses ms-marco-MiniLM-L-6-v2 for cross-encoder scoring.
  * Must use process.parentPort (not process.send) for IPC.
  */
 import { join } from 'path'
 
 const { appPath, homePath } = process.env as { appPath: string; homePath: string }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let generator: any = null
+const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
-async function loadGenerator() {
-  if (generator) return generator
-  console.log('[qwen-child] Loading recommendation model...')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let tokenizer: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let model: any = null
+
+async function loadReranker() {
+  if (tokenizer && model) return
+  console.log('[reranker-child] Loading recommendation model...')
   process.parentPort.postMessage({ type: 'status', status: 'loading' })
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { pipeline, env } = require(
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(
     join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
   )
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
-  generator = await pipeline('text-generation', 'onnx-community/Qwen3-0.6B-ONNX', {
-    dtype: 'q4',
-    device: 'cpu',
-  })
-  console.log('[qwen-child] Model ready')
+  ;[tokenizer, model] = await Promise.all([
+    AutoTokenizer.from_pretrained(MODEL_ID),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+  ])
+  console.log('[reranker-child] Model ready')
   process.parentPort.postMessage({ type: 'status', status: 'ready' })
-  return generator
 }
 
-// utilityProcess receives messages via process.parentPort, not process.on('message')
 process.parentPort.on('message', async (e: Electron.MessageEvent) => {
-  const { id, messages, options } = e.data as { id: number; messages: unknown[]; options: unknown }
-  console.log(`[qwen-child] received inference request id=${id}`)
+  const { id, pairs } = e.data as { id: number; pairs: Array<{ text: string; text_pair: string }> }
+  console.log(`[reranker-child] received rerank request id=${id}`)
   try {
-    const gen = await loadGenerator()
-    console.log(`[qwen-child] running inference id=${id}`)
-    const output = await gen(messages, options)
-    console.log(`[qwen-child] inference done id=${id}`)
-    process.parentPort.postMessage({ id, output })
+    await loadReranker()
+    const queries = pairs.map(p => p.text)
+    const passages = pairs.map(p => p.text_pair)
+    const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
+    const { logits } = await model(inputs)
+    const scores: number[] = Array.from(logits.data as Float32Array)
+    console.log(`[reranker-child] rerank done id=${id}`)
+    process.parentPort.postMessage({ id, output: scores })
   } catch (err) {
-    console.error(`[qwen-child] inference error id=${id}:`, err)
+    console.error(`[reranker-child] rerank error id=${id}:`, err)
     process.parentPort.postMessage({ id, error: String(err) })
   }
 })

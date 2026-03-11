@@ -2,19 +2,18 @@ import { join } from 'path'
 import type { TrackMetadata } from './analyzer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-type PipelineFn = (...args: any[]) => Promise<any>
+type ScoreFn = (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
 
-// ── In-process inference (HuggingFace official pattern) ──────────────────────
-// The official transformers.js Electron example runs the model directly in the
-// main process via ipcMain.handle — no worker, no child process.
-// With onnxruntime-node ≥1.22 the SIGTRAP on Apple Silicon is fixed, so we
-// follow the same pattern here.
+// ── In-process reranker inference (HuggingFace official pattern) ─────────────
+// Uses ms-marco-MiniLM-L-6-v2 as a cross-encoder to score (transcript, track)
+// pairs for relevance. Uses AutoTokenizer + AutoModelForSequenceClassification
+// directly to extract raw logits — the text-classification pipeline applies
+// softmax which always returns 1.0 for single-label cross-encoders.
 
-const MODEL_ID = 'onnx-community/Qwen3-0.6B-ONNX'
+const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
 let _onStatus: ((status: 'loading' | 'ready') => void) | null = null
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _generatorPromise: Promise<any> | null = null
+let _rerankerPromise: Promise<ScoreFn> | null = null
 
 /** Register a callback to receive model load status updates. */
 export function onQwenStatus(cb: (status: 'loading' | 'ready') => void) {
@@ -24,16 +23,11 @@ export function onQwenStatus(cb: (status: 'loading' | 'ready') => void) {
 /** No-op — kept for API compatibility with main.ts */
 export function killQwenChild() { /* nothing to kill */ }
 
-function getGenerator() {
-  if (_generatorPromise) return _generatorPromise
+function getReranker(): Promise<ScoreFn> {
+  if (_rerankerPromise) return _rerankerPromise
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { app } = require('electron')
-  // app.getAppPath() returns the directory containing package.json.
-  // In dev/built mode that is the project root; in packaged .app it is
-  // the asar root. Either way node_modules sits alongside it.
-  // However electron-vite sets appPath to out/main in some modes, so
-  // walk up until we find node_modules.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const fs = require('fs')
   let appPath = app.getAppPath()
@@ -43,116 +37,120 @@ function getGenerator() {
   }
   const homePath = app.getPath('home')
   const transformersPath = join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
-  console.log('[qwen] resolved appPath:', appPath)
+  console.log('[reranker] resolved appPath:', appPath)
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { pipeline, env } = require(transformersPath)
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(transformersPath)
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
-  console.log('[qwen] loading model in main process...')
+  console.log('[reranker] loading model in main process...')
   _onStatus?.('loading')
 
-  _generatorPromise = pipeline('text-generation', MODEL_ID, { dtype: 'q4', device: 'cpu' })
-    .then((gen: unknown) => {
-      console.log('[qwen] model ready')
+  _rerankerPromise = Promise.all([
+    AutoTokenizer.from_pretrained(MODEL_ID),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+  ]).then(([tokenizer, model]: [unknown, unknown]) => {
+      console.log('[reranker] model ready')
       _onStatus?.('ready')
-      return gen
+      // Return a scoring function that batches all pairs in one call
+      const scoreFn: ScoreFn = async (pairs) => {
+        const queries = pairs.map(p => p.text)
+        const passages = pairs.map(p => p.text_pair)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inputs = (tokenizer as any)(queries, { text_pair: passages, padding: true, truncation: true })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { logits } = await (model as any)(inputs)
+        return Array.from(logits.data as Float32Array)
+      }
+      return scoreFn
     })
     .catch((err: unknown) => {
-      console.error('[qwen] model load failed:', err)
-      _generatorPromise = null
+      console.error('[reranker] model load failed:', err)
+      _rerankerPromise = null
       throw err
     })
 
-  return _generatorPromise
+  return _rerankerPromise
 }
 
-function formatTrack(filename: string, meta: TrackMetadata | null, index: number): string {
-  if (!meta) return `${index + 1}. ${filename}`
-  const key = meta.scale === 'minor' ? `${meta.key}m` : meta.key
-  return `${index + 1}. ${filename} — BPM: ${meta.bpm}, Key: ${key}, Danceability: ${meta.danceability}, Energy: ${meta.energy}`
+function describeTrack(filename: string, meta: TrackMetadata | null): string {
+  const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  const parts = [name]
+  if (meta) {
+    if (meta.artist) parts.push(`by ${meta.artist}`)
+    if (meta.genre) parts.push(`genre: ${meta.genre}`)
+    if (meta.bpm) parts.push(`${meta.bpm} BPM`)
+    if (meta.energy) parts.push(`energy: ${meta.energy}`)
+    if (meta.key && meta.key !== 'Unknown') {
+      const keyStr = meta.scale === 'minor' ? `${meta.key}m` : meta.key
+      parts.push(`key: ${keyStr}`)
+    }
+    if (meta.danceability) parts.push(`danceability: ${meta.danceability}`)
+  }
+  return parts.join(', ')
 }
 
 export class QwenManager {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private generator: any = null
-  private readonly pipelineFn: PipelineFn | null
+  private scoreFn: ScoreFn | null = null
+  private readonly externalScoreFn: ScoreFn | null
 
-  /** Pass a mock pipelineFn in tests to avoid loading Electron/transformers. */
-  constructor(pipelineFn?: PipelineFn) {
-    this.pipelineFn = pipelineFn ?? null
+  /** Pass a mock ScoreFn in tests to avoid loading Electron/transformers. */
+  constructor(scoreFn?: ScoreFn) {
+    this.externalScoreFn = scoreFn ?? null
   }
 
-  private async loadGenerator() {
-    if (this.generator) return this.generator
-    if (!this.pipelineFn) throw new Error('loadGenerator called without pipelineFn')
-    console.log('[qwen] Loading recommendation model...')
-    this.generator = await this.pipelineFn('text-generation', MODEL_ID, { dtype: 'q4', device: 'cpu' })
-    console.log('[qwen] Model ready')
-    return this.generator
+  private async getScorer(): Promise<ScoreFn> {
+    if (this.scoreFn) return this.scoreFn
+    if (this.externalScoreFn) {
+      this.scoreFn = this.externalScoreFn
+      return this.scoreFn
+    }
+    this.scoreFn = await getReranker()
+    return this.scoreFn
   }
 
   async recommend(
     transcript: string,
     files: string[],
     metadata: Record<string, TrackMetadata> = {},
+    count = 5,
   ): Promise<string[]> {
     if (files.length === 0) return []
 
     try {
-      const messages = [
-        {
-          role: 'system',
-          content:
-            'You are a music mood matcher. Given a conversation transcript and a list of songs with audio features, pick the 5 best matching songs. Return ONLY a valid JSON array of exactly 5 filenames from the provided list. No explanation, no markdown, no code block.',
-        },
-        {
-          role: 'user',
-          content: `Transcript:\n"${transcript.slice(0, 600)}"\n\nSong list:\n${files
-            .slice(0, 100)
-            .map((f, i) => formatTrack(f, metadata[f] ?? null, i))
-            .join('\n')}\n\nReturn a JSON array of 5 filenames.`,
-        },
-      ]
+      const recentTranscript = transcript.slice(-600).trim()
+      if (!recentTranscript) return files.slice(0, count)
 
-      const genOptions = {
-        max_new_tokens: 150,
-        temperature: 0.3,
-        do_sample: true,
-        thinking: false,
+      // Limit to 100 tracks
+      const candidates = files.slice(0, 100)
+
+      // Build (transcript, track_description) pairs
+      const pairs = candidates.map(f => ({
+        text: recentTranscript,
+        text_pair: describeTrack(f, metadata[f] ?? null),
+      }))
+
+      const scorer = await this.getScorer()
+
+      console.log('[reranker] scoring', pairs.length, 'candidates...')
+      const scores = await scorer(pairs)
+      console.log('[reranker] scoring done')
+
+      // Sort by score descending, take top N
+      const scored = candidates.map((file, i) => ({ file, score: scores[i] }))
+      scored.sort((a, b) => b.score - a.score)
+
+      const results = scored.slice(0, count).map(s => s.file)
+      if (results.length > 0) {
+        console.log('[reranker] recommendations:', results)
+        return results
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let output: any
-      if (this.pipelineFn) {
-        // test path — use mock pipeline
-        const gen = await this.loadGenerator()
-        output = await gen(messages, genOptions)
-      } else {
-        // production path — run in main process (HuggingFace official pattern)
-        const gen = await getGenerator()
-        console.log('[qwen] running inference...')
-        output = await gen(messages, genOptions)
-        console.log('[qwen] inference done')
-      }
-
-      const text: string = output?.[0]?.generated_text?.at(-1)?.content ?? ''
-      console.log('[qwen] raw output:', text.slice(0, 500))
-
-      const match = text.match(/\[[\s\S]*\]/)
-      if (!match) {
-        console.log('[qwen] no JSON array found, falling back')
-        return files.slice(0, 5)
-      }
-
-      const parsed: string[] = JSON.parse(match[0])
-      const normalised = parsed.map((f) => f.replace(/^\d+\.\s*/, '').trim())
-      const valid = normalised.filter((f) => files.includes(f)).slice(0, 5)
-      console.log('[qwen] valid recommendations:', valid.length)
-      return valid.length > 0 ? valid : files.slice(0, 5)
+      console.log('[reranker] no scores, falling back')
+      return files.slice(0, count)
     } catch (e) {
-      console.error('[qwen] recommend error:', e)
-      return files.slice(0, 5)
+      console.error('[reranker] recommend error:', e)
+      return files.slice(0, count)
     }
   }
 }

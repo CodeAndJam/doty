@@ -11,13 +11,7 @@
  *   - Danceability as tiebreaker
  */
 
-export interface TrackMeta {
-  bpm: number
-  key: string
-  scale: string
-  danceability: number
-  energy: number
-}
+import type { TrackMeta } from '../types'
 
 interface MoodProfile {
   keywords: string[]
