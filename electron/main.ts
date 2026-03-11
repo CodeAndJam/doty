@@ -9,7 +9,7 @@ import {
   PUNCT_MODEL_URL, PUNCT_MODEL_DIR, isPunctReady,
   DEFAULT_HOTWORDS_PATH,
 } from './model-paths'
-import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer } from './asr'
+import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, setOnFlushText } from './asr'
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb } from './database'
 import { migrateFromJson } from './metadata-cache'
@@ -39,27 +39,23 @@ function downloadFile(url: string, destPath: string): Promise<void> {
 }
 
 /** Download a tar.bz2 archive, extract it, and optionally rename the extracted dir. */
-function downloadAndExtractTarBz2(url: string, destDir: string, extractedName?: string, finalDir?: string): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    const tarPath = join(destDir, 'download.tar.bz2')
-    try {
-      fs.mkdirSync(destDir, { recursive: true })
-      await downloadFile(url, tarPath)
-      exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
-        if (err) return reject(err)
-        // Rename extracted directory if needed
-        if (extractedName && finalDir) {
-          const extracted = join(destDir, extractedName)
-          if (fs.existsSync(extracted) && extracted !== finalDir) {
-            fs.renameSync(extracted, finalDir)
-          }
+async function downloadAndExtractTarBz2(url: string, destDir: string, extractedName?: string, finalDir?: string): Promise<void> {
+  const tarPath = join(destDir, 'download.tar.bz2')
+  fs.mkdirSync(destDir, { recursive: true })
+  await downloadFile(url, tarPath)
+  await new Promise<void>((resolve, reject) => {
+    exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
+      if (err) return reject(err)
+      // Rename extracted directory if needed
+      if (extractedName && finalDir) {
+        const extracted = join(destDir, extractedName)
+        if (fs.existsSync(extracted) && extracted !== finalDir) {
+          fs.renameSync(extracted, finalDir)
         }
-        try { fs.unlinkSync(tarPath) } catch { /* ignore */ }
-        resolve()
-      })
-    } catch (e) {
-      reject(e)
-    }
+      }
+      try { fs.unlinkSync(tarPath) } catch { /* ignore */ }
+      resolve()
+    })
   })
 }
 
@@ -226,7 +222,15 @@ app.whenReady().then(async () => {
     await downloadAuxModels()
 
     setTimeout(() => {
-      try { initRecognizer() } catch (e) { console.error('ASR init error:', e) }
+      try {
+        initRecognizer()
+        // Forward VAD flush text to renderer (sentence tails after silence)
+        setOnFlushText((text) => {
+          mainWindow?.webContents.send('stt:transcript', text)
+          const file = getSessionTranscriptFile()
+          if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+        })
+      } catch (e) { console.error('ASR init error:', e) }
     }, 2000)
   }
 
@@ -456,6 +460,12 @@ ipcMain.handle('model:download', async () => {
   })
 
   initRecognizer()
+  // Forward VAD flush text to renderer (sentence tails after silence)
+  setOnFlushText((text) => {
+    mainWindow?.webContents.send('stt:transcript', text)
+    const file = getSessionTranscriptFile()
+    if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+  })
   mainWindow?.webContents.send('model:status', { ready: true })
 
   // Download auxiliary STT models (VAD, denoiser, punctuation)

@@ -105,7 +105,7 @@ function denoiseSamples(samples: Float32Array): Float32Array {
   if (!denoiser) return samples
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = (denoiser as any).run(samples, SAMPLE_RATE)
+    const result = (denoiser as any).run({ samples, sampleRate: SAMPLE_RATE, enableExternalBuffer: false })
     return result.samples ?? samples
   } catch {
     return samples
@@ -137,7 +137,6 @@ function transcribeSegment(samples: Float32Array, sampleRate: number): string {
 // pending partial speech segment through for transcription.
 const FLUSH_TIMEOUT_MS = 2000
 let flushTimer: ReturnType<typeof setTimeout> | null = null
-let lastMessageId = 0
 
 function scheduleFlush() {
   if (flushTimer) clearTimeout(flushTimer)
@@ -153,7 +152,9 @@ function scheduleFlush() {
         if (text) texts.push(text)
       }
       if (texts.length > 0) {
-        parentPort!.postMessage({ id: lastMessageId, text: texts.join(' '), flushed: true })
+        // Use a separate message type so asr.ts can forward directly to renderer
+        // (the original request's promise was already resolved)
+        parentPort!.postMessage({ type: 'flush', text: texts.join(' ') })
       }
     } catch (e) {
       console.error('[asr-worker] flush error:', e)
@@ -164,7 +165,6 @@ function scheduleFlush() {
 // ── Message handler ───────────────────────────────────────────────────────────
 
 parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: ArrayBuffer; sampleRate: number }) => {
-  lastMessageId = id
   try {
     const samples = new Float32Array(buffer)
 
