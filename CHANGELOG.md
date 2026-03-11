@@ -1,0 +1,41 @@
+# Changelog
+
+## 1.0.0 (2026-03-11)
+
+
+### Features
+
+* Add .gitignore to exclude transcriptions directory from version control ([afd7b1f](https://github.com/CodeAndJam/doty/commit/afd7b1f27c0095ed5a75403dd882cd130d6ba4eb))
+* Add real-time Portuguese speech-to-text transcription using Pipecat and WhisperSTT, with output to file and console. ([3300294](https://github.com/CodeAndJam/doty/commit/33002946b9fea3f80c77f26e83a872c250c6d931))
+* **analyzer:** add essentia.js audio analysis with BPM, key, danceability and energy ([5ca7fbf](https://github.com/CodeAndJam/doty/commit/5ca7fbf081a84d1a538d46a7296fdfaa6c96ed37))
+* **backend:** add configurable recommendation count, chokidar fix, and metadata improvements ([c73d0b2](https://github.com/CodeAndJam/doty/commit/c73d0b25af4ec5a603eff91bbd26b8a70f85111b))
+* Implement continuous speech-to-text functionality with session-based file management and timestamped transcriptions ([664c203](https://github.com/CodeAndJam/doty/commit/664c203ecd25c275b857311f92de0ddeb84b2707))
+* **recommendations:** heuristic keyword+audio-feature ranker as LLM fallback ([6873ec2](https://github.com/CodeAndJam/doty/commit/6873ec2aff32f9dcea41f7228399952af9601ba1))
+* **recommendations:** renderer Web Worker inference with transformers.js v4 WASM ([5760437](https://github.com/CodeAndJam/doty/commit/5760437bb960d2b9ec32b48f62f662d250b2dce3))
+* revamp as Electron app with Parakeet STT and AI music soundboard ([bc10dce](https://github.com/CodeAndJam/doty/commit/bc10dce4ee2b0c87c0401c76655c53cbf5df9cca))
+* **soundboard:** add Browse All panel to search and pin tracks before a session ([7c19d28](https://github.com/CodeAndJam/doty/commit/7c19d28cd779d1ef5f5481cbf4d4be5b6172d8fd))
+* **soundboard:** add speaker selector, improve seek bar, and keyboard shortcuts ([9b23ab9](https://github.com/CodeAndJam/doty/commit/9b23ab947358ff30d698c3e3fb9966214a62e3cf))
+* **soundboard:** revamped UX with persistent player, pinned tracks, and stable suggestions ([238a5ad](https://github.com/CodeAndJam/doty/commit/238a5ad7c4e2c40582ec9536261b1be28af8ca44))
+* **transcripts:** recursive music scan and transcript folder setting ([f33c5ba](https://github.com/CodeAndJam/doty/commit/f33c5bae959bac86fff91c6bccbbc58b1f208379))
+* **ui:** add Cmd+, keyboard shortcut to open Settings ([ccd5797](https://github.com/CodeAndJam/doty/commit/ccd57975cea9e2d5faadf1081e6e991ac390f9b0))
+* **ui:** add settings improvements, DM input, transcript toggle, and reranker download overlay ([4dbdfab](https://github.com/CodeAndJam/doty/commit/4dbdfab2f38b8c02ef088be351090873e8c20e55))
+* **ui:** allow Attune while model loads, use heuristic ranker as instant fallback ([f1dbd9f](https://github.com/CodeAndJam/doty/commit/f1dbd9fcf323a88cb283aa2b5ad1d571a92fecd2))
+
+
+### Bug Fixes
+
+* **analyzer:** pass EssentiaWASM module directly instead of calling as factory ([d706034](https://github.com/CodeAndJam/doty/commit/d7060344fb842dab3fd4e7484b3ed53f43779419))
+* **analyzer:** run essentia in worker_threads to unblock main process, fix audio playback noise ([d582789](https://github.com/CodeAndJam/doty/commit/d582789501fcc5b9159c0741b03ebdd985e601bb))
+* **asr:** switch reranker to AutoTokenizer + raw logits with dtype q4 ([d7dbe18](https://github.com/CodeAndJam/doty/commit/d7dbe1876c6e49e2751a9f2688ec7746b10d92e1))
+* **audio:** fix music:// URL parsing for standard privileged scheme ([c4902e4](https://github.com/CodeAndJam/doty/commit/c4902e41c1735b1c3f5960b86a4f2ead18fee52b))
+* **audio:** register music:// as privileged scheme so audio plays from app:// context ([ff894dc](https://github.com/CodeAndJam/doty/commit/ff894dcef87385060f21e39723315f14bd93dccb))
+* **audio:** remove standard:true from music:// scheme to fix protocol handler ([6452b05](https://github.com/CodeAndJam/doty/commit/6452b05ac6e099fe3ebf797e1fa38b9bc484f126))
+* **build:** remove type:module, fix preload path, add pack script for CI ([4a6158a](https://github.com/CodeAndJam/doty/commit/4a6158acb63bbd53a97c7287214eacfe672c70f4))
+* **main:** correct production renderer path to out/renderer/index.html ([2389181](https://github.com/CodeAndJam/doty/commit/23891810decf96a4859c41a7a7009fc03a41a1c1))
+* **main:** reference preload index.mjs instead of index.js ([b9b6d4e](https://github.com/CodeAndJam/doty/commit/b9b6d4e7aa22958f5c2058d1b2f27ca7816c6178))
+* **recommendations:** move all inference to renderer Web Worker, remove main process qwen ([2f1e3d5](https://github.com/CodeAndJam/doty/commit/2f1e3d59ab5921eebdde91dd722a35256d9594f5))
+* **recommendations:** refresh on every chunk with pending re-run pattern ([055ca44](https://github.com/CodeAndJam/doty/commit/055ca44a64406f6b3fe0a5c1c6d4319ef86ae8a4))
+* **recorder:** disable AudioContext output sink to suppress mixer errors ([dae7b5b](https://github.com/CodeAndJam/doty/commit/dae7b5bc01a460d7bb62c8072f646b515f664fc0))
+* **recorder:** use relative path for worklet module in production ([726bc9c](https://github.com/CodeAndJam/doty/commit/726bc9c900385ded88d613ad35da9f1184119681))
+* **soundboard:** fix Browse panel close button and add Escape key support ([3884c76](https://github.com/CodeAndJam/doty/commit/3884c76a95434e2630e877d561c74372f7760447))
+* **ts:** add composite flag and remove unused param in Settings ([86af2c5](https://github.com/CodeAndJam/doty/commit/86af2c569f90d2f107aceb235e48cae46dac4897))
