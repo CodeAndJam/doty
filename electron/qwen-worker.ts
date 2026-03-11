@@ -1,42 +1,47 @@
 /**
  * qwen-worker.ts
- * Persistent worker thread for Qwen3 inference.
- * Receives { id, messages, options } messages, posts back { id, output } or { id, error }.
- * Running in a worker gives the ONNX runtime its own memory space, avoiding OOM
- * crashes in the main process when both ASR and the LLM are loaded simultaneously.
+ * Persistent worker thread for ms-marco-MiniLM-L-6-v2 inference.
+ * Receives { id, pairs } messages, posts back { id, output: number[] } or { id, error }.
  */
 import { workerData, parentPort } from 'worker_threads'
 import { join } from 'path'
 
 const { appPath, homePath } = workerData as { appPath: string; homePath: string }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let generator: any = null
+const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
-async function loadGenerator() {
-  if (generator) return generator
-  console.log('[qwen-worker] Loading recommendation model...')
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let tokenizer: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let model: any = null
+
+async function loadReranker() {
+  if (tokenizer && model) return
+  console.log('[reranker-worker] Loading recommendation model...')
   parentPort!.postMessage({ type: 'status', status: 'loading' })
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { pipeline, env } = require(
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(
     join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
   )
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
-  generator = await pipeline('text-generation', 'onnx-community/Qwen3-0.6B-ONNX', {
-    dtype: 'q4',
-    device: 'cpu',
-  })
-  console.log('[qwen-worker] Model ready')
+  ;[tokenizer, model] = await Promise.all([
+    AutoTokenizer.from_pretrained(MODEL_ID),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+  ])
+  console.log('[reranker-worker] Model ready')
   parentPort!.postMessage({ type: 'status', status: 'ready' })
-  return generator
 }
 
-parentPort!.on('message', async ({ id, messages, options }: { id: number; messages: unknown[]; options: unknown }) => {
+parentPort!.on('message', async ({ id, pairs }: { id: number; pairs: Array<{ text: string; text_pair: string }> }) => {
   try {
-    const gen = await loadGenerator()
-    const output = await gen(messages, options)
-    parentPort!.postMessage({ id, output })
+    await loadReranker()
+    const queries = pairs.map(p => p.text)
+    const passages = pairs.map(p => p.text_pair)
+    const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
+    const { logits } = await model(inputs)
+    const scores: number[] = Array.from(logits.data as Float32Array)
+    parentPort!.postMessage({ id, output: scores })
   } catch (e) {
     parentPort!.postMessage({ id, error: String(e) })
   }

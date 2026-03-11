@@ -29,6 +29,9 @@ contextBridge.exposeInMainWorld('doty', {
   // Model
   modelStatus: () => ipcRenderer.invoke('model:status'),
   downloadModel: () => ipcRenderer.invoke('model:download'),
+  rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
+  getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
+  setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
   onModelProgress: (cb: (p: ProgressPayload) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, p: ProgressPayload) => cb(p)
     ipcRenderer.on('model:progress', handler)

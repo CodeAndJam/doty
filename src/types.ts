@@ -10,6 +10,27 @@ export interface ScanProgress {
   current: string
 }
 
+export interface TrackMeta {
+  bpm: number
+  bpmConfidence: number
+  key: string
+  scale: string
+  danceability: number
+  energy: number
+  duration: number
+  mtime: number
+  title: string | null
+  artist: string | null
+  album: string | null
+  genre: string | null
+  year: number | null
+  trackNo: number | null
+  bitrate: number | null
+  sampleRate: number | null
+  channels: number | null
+  codec: string | null
+}
+
 export interface DotyAPI {
   // STT
   sttStart: () => Promise<{ ok: boolean }>
@@ -22,13 +43,16 @@ export interface DotyAPI {
   getMusicFolder: () => Promise<string>
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
-  getAllMetadata: () => Promise<Record<string, unknown>>
+  getAllMetadata: () => Promise<Record<string, TrackMeta>>
   recommendManual: (prompt: string) => Promise<{ ok: boolean }>
   onRecommendations: (cb: (files: string[]) => void) => () => void
 
   // Model
   modelStatus: () => Promise<{ ready: boolean }>
   downloadModel: () => Promise<{ ok: boolean }>
+  rerankerStatus: () => Promise<{ cached: boolean }>
+  getRecommendationCount: () => Promise<number>
+  setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
   onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void

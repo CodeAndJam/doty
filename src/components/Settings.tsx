@@ -1,11 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { ScanProgress } from '../types'
+import { onQwenLog } from '../hooks/useQwen'
 
 interface Props {
   onClose: () => void
   onFolderChange: (folder: string) => void
   onMicChange: (deviceId: string | null) => void
+  onSpeakerChange: (deviceId: string | null) => void
   micDeviceId?: string
+  speakerDeviceId?: string
+  qwenStatus: 'loading' | 'ready' | 'error'
+  recommendCount: number
+  onRecommendCountChange: (count: number) => void
 }
 
 interface AudioDevice {
@@ -29,23 +35,42 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-export default function Settings({ onClose, onFolderChange, onMicChange, micDeviceId }: Props) {
+export default function Settings({ onClose, onFolderChange, onMicChange, onSpeakerChange, micDeviceId, speakerDeviceId, qwenStatus, recommendCount, onRecommendCountChange }: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
-  const [modelReady, setModelReady] = useState(false)
+  const [sttReady, setSttReady] = useState(false)
   const [transcriptFolder, setTranscriptFolder] = useState('')
   const [scanProgress, setScanProgress] = useState<ScanProgress | null>(null)
   const [scanDone, setScanDone] = useState(false)
   const [lastScanTime, setLastScanTime] = useState<string | null>(null)
   const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([])
+  const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([])
   const [selectedMic, setSelectedMic] = useState<string>(micDeviceId ?? '')
+  const [selectedSpeaker, setSelectedSpeaker] = useState<string>(speakerDeviceId ?? '')
+  const [showQwenLogs, setShowQwenLogs] = useState(false)
+  const [qwenLogs, setQwenLogs] = useState<string[]>([])
+  const logEndRef = useRef<HTMLDivElement>(null)
+
+  // Subscribe to verbose Qwen worker logs
+  useEffect(() => {
+    const unsub = onQwenLog((msg) => {
+      const ts = new Date().toLocaleTimeString()
+      setQwenLogs(prev => [...prev.slice(-200), `[${ts}] ${msg}`])
+    })
+    return () => { unsub() }
+  }, [])
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [qwenLogs])
 
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
       setFolder(f)
       if (f) refreshTrackCount()
     })
-    window.doty.modelStatus().then(({ ready }) => setModelReady(ready))
+    window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
 
     const unsubProgress = window.doty.onScanProgress((p) => {
@@ -65,11 +90,24 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
           .filter((d) => d.kind === 'audioinput')
           .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Microphone ${i + 1}` }))
         setAudioDevices(inputs)
+        const outputs = devices
+          .filter((d) => d.kind === 'audiooutput')
+          .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Speaker ${i + 1}` }))
+        setOutputDevices(outputs)
       })
       .catch(() => {})
 
     return () => { unsubProgress(); unsubComplete() }
   }, [])
+
+  // Escape key to close
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [onClose])
 
   async function refreshTrackCount() {
     const files = await window.doty.listMusic()
@@ -103,9 +141,25 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
     onMicChange(deviceId || null)
   }
 
+  function handleSpeakerChange(deviceId: string) {
+    setSelectedSpeaker(deviceId)
+    onSpeakerChange(deviceId || null)
+  }
+
   const scanPercent = scanProgress && scanProgress.total > 0
     ? Math.round((scanProgress.done / scanProgress.total) * 100)
     : 0
+
+  const qwenIsReady = qwenStatus === 'ready'
+  const qwenIsError = qwenStatus === 'error'
+
+  const qwenDotColor = qwenIsReady ? '#4a8a6a' : qwenIsError ? '#ef4444' : '#c8922a'
+  const qwenDotShadow = qwenIsReady
+    ? '0 0 6px rgba(74,138,106,0.7)'
+    : qwenIsError
+      ? '0 0 6px rgba(239,68,68,0.7)'
+      : '0 0 6px rgba(200,146,42,0.7)'
+  const qwenLabel = qwenIsReady ? 'Attuned' : qwenIsError ? 'Failed — using heuristic fallback' : 'Summoning...'
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -132,8 +186,8 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}>
-      <div className="relative w-full max-w-md overflow-y-auto" style={{
+    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose} style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}>
+      <div className="relative w-full max-w-md overflow-y-auto" onClick={e => e.stopPropagation()} style={{
         background: 'linear-gradient(160deg, #0f0d09, #080705)',
         border: '1px solid #2e2416',
         boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
@@ -172,6 +226,21 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
             <select value={selectedMic} onChange={(e) => handleMicChange(e.target.value)} style={inputStyle}>
               <option value="">System default</option>
               {audioDevices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Speaker */}
+        <div className="mb-5">
+          <Label>Sound Conduit</Label>
+          {outputDevices.length === 0 ? (
+            <div style={{ ...inputStyle, color: '#3a2e1a', fontStyle: 'italic' }}>No devices found</div>
+          ) : (
+            <select value={selectedSpeaker} onChange={(e) => handleSpeakerChange(e.target.value)} style={inputStyle}>
+              <option value="">System default</option>
+              {outputDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
               ))}
             </select>
@@ -221,7 +290,7 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
             ) : (
               <div className="flex items-center gap-2" style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: scanDone ? '#4a8a6a' : '#2e2416', boxShadow: scanDone ? '0 0 6px rgba(74,138,106,0.7)' : 'none' }} />
-                {scanDone ? `Analysis complete${lastScanTime ? ` · ${lastScanTime}` : ''}` : 'Awaiting analysis…'}
+                {scanDone ? `Analysis complete${lastScanTime ? ` · ${lastScanTime}` : ''}` : 'Awaiting analysis...'}
               </div>
             )}
           </div>
@@ -247,38 +316,104 @@ export default function Settings({ onClose, onFolderChange, onMicChange, micDevi
           )}
         </div>
 
-        {/* Model status */}
-        <div className="mb-6">
-          <Label>Cognition Engine</Label>
-          <div className="flex items-center gap-3" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: modelReady ? '#4a8a6a' : '#c8922a', boxShadow: modelReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)' }} />
-            <div className="flex-1 min-w-0">
-              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Qwen3-0.6B</p>
-              <p style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>{modelReady ? 'Attuned' : 'Not yet summoned'}</p>
-            </div>
-            {!modelReady && <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>~400 MB</span>}
+        {/* Recommendation count */}
+        <div className="mb-5">
+          <Label>Recommendations</Label>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={20}
+              value={recommendCount}
+              onChange={(e) => onRecommendCountChange(Number(e.target.value))}
+              style={{ flex: 1, accentColor: '#c8922a' }}
+            />
+            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '24px', textAlign: 'right' }}>
+              {recommendCount}
+            </span>
           </div>
+          <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            Number of tracks to suggest per query
+          </p>
         </div>
 
-        {/* Divider */}
-        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+        {/* Models status */}
+        <div className="mb-6">
+          <Label>Cognition Engines</Label>
 
-        <button onClick={onClose} style={{
-          width: '100%',
-          padding: '10px',
-          background: 'transparent',
-          border: '1px solid #2e2416',
-          color: '#6b4e15',
-          fontSize: '16px',
-          fontFamily: "'Cinzel', serif",
-          letterSpacing: '0.2em',
-          cursor: 'pointer',
-          transition: 'all 0.2s',
-        }}
-          onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(200,146,42,0.4)'; e.currentTarget.style.color = '#c8922a' }}
-          onMouseLeave={e => { e.currentTarget.style.borderColor = '#2e2416'; e.currentTarget.style.color = '#6b4e15' }}>
-          Seal Configuration
-        </button>
+          {/* STT model */}
+          <div className="flex items-center gap-3 mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: sttReady ? '#4a8a6a' : '#c8922a', boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)' }} />
+            <div className="flex-1 min-w-0">
+              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Parakeet TDT v3</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{sttReady ? 'Attuned' : 'Not yet summoned'}</p>
+            </div>
+            {!sttReady && <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~640 MB</span>}
+          </div>
+
+          {/* MiniLM reranker recommendation model */}
+          <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div className="flex items-center gap-3">
+              <div style={{
+                width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
+                background: qwenDotColor,
+                boxShadow: qwenDotShadow,
+                animation: !qwenIsReady ? 'pulse 1.5s ease-in-out infinite' : 'none',
+              }} />
+              <div className="flex-1 min-w-0">
+                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>MiniLM-L-6-v2 Reranker</p>
+                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{qwenLabel}</p>
+              </div>
+              {!qwenIsReady && (
+                <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~80 MB</span>
+              )}
+              <button
+                onClick={() => setShowQwenLogs(prev => !prev)}
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: '#3a2e1a', transition: 'color 0.2s', padding: '2px',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
+                onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}
+                title={showQwenLogs ? 'Hide logs' : 'Show logs'}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  {showQwenLogs
+             ? <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                    : <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  }
+                </svg>
+              </button>
+            </div>
+
+            {/* Collapsible log panel */}
+            {showQwenLogs && (
+              <div style={{
+                marginTop: '8px',
+                padding: '6px 8px',
+                background: '#050403',
+                border: '1px solid rgba(46,36,22,0.5)',
+                maxHeight: '120px',
+                overflowY: 'auto',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                color: '#5a4a2a',
+                lineHeight: '1.6',
+              }}>
+                {qwenLogs.length === 0 ? (
+                  <span style={{ fontStyle: 'italic', color: '#3a2e1a' }}>No events yet...</span>
+                ) : (
+                  qwenLogs.map((log, i) => (
+                    <div key={i} style={{ color: log.includes('ready') || log.includes('Ready') ? '#4a8a6a' : '#5a4a2a' }}>
+                      {log}
+                    </div>
+                  ))
+                )}
+                <div ref={logEndRef} />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

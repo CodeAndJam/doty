@@ -64,6 +64,10 @@ Releases are **fully automated**. On every push/merge to `main`:
 
 **You never manually edit `CHANGELOG.md` or bump versions in `package.json`.**
 
+## Task Tracking
+
+Maintain a `TODO.md` file at the project root to track pending work, known issues, and planned features. Update it as tasks are completed or new ones are identified. This file serves as a lightweight project board for contributors and AI agents.
+
 ## Local Development
 
 ```bash
@@ -93,6 +97,6 @@ npm run rebuild
 ## Model Files
 
 - Parakeet TDT v3 ONNX (~640 MB) — downloaded on first launch to `~/.doty/models/`
-- Qwen3-0.6B ONNX (~400 MB q4) — downloaded on first recommendation to `~/.doty/hf-cache/`
+- ms-marco-MiniLM-L-6-v2 ONNX (~80 MB) — downloaded on first recommendation to `~/.doty/hf-cache/`
 
 These are never committed to the repository.

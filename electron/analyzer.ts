@@ -10,6 +10,17 @@ export interface TrackMetadata {
   energy: number
   duration: number
   mtime: number
+  // ID3 / file tags
+  title: string | null
+  artist: string | null
+  album: string | null
+  genre: string | null
+  year: number | null
+  trackNo: number | null
+  bitrate: number | null
+  sampleRate: number | null
+  channels: number | null
+  codec: string | null
 }
 
 // In dev: worker is built to out/main/analyze-worker.js

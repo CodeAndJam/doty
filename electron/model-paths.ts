@@ -15,3 +15,14 @@ export function isModelReady(): boolean {
     fs.existsSync(join(MODEL_DIR, 'tokens.txt'))
   )
 }
+
+// Reranker model cache: ~/.doty/hf-cache/Xenova/ms-marco-MiniLM-L-6-v2/
+const RERANKER_CACHE_DIR = join(app.getPath('home'), '.doty', 'hf-cache', 'Xenova', 'ms-marco-MiniLM-L-6-v2')
+
+export function isRerankerCached(): boolean {
+  try {
+    return fs.existsSync(join(RERANKER_CACHE_DIR, 'onnx', 'model_q4.onnx'))
+  } catch {
+    return false
+  }
+}

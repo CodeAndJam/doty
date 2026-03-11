@@ -3,7 +3,7 @@ import fs from 'fs'
 import chokidar from 'chokidar'
 import { analyzeFile } from './analyzer'
 import { getCached, setCached, removeCached, clearCache, getCache } from './metadata-cache'
-import type { TrackMetadata } from './analyzer'
+import type { FullTrackMetadata } from './metadata-cache'
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
 const CONCURRENCY = 2
@@ -32,7 +32,7 @@ function processNext() {
     onProgress?.(done, total, rel)
 
     analyzeFile(absPath)
-      .then((meta) => setCached(rel, meta))
+      .then((meta) => setCached(rel, meta as FullTrackMetadata))
       .catch((e) => console.error(`[scanner] failed ${rel}:`, e))
       .finally(() => {
         active--
@@ -106,27 +106,35 @@ export function startScanner(
     completeCb()
   }
 
-  // Watch for changes
-  watcher = chokidar.watch(folder, {
-    ignoreInitial: true,
-    persistent: true,
-    depth: 99,
-  })
+  // Watch for changes — use useFsEvents:false because chokidar v3's fsevents
+  // binding crashes with "Cannot read properties of undefined (reading 'SinceNow')"
+  // in Electron's sandboxed Node.js environment.
+  try {
+    watcher = chokidar.watch(folder, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 99,
+      useFsEvents: false,   // force polling/kqueue instead of broken fsevents
+    })
 
-  watcher.on('add', (absPath) => {
-    if (AUDIO_RE.test(absPath)) {
-      total++
-      enqueue(absPath)
-    }
-  })
+    watcher.on('add', (absPath) => {
+      if (AUDIO_RE.test(absPath)) {
+        total++
+        enqueue(absPath)
+      }
+    })
 
-  watcher.on('change', (absPath) => {
-    if (AUDIO_RE.test(absPath)) enqueue(absPath)
-  })
+    watcher.on('change', (absPath) => {
+      if (AUDIO_RE.test(absPath)) enqueue(absPath)
+    })
 
-  watcher.on('unlink', (absPath) => {
-    if (AUDIO_RE.test(absPath)) removeCached(relPath(absPath))
-  })
+    watcher.on('unlink', (absPath) => {
+      if (AUDIO_RE.test(absPath)) removeCached(relPath(absPath))
+    })
+  } catch (e) {
+    console.error('[scanner] chokidar watch failed (non-fatal):', e)
+    watcher = null
+  }
 }
 
 export function stopScanner() {
@@ -144,13 +152,13 @@ export function forceRescan(
   startScanner(folder, progressCb, completeCb, true)
 }
 
-export function getMetadata(relativeOrAbsPath: string): TrackMetadata | null {
+export function getMetadata(relativeOrAbsPath: string): FullTrackMetadata | null {
   const rel = relativeOrAbsPath.startsWith(musicRoot)
     ? relativeOrAbsPath.slice(musicRoot.length + 1)
     : relativeOrAbsPath
   return getCached(rel)
 }
 
-export function getAllMetadata(): Record<string, TrackMetadata> {
+export function getAllMetadata(): Record<string, FullTrackMetadata> {
   return getCache()
 }
