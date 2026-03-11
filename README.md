@@ -14,7 +14,7 @@ Everything runs locally. No API keys, no internet required after first model dow
 ## Requirements
 
 - macOS (arm64 or x64)
-- Node.js 20+
+- Node.js 24+
 
 ## Local development
 
