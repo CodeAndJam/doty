@@ -5,7 +5,7 @@ AI-powered music recommender for tabletop RPG sessions. Listens to your table vi
 ## How it works
 
 1. **STT** — Parakeet TDT v3 (sherpa-onnx, runs fully offline) transcribes your microphone in 5-second chunks.
-2. **Recommendations** — Qwen3-0.6B ONNX analyses the rolling transcript and picks 5 tracks from your library that match the mood.
+2. **Recommendations** — ms-marco-MiniLM-L-6-v2 cross-encoder scores each track against the rolling transcript and picks the 5 best-matching tracks from your library.
 3. **Soundboard** — Recommended tracks appear as playable cards. Click to preview.
 4. **DM prompt** — Type a scene description ("dark dungeon", "campfire") to trigger a manual recommendation.
 
@@ -36,7 +36,7 @@ npm run build && npm run test:e2e
 
 On first launch the app will prompt you to download the **Parakeet TDT v3** ASR model (~640 MB). It is saved to `~/.doty/models/` and only downloaded once.
 
-The **Qwen3-0.6B** recommendation model (~400 MB) is downloaded automatically on the first recommendation request and cached to `~/.doty/hf-cache/`.
+The **ms-marco-MiniLM-L-6-v2** recommendation model (~80 MB) is downloaded automatically on the first recommendation request and cached to `~/.doty/hf-cache/`.
 
 ## Settings
 
@@ -50,9 +50,9 @@ The **Qwen3-0.6B** recommendation model (~400 MB) is downloaded automatically on
 |---|---|
 | UI | React + Tailwind CSS (Electron renderer) |
 | STT | sherpa-onnx-node (Parakeet TDT v3 int8) |
-| Recommendations | @huggingface/transformers (Qwen3-0.6B ONNX q4) |
+| Recommendations | @huggingface/transformers (ms-marco-MiniLM-L-6-v2 cross-encoder) |
 | Audio analysis | essentia.js + ffmpeg-static |
-| LLM process isolation | Electron `utilityProcess` (separate heap from ASR) |
+| Reranker process isolation | Electron `utilityProcess` (separate heap from ASR) |
 
 ## Building a DMG
 

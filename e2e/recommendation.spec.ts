@@ -6,8 +6,8 @@
  *   - Run `npm run build` before executing this test.
  *   - The ASR (Parakeet) model must already be downloaded to ~/.doty/models/.
  *     If it is not, the test is skipped automatically.
- *   - The Qwen recommendation model (~400 MB) is downloaded on first run;
- *     allow up to 5 minutes for that on a cold start.
+ *   - The MiniLM reranker recommendation model (~80 MB) is downloaded on first run;
+ *     allow up to 2 minutes for that on a cold start.
  *
  * How we verify the model actually ran (not the fallback):
  *   The fallback always returns the first 5 files in filesystem order.
@@ -66,7 +66,7 @@ test('submitting "campfire" returns model recommendations, not the fallback', as
     await input.fill('campfire')
     await page.getByRole('button', { name: 'Attune' }).click()
 
-    // Wait for 5 track cards — first run may download Qwen (~400 MB, up to 5 min)
+    // Wait for 5 track cards — first run may download reranker model (~80 MB, up to 2 min)
     await expect(page.getByTestId('track-card')).toHaveCount(5, { timeout: 300_000 })
 
     // Collect the track names shown in the UI
