@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin({
+      // Only externalize native addons that can't be bundled
+      exclude: ['chokidar', 'music-metadata'],
+    })],
     build: {
       rollupOptions: {
         input: {

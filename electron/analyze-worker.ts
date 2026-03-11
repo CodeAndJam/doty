@@ -1,7 +1,7 @@
 /**
  * analyze-worker.ts
  * Runs in a worker_threads context — receives a file path via workerData,
- * analyzes it with essentia.js + ffmpeg, posts the result back.
+ * analyzes it with essentia.js + ffmpeg + music-metadata, posts the result back.
  */
 import { workerData, parentPort } from 'worker_threads'
 import { spawn } from 'child_process'
@@ -49,11 +49,45 @@ function decodeAudio(filePath: string): Promise<{ samples: Float32Array; duratio
   })
 }
 
+async function extractTags(filePath: string) {
+  try {
+    const mm = await import('music-metadata')
+    const metadata = await mm.parseFile(filePath)
+    const { common, format } = metadata
+    return {
+      title: common.title || null,
+      artist: common.artist || null,
+      album: common.album || null,
+      genre: common.genre?.[0] || null,
+      year: common.year || null,
+      trackNo: common.track?.no || null,
+      bitrate: format.bitrate ? Math.round(format.bitrate / 1000) : null,
+      sampleRate: format.sampleRate || null,
+      channels: format.numberOfChannels || null,
+      codec: format.codec || null,
+    }
+  } catch (e) {
+    console.error('[analyze-worker] tag extraction failed:', e)
+    return {
+      title: null, artist: null, album: null, genre: null,
+      year: null, trackNo: null, bitrate: null, sampleRate: null,
+      channels: null, codec: null,
+    }
+  }
+}
+
 async function run() {
   const filePath: string = workerData.filePath
   const mtime = fs.statSync(filePath).mtimeMs
+
+  // Run tag extraction and audio analysis in parallel
+  const [tags, audioData] = await Promise.all([
+    extractTags(filePath),
+    decodeAudio(filePath),
+  ])
+
   const essentia = getEssentia()
-  const { samples, duration } = await decodeAudio(filePath)
+  const { samples, duration } = audioData
   const signal = essentia.arrayToVector(samples)
 
   let bpm = 0, bpmConfidence = 0
@@ -81,7 +115,11 @@ async function run() {
     energy = parseFloat(Math.min(1, Math.sqrt(e / samples.length) * 10).toFixed(2))
   } catch { /* leave 0 */ }
 
-  parentPort!.postMessage({ bpm, bpmConfidence, key, scale, danceability, energy, duration: Math.round(duration), mtime })
+  parentPort!.postMessage({
+    bpm, bpmConfidence, key, scale, danceability, energy,
+    duration: Math.round(duration), mtime,
+    ...tags,
+  })
 }
 
 run().catch((err) => {

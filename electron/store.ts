@@ -6,6 +6,7 @@ interface StoreData {
   musicFolder?: string
   modelPath?: string
   transcriptFolder?: string
+  recommendationCount?: number
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')

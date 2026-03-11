@@ -8,7 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron .",
-    "rebuild": "electron-rebuild --only sherpa-onnx-node",
+    "rebuild": "electron-rebuild --only sherpa-onnx-node,better-sqlite3",
     "copy-wasm": "node -e \"const fs=require('fs');['asyncify.wasm','wasm'].forEach(s=>fs.copyFileSync('node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.'+s,'public/ort-wasm-simd-threaded.'+s))\"",
     "postinstall": "pnpm run rebuild && pnpm run copy-wasm",
     "dist": "pnpm run build && electron-builder --mac dmg",
@@ -31,7 +31,8 @@
     ],
     "asarUnpack": [
       "node_modules/ffmpeg-static/**",
-      "node_modules/essentia.js/dist/**"
+      "node_modules/essentia.js/dist/**",
+      "node_modules/better-sqlite3/**"
     ],
     "extraResources": [
       {
@@ -43,6 +44,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -60,6 +62,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "better-sqlite3",
       "electron",
       "esbuild",
       "ffmpeg-static",
@@ -70,9 +73,11 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^4.0.0-next.6",
+    "better-sqlite3": "^12.6.2",
     "chokidar": "^3.6.0",
     "essentia.js": "^0.1.3",
     "ffmpeg-static": "^5.3.0",
+    "music-metadata": "^11.12.1",
     "node-fetch": "^3.3.2",
     "onnxruntime-node": "^1.24.3",
     "sherpa-onnx-node": "^1.12.28"
@@ -81,6 +86,7 @@
     "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

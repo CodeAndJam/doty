@@ -2,9 +2,11 @@ import { app, BrowserWindow, ipcMain, protocol, dialog, net } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { store } from './store'
-import { isModelReady, MODEL_URL, MODEL_DIR } from './model-paths'
+import { isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR } from './model-paths'
 import { initRecognizer, transcribeFloat32, freeRecognizer } from './asr'
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
+import { getDb, closeDb } from './database'
+import { migrateFromJson } from './metadata-cache'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -79,6 +81,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f0f13',
     titleBarStyle: 'hiddenInset',
+    icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -108,6 +111,10 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Initialize SQLite database and migrate legacy JSON cache
+  getDb()
+  migrateFromJson()
+
   registerAppProtocol()
   registerMusicProtocol()
   createWindow()
@@ -128,6 +135,7 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   freeRecognizer()
   stopScanner()
+  closeDb()
 })
 
 app.on('window-all-closed', () => {
@@ -239,6 +247,15 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 // ── IPC: Model download ───────────────────────────────────────────────────────
 
 ipcMain.handle('model:status', () => ({ ready: isModelReady() }))
+
+ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
+
+ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
+
+ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {
+  store.set('recommendationCount', Math.max(1, Math.min(20, Math.round(count))))
+  return { ok: true }
+})
 
 ipcMain.handle('model:download', async () => {
   fs.mkdirSync(join(MODEL_DIR, '..'), { recursive: true })
