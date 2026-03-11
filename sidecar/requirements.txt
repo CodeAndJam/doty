@@ -1,6 +1,0 @@
-fastapi>=0.111.0
-uvicorn>=0.30.0
-nemo_toolkit[asr]>=2.0.0
-pyaudio>=0.2.14
-soundfile>=0.12.1
-numpy>=1.24.0

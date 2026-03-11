@@ -1,14 +1,13 @@
 import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({
-      // Only externalize native addons that can't be bundled
-      exclude: ['chokidar', 'music-metadata'],
-    })],
     build: {
+      externalizeDeps: {
+        exclude: ['chokidar', 'music-metadata'],
+      },
       rollupOptions: {
         input: {
           index: resolve(__dirname, 'electron/main.ts'),
@@ -21,7 +20,6 @@ export default defineConfig({
     }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
         input: { index: resolve(__dirname, 'electron/preload.ts') }

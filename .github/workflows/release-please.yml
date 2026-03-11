@@ -25,14 +25,7 @@ jobs:
   build-dmg:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
-    strategy:
-      matrix:
-        include:
-          - runner: macos-latest
-            arch: arm64
-          - runner: macos-13
-            arch: x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,13 +50,12 @@ jobs:
         run: pnpm install --frozen-lockfile
         env:
           npm_config_python: python3
-          npm_config_arch: ${{ matrix.arch }}
 
       - name: Build
         run: pnpm run build
 
-      - name: Package DMG (${{ matrix.arch }})
-        run: pnpm exec electron-builder --mac dmg --${{ matrix.arch }}
+      - name: Package DMG (arm64)
+        run: pnpm exec electron-builder --mac dmg --arm64
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false

@@ -10,3 +10,5 @@ dist/
 *.tgz
 test-results/
 public/ort-wasm-simd-threaded*.wasm
+.env*
+.DS_Store

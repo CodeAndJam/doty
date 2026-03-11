@@ -18,7 +18,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "build": {
-    "appId": "com.codeandiam.doty",
+    "appId": "com.codeandjam.doty",
     "productName": "Doty",
     "directories": {
       "output": "dist"
@@ -50,8 +50,7 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64",
-            "x64"
+            "arm64"
           ]
         }
       ]
@@ -83,6 +82,7 @@
     "sherpa-onnx-node": "^1.12.28"
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -95,8 +95,7 @@
     "autoprefixer": "^10.4.19",
     "electron": "^40.8.0",
     "electron-builder": "^26.8.1",
-    "electron-rebuild": "^3.2.9",
-    "electron-vite": "^2.3.0",
+    "electron-vite": "^5.0.0",
     "jsdom": "^28.1.0",
     "playwright": "^1.58.2",
     "postcss": "^8.4.39",
@@ -104,7 +103,7 @@
     "react-dom": "^18.3.1",
     "tailwindcss": "^3.4.6",
     "typescript": "^5.5.3",
-    "vite": "^5.3.4",
+    "vite": "^7.3.1",
     "vitest": "^4.0.18"
   }
 }
