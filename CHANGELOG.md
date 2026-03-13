@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/CodeAndJam/doty/compare/v1.3.1...v1.4.0) (2026-03-13)
+
+
+### Features
+
+* **discord:** add Discord bot integration for audio streaming ([#29](https://github.com/CodeAndJam/doty/issues/29)) ([0215eef](https://github.com/CodeAndJam/doty/commit/0215eef31e68a679d2148ac34bcb5261f76df58d))
+
 ## [1.3.1](https://github.com/CodeAndJam/doty/compare/v1.3.0...v1.3.1) (2026-03-13)
 
 
