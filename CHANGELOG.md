@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1](https://github.com/CodeAndJam/doty/compare/v1.3.0...v1.3.1) (2026-03-13)
+
+
+### Bug Fixes
+
+* **player:** prevent crash on rapid seeking and add E2E seek test ([c93d11b](https://github.com/CodeAndJam/doty/commit/c93d11ba195db0855a11adcb675f616c2f9ec664)), closes [#26](https://github.com/CodeAndJam/doty/issues/26)
+* **player:** seek bar jumps to 0 due to missing Range request support ([ee91287](https://github.com/CodeAndJam/doty/commit/ee912879a0840d6a2e46f42cd4c4af783dad1a63)), closes [#26](https://github.com/CodeAndJam/doty/issues/26)
+* **player:** seek bar jumps to 0 due to missing Range request support ([6a8d381](https://github.com/CodeAndJam/doty/commit/6a8d381564b1fc44c8b77909d7252b02bd8b2652)), closes [#26](https://github.com/CodeAndJam/doty/issues/26)
+
 ## [1.3.0](https://github.com/CodeAndJam/doty/compare/v1.2.0...v1.3.0) (2026-03-13)
 
 
