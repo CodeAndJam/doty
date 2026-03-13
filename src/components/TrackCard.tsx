@@ -180,14 +180,20 @@ export default function TrackCard({
         )}
 
         {meta && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
-            title="Track details"
-            style={{ color: expanded ? '#c8922a' : undefined }}
+          <div
+            className="relative"
+            onMouseEnter={() => setExpanded(true)}
+            onMouseLeave={() => setExpanded(false)}
           >
-            <InfoIcon />
-          </button>
+            <button
+              className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
+              title="Track details"
+              style={{ color: expanded ? '#c8922a' : undefined }}
+            >
+              <InfoIcon />
+            </button>
+            {expanded && <MetadataTooltip meta={meta} filename={filename} anchorRef={cardRef} />}
+          </div>
         )}
 
         {/* Tag edit toggle */}
@@ -256,8 +262,6 @@ export default function TrackCard({
           {String(rank).padStart(2, '0')}
         </span>
       </div>
-
-      {expanded && meta && <MetadataTooltip meta={meta} filename={filename} anchorRef={cardRef} />}
 
       {/* Inline tag editor */}
       {editingTags && onTagsChange && (
