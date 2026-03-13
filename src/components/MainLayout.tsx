@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import Transcript from './Transcript'
 import Soundboard from './Soundboard'
 import Settings from './Settings'
 import { GearIcon, EyeIcon, EyeOffIcon } from './Icons'
 import { useRecorder } from '../hooks/useRecorder'
 import { useQwen } from '../hooks/useQwen'
+import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
 const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
@@ -13,6 +14,7 @@ export default function MainLayout() {
   const [recording, setRecording] = useState(false)
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
+  const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(
@@ -27,8 +29,11 @@ export default function MainLayout() {
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const sfxDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
+  const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
+  const sfxRecommendCountRef = useRef(sfxRecommendCount)
   const { start, stop } = useRecorder(micDeviceId)
   const { recommend, modelStatus, downloadProgress } = useQwen()
   const recommendRef = useRef(recommend)
@@ -36,10 +41,12 @@ export default function MainLayout() {
   // Keep refs in sync with latest values
   useEffect(() => { recommendCountRef.current = recommendCount }, [recommendCount])
   useEffect(() => { recommendRef.current = recommend }, [recommend])
+  useEffect(() => { sfxRecommendCountRef.current = sfxRecommendCount }, [sfxRecommendCount])
 
   // Load recommendation count from settings on mount
   useEffect(() => {
     window.doty.getRecommendationCount().then(setRecommendCount)
+    window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
   }, [])
 
   // Check if reranker model is already cached on mount
@@ -63,6 +70,16 @@ export default function MainLayout() {
     setRecommendations(results)
   }
 
+  const runSfxRecommendation = useCallback(async (overrideText?: string) => {
+    const sfxList = await window.doty.getSfxList()
+    if (sfxList.length === 0) return
+    const tagsMap = await window.doty.getTagsMap()
+    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
+    if (!text) return
+    const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap)
+    setSfxRecommendations(results)
+  }, [])
+
   async function runDmRecommendation(prompt: string) {
     const files = await window.doty.listMusic()
     if (files.length === 0) return
@@ -74,6 +91,8 @@ export default function MainLayout() {
     const combined = parts.join('\n')
     const results = await recommendRef.current(combined, files, recommendCountRef.current)
     setRecommendations(results)
+    // Also trigger SFX recommendations with the same combined text
+    runSfxRecommendation(combined)
   }
 
   useEffect(() => {
@@ -85,6 +104,14 @@ export default function MainLayout() {
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
+      // Debounce SFX recommendations — heuristic, runs in renderer
+      if (sfxDebounceRef.current) clearTimeout(sfxDebounceRef.current)
+      sfxDebounceRef.current = setTimeout(runSfxRecommendation, 1500)
+    })
+
+    // Listen for SFX recommendations from the backend (fallback)
+    const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
+      setSfxRecommendations(ids)
     })
 
     // Cmd+, opens Settings (standard macOS convention)
@@ -98,8 +125,10 @@ export default function MainLayout() {
 
     return () => {
       unsubTranscript()
+      unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      if (sfxDebounceRef.current) clearTimeout(sfxDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
     }
   }, [])
@@ -249,6 +278,7 @@ export default function MainLayout() {
           <div className="flex-1 overflow-hidden">
             <Soundboard
               recommendations={recommendations}
+              sfxRecommendations={sfxRecommendations}
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               onNoFolder={() => setShowSettings(true)}

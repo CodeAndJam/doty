@@ -61,6 +61,60 @@ export interface QueueState {
   currentIndex: number
 }
 
+// ── SFX types ───────────────────────────────────────────────────────
+
+export interface SfxMeta {
+  id: string
+  filename: string
+  category: string
+  label: string
+  description: string
+  /** Duration in seconds */
+  duration: number
+  /** Whether this is a built-in or user-provided SFX */
+  source: 'builtin' | 'custom'
+  /** Attribution info for Creative Commons content */
+  attribution?: {
+    author: string
+    license: string
+    sourceUrl?: string
+  }
+}
+
+export type SfxCategory =
+  | 'nature'
+  | 'fire'
+  | 'combat'
+  | 'footsteps'
+  | 'doors'
+  | 'tavern'
+  | 'horror'
+  | 'magic'
+  | 'environment'
+  | 'custom'
+
+export const SFX_CATEGORY_LABELS: Record<SfxCategory, string> = {
+  nature: 'Nature & Weather',
+  fire: 'Fire & Heat',
+  combat: 'Combat & Action',
+  footsteps: 'Footsteps & Movement',
+  doors: 'Doors & Mechanisms',
+  tavern: 'Tavern & Social',
+  horror: 'Horror & Suspense',
+  magic: 'Magic & Supernatural',
+  environment: 'Environment & Ambience',
+  custom: 'Custom Effects',
+}
+
+export interface SfxPlaybackChannel {
+  id: string
+  sfxId: string
+  label: string
+  playing: boolean
+  looping: boolean
+  volume: number
+}
+
 // ── API types ───────────────────────────────────────────────────────
 
 // ── Discord types ───────────────────────────────────────────────────
@@ -135,6 +189,15 @@ export interface DotyAPI {
   setTags: (filename: string, tags: string[]) => Promise<{ ok: boolean }>
   getAllTags: () => Promise<string[]>
   getTagsMap: () => Promise<Record<string, string[]>>
+
+  // SFX
+  getSfxList: () => Promise<SfxMeta[]>
+  getSfxFolder: () => Promise<string>
+  pickSfxFolder: () => Promise<string | null>
+  setSfxFolder: (path: string) => Promise<{ ok: boolean }>
+  getSfxRecommendationCount: () => Promise<number>
+  setSfxRecommendationCount: (count: number) => Promise<{ ok: boolean }>
+  onSfxRecommendations: (cb: (ids: string[]) => void) => () => void
 
   // Discord
   discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>

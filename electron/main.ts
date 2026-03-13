@@ -169,6 +169,10 @@ function registerAppProtocol() {
 }
 
 function createWindow() {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.icns')
+    : join(__dirname, '../../build/icon.png')
+  
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -176,7 +180,7 @@ function createWindow() {
     minHeight: 600,
     backgroundColor: '#0f0f13',
     titleBarStyle: 'hiddenInset',
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: iconPath,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -207,7 +211,17 @@ function registerMusicProtocol() {
     const raw = request.url
     const prefix = 'music://play/'
     const filename = decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
-    const filePath = join(musicFolder, filename)
+    // Support absolute paths (for SFX) or relative paths (for music).
+    // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
+    // like /Users/x/sfx/boom.mp3 arrives as "Users/x/sfx/boom.mp3" (leading
+    // slash consumed by the music://play/ prefix).  We try the relative path
+    // first; if it doesn't exist we retry as an absolute path with "/" prepended.
+    let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
+
+    if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
+      const abs = '/' + filename
+      if (fs.existsSync(abs)) filePath = abs
+    }
 
     if (!fs.existsSync(filePath)) {
       return new Response('Not found', { status: 404 })
@@ -655,5 +669,73 @@ ipcMain.handle('discord:has-token', () => {
 
 ipcMain.handle('discord:clear-token', () => {
   clearToken()
+  return { ok: true }
+})
+
+// ── IPC: SFX ─────────────────────────────────────────────────────────────────
+
+function scanSfxFolder(folder: string): any[] {
+  if (!folder || !fs.existsSync(folder)) return []
+  
+  const results: any[] = []
+  const audioRe = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
+  
+  function scan(dir: string, category: string) {
+    try {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, entry.name)
+        if (entry.isDirectory()) {
+          scan(fullPath, entry.name)
+        } else if (audioRe.test(entry.name)) {
+          const id = fullPath.replace(folder, '').replace(/^\//, '')
+          const label = entry.name.replace(audioRe, '').replace(/[-_]/g, ' ')
+          results.push({
+            id,
+            filename: fullPath,
+            category: category || 'custom',
+            label,
+            description: '',
+            duration: 0,
+            source: 'custom',
+          })
+        }
+      }
+    } catch (e) {
+      console.error('[sfx] scan error:', e)
+    }
+  }
+  
+  scan(folder, '')
+  return results
+}
+
+ipcMain.handle('sfx:list', () => {
+  const folder = store.get('sfxFolder', '') as string
+  return scanSfxFolder(folder)
+})
+
+ipcMain.handle('sfx:get-folder', () => store.get('sfxFolder', ''))
+
+ipcMain.handle('sfx:pick-folder', async () => {
+  const result = await dialog.showOpenDialog(mainWindow!, {
+    properties: ['openDirectory'],
+    title: 'Select SFX Folder',
+  })
+  if (!result.canceled && result.filePaths[0]) {
+    store.set('sfxFolder', result.filePaths[0])
+    return result.filePaths[0]
+  }
+  return null
+})
+
+ipcMain.handle('sfx:set-folder', (_e, folderPath: string) => {
+  store.set('sfxFolder', folderPath)
+  return { ok: true }
+})
+
+ipcMain.handle('settings:get-sfx-recommendation-count', () => store.get('sfxRecommendationCount', 5))
+
+ipcMain.handle('settings:set-sfx-recommendation-count', (_e, count: number) => {
+  store.set('sfxRecommendationCount', Math.max(1, Math.min(10, Math.round(count))))
   return { ok: true }
 })

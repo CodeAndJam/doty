@@ -165,3 +165,39 @@ export function MusicNoteIcon() {
     </svg>
   )
 }
+
+export function SfxIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M15.536 8.464a5 5 0 010 7.072M18.364 5.636a9 9 0 010 12.728M5 8l4-4v16l-4-4H2V8h3z" />
+    </svg>
+  )
+}
+
+export function StopIcon() {
+  return (
+    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+      <rect x="6" y="6" width="12" height="12" rx="1" />
+    </svg>
+  )
+}
+
+export function LoopSmallIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <path d="M17 1l4 4-4 4" />
+      <path d="M3 11V9a4 4 0 014-4h14" />
+      <path d="M7 23l-4-4 4-4" />
+      <path d="M21 13v2a4 4 0 01-4 4H3" />
+    </svg>
+  )
+}
+
+export function AttributionIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 16v-4M12 8h.01" />
+    </svg>
+  )
+}

@@ -9,6 +9,10 @@
 - [ ] Show on tooltip the directory
 - [ ] Discord: add `asarUnpack` config for native modules (packaging)
 - [ ] Discord: integration tests for connect/disconnect/stream lifecycle
+- [ ] #11 SFX: implement SFX scanner to populate `sfx:list` from sfxFolder
+- [ ] #11 SFX: wire up SFX recommendation engine (reranker or keyword-based)
+- [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
+- [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
 ## Music Player — Implementation Order
 
