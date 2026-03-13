@@ -4,8 +4,7 @@ AI-powered music companion for tabletop RPG sessions. Doty listens to your table
 
 Named after the ever-faithful automaton scribe from Critical Role, Doty sits quietly at your table, listens, and acts.
 
-<!-- Screenshots: replace these paths once you capture them from the running app -->
-<!-- ![Main interface](docs/screenshots/main-interface.png) -->
+![Main interface](docs/main_ui.png)
 
 ## Features
 
@@ -257,4 +256,4 @@ Doty runs entirely on your machine. No audio, transcripts, or music data ever le
 
 ## License
 
-TBD
+[MIT](LICENSE) — Copyright (c) 2026 CodeAndJam
