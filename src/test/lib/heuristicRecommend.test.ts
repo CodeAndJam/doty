@@ -59,4 +59,37 @@ describe('heuristicRecommend', () => {
   it('returns empty array for empty files', () => {
     expect(heuristicRecommend('campfire', [], META)).toEqual([])
   })
+
+  it('boosts tracks with matching tags over filename-only matches', () => {
+    const tagsMap: Record<string, string[]> = {
+      'Journey - Unsafe Roads.mp3': ['combat', 'intense'],
+    }
+    const results = heuristicRecommend('combat', FILES, META, 5, tagsMap)
+    // Journey has a 'combat' tag — should rank higher than it would without tags
+    expect(results).toContain('Journey - Unsafe Roads.mp3')
+    // Decisive Battle has 'battle' in filename but no 'combat' tag
+    const journeyIdx = results.indexOf('Journey - Unsafe Roads.mp3')
+    const battleIdx = results.indexOf('Decisive Battle - Rivals.mp3')
+    expect(journeyIdx).toBeLessThan(battleIdx)
+  })
+
+  it('ranks tagged track first when transcript matches tag exactly', () => {
+    const tagsMap: Record<string, string[]> = {
+      'Campfire.mp3': ['tavern', 'peaceful'],
+      'Fantasy Tavern.mp3': ['boss', 'combat'],
+    }
+    // 'boss' in transcript should boost Fantasy Tavern (tagged 'boss') above Campfire
+    const results = heuristicRecommend('boss fight', FILES, META, 5, tagsMap)
+    expect(results[0]).toBe('Fantasy Tavern.mp3')
+  })
+
+  it('works with tagsMap but no metadata', () => {
+    const tagsMap: Record<string, string[]> = {
+      'Campfire.mp3': ['ocean', 'voyage'],
+    }
+    const results = heuristicRecommend('ocean voyage', FILES, {}, 5, tagsMap)
+    // Both Campfire (tagged) and Ocean Voyage (filename) should rank high
+    expect(results.slice(0, 2)).toContain('Campfire.mp3')
+    expect(results.slice(0, 2)).toContain('Ocean Voyage - Setting Sail Fantasy.mp3')
+  })
 })

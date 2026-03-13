@@ -73,7 +73,7 @@ function getReranker(): Promise<ScoreFn> {
   return _rerankerPromise
 }
 
-function describeTrack(filename: string, meta: TrackMetadata | null): string {
+function describeTrack(filename: string, meta: TrackMetadata | null, tags?: string[]): string {
   const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
   const parts = [name]
   if (meta) {
@@ -86,6 +86,9 @@ function describeTrack(filename: string, meta: TrackMetadata | null): string {
       parts.push(`key: ${keyStr}`)
     }
     if (meta.danceability) parts.push(`danceability: ${meta.danceability}`)
+  }
+  if (tags && tags.length > 0) {
+    parts.push(`tags: ${tags.join(', ')}`)
   }
   return parts.join(', ')
 }
@@ -114,6 +117,7 @@ export class QwenManager {
     files: string[],
     metadata: Record<string, TrackMetadata> = {},
     count = 5,
+    tagsMap: Record<string, string[]> = {},
   ): Promise<string[]> {
     if (files.length === 0) return []
 
@@ -127,7 +131,7 @@ export class QwenManager {
       // Build (transcript, track_description) pairs
       const pairs = candidates.map(f => ({
         text: recentTranscript,
-        text_pair: describeTrack(f, metadata[f] ?? null),
+        text_pair: describeTrack(f, metadata[f] ?? null, tagsMap[f]),
       }))
 
       const scorer = await this.getScorer()

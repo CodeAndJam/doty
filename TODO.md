@@ -6,6 +6,19 @@
 - [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
 - [ ] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
 - [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
+- [ ] Show on tooltip the directory
+
+## Music Player — Implementation Order
+
+1. [x] #24 — Architecture refactor: extract composable hooks from `useAudioPlayer` (foundation)
+2. [x] #17 — Reliable seek bar with time display and buffering feedback
+3. [x] #23 — Volume control with per-output levels
+4. [x] #18 — Loop mode for single track and queue
+5. [x] #25 — Custom user tags on tracks for search and recommendation
+6. [x] #19 — Music queue with drag-to-reorder and queue loop
+7. [x] #20 — Crossfade with configurable fade duration (replaces "Smooth transitions between musics")
+8. [ ] #21 — Discord bot integration for audio streaming
+9. [ ] #22 — HTTP remote control API with Stream Deck plugin support
 
 ## Done
 

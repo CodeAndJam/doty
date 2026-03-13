@@ -106,6 +106,7 @@ export function heuristicRecommend(
   files: string[],
   metadata: Record<string, TrackMeta>,
   count = 5,
+  tagsMap: Record<string, string[]> = {},
 ): string[] {
   if (files.length === 0) return []
 
@@ -115,6 +116,11 @@ export function heuristicRecommend(
   const scored = files.map((file) => {
     const meta = metadata[file]
     const fnScore = filenameScore(file, tokens) * 2  // filename match weighted 2x
+
+    // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
+    const fileTags = tagsMap[file] || []
+    const tagMatches = fileTags.filter(tag => tokens.some(t => tag.includes(t) || t.includes(tag))).length
+    const tagScore = Math.min(1, tagMatches / Math.max(1, fileTags.length)) * 3
 
     let featureScore = 0
     if (meta && mood) {
@@ -128,7 +134,7 @@ export function heuristicRecommend(
       featureScore = rangeScore(meta.energy, 0.3, 0.6) * 0.5
     }
 
-    return { file, score: fnScore + featureScore }
+    return { file, score: fnScore + tagScore + featureScore }
   })
 
   scored.sort((a, b) => b.score - a.score)

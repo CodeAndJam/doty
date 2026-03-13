@@ -11,7 +11,7 @@ import {
 } from './model-paths'
 import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, setOnFlushText } from './asr'
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
-import { getDb, closeDb } from './database'
+import { getDb, closeDb, getTags, setTags, getAllTags, getTagsMap } from './database'
 import { migrateFromJson } from './metadata-cache'
 import fs from 'fs'
 import https from 'https'
@@ -319,6 +319,19 @@ ipcMain.handle('music:get-metadata', (_e, relPath: string) => {
 ipcMain.handle('music:get-all-metadata', () => {
   return getAllMetadata()
 })
+
+// ── IPC: Tags ─────────────────────────────────────────────────────────────────
+
+ipcMain.handle('tags:get', (_e, filename: string) => getTags(filename))
+
+ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
+  setTags(filename, tags)
+  return { ok: true }
+})
+
+ipcMain.handle('tags:get-all', () => getAllTags())
+
+ipcMain.handle('tags:get-map', () => getTagsMap())
 
 // ── IPC: Transcripts ──────────────────────────────────────────────────────────
 

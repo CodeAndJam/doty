@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import type { ScanProgress } from '../types'
 import { onQwenLog } from '../hooks/useQwen'
+import { useCrossfade } from '../hooks/useCrossfade'
 
 interface Props {
   onClose: () => void
@@ -51,6 +52,7 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
   const [qwenLogs, setQwenLogs] = useState<string[]>([])
   const [hotwordsFile, setHotwordsFile] = useState('')
   const logEndRef = useRef<HTMLDivElement>(null)
+  const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
   // Subscribe to verbose Qwen worker logs
   useEffect(() => {
@@ -382,6 +384,28 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
           </div>
           <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
             Number of tracks to suggest per query
+          </p>
+        </div>
+
+        {/* Crossfade duration */}
+        <div className="mb-5">
+          <Label>Crossfade</Label>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={0}
+              max={5000}
+              step={100}
+              value={crossfadeMs}
+              onChange={(e) => setCrossfadeMs(Number(e.target.value))}
+              style={{ flex: 1, accentColor: '#c8922a' }}
+            />
+            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '36px', textAlign: 'right' }}>
+              {(crossfadeMs / 1000).toFixed(1)}s
+            </span>
+          </div>
+          <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            {crossfadeMs === 0 ? 'Instant transition between tracks' : 'Smooth fade between tracks'}
           </p>
         </div>
 

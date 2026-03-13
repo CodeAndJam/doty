@@ -31,6 +31,38 @@ export interface TrackMeta {
   codec: string | null
 }
 
+// ── Playback types ──────────────────────────────────────────────────
+
+export type LoopMode = 'off' | 'single' | 'queue'
+
+export interface PlaybackState {
+  /** Currently loaded track filename, or null if nothing loaded */
+  track: string | null
+  /** Whether audio is actively playing */
+  playing: boolean
+  /** Playback progress 0..1 */
+  progress: number
+  /** Current time in seconds */
+  currentTime: number
+  /** Total duration in seconds */
+  duration: number
+  /** Volume 0..1 */
+  volume: number
+  /** Whether audio is muted */
+  muted: boolean
+  /** Current loop mode */
+  loopMode: LoopMode
+}
+
+export interface QueueState {
+  /** Ordered list of track filenames */
+  tracks: string[]
+  /** Index of the currently playing track (-1 if queue is empty or not active) */
+  currentIndex: number
+}
+
+// ── API types ───────────────────────────────────────────────────────
+
 export interface DotyAPI {
   // STT
   sttStart: () => Promise<{ ok: boolean }>
@@ -72,6 +104,12 @@ export interface DotyAPI {
   triggerScan: () => Promise<{ ok: boolean }>
   onScanProgress: (cb: (p: ScanProgress) => void) => () => void
   onScanComplete: (cb: () => void) => () => void
+
+  // Tags
+  getTags: (filename: string) => Promise<string[]>
+  setTags: (filename: string, tags: string[]) => Promise<{ ok: boolean }>
+  getAllTags: () => Promise<string[]>
+  getTagsMap: () => Promise<Record<string, string[]>>
 }
 
 declare global {

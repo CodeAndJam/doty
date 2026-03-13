@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactDOM from 'react-dom'
 import type { TrackMeta } from '../types'
-import { PlayIcon, PauseIcon, PinIcon, ChevronUp, ChevronDown, InfoIcon } from './Icons'
+import { PlayIcon, PauseIcon, PinIcon, ChevronUp, ChevronDown, InfoIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
+import TagInput from './TagInput'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -22,7 +23,13 @@ function MetaRow({ label, value }: { label: string; value: string | number | nul
   )
 }
 
-function MetadataTooltip({ meta, anchorRef }: { meta: TrackMeta; anchorRef: React.RefObject<HTMLDivElement | null> }) {
+/** Extract directory path from a filename (everything before the last separator). */
+function dirName(filename: string): string {
+  const idx = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'))
+  return idx > 0 ? filename.substring(0, idx) : ''
+}
+
+function MetadataTooltip({ meta, filename, anchorRef }: { meta: TrackMeta; filename: string; anchorRef: React.RefObject<HTMLDivElement | null> }) {
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
   useEffect(() => {
@@ -45,6 +52,7 @@ function MetadataTooltip({ meta, anchorRef }: { meta: TrackMeta; anchorRef: Reac
       boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
     }}>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0">
+        {dirName(filename) && <div className="col-span-2"><MetaRow label="Dir" value={dirName(filename)} /></div>}
         <MetaRow label="BPM" value={meta.bpm ? `${Math.round(meta.bpm)} (${Math.round(meta.bpmConfidence * 100)}%)` : null} />
         <MetaRow label="Key" value={meta.key && meta.scale ? `${meta.key} ${meta.scale}` : meta.key || null} />
         <MetaRow label="Energy" value={meta.energy != null ? `${Math.round(meta.energy * 100)}%` : null} />
@@ -74,17 +82,25 @@ interface TrackCardProps {
   canMoveUp: boolean
   canMoveDown: boolean
   meta?: TrackMeta
+  tags?: string[]
+  allTags?: string[]
   onPlay: () => void
   onPin: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  onTagsChange?: (tags: string[]) => void
+  onPlayNext?: () => void
+  onAddToQueue?: () => void
 }
 
 export default function TrackCard({
   filename, isPlaying, isPinned, rank, showReorder,
-  canMoveUp, canMoveDown, meta, onPlay, onPin, onMoveUp, onMoveDown,
+  canMoveUp, canMoveDown, meta, tags = [], allTags = [],
+  onPlay, onPin, onMoveUp, onMoveDown, onTagsChange,
+  onPlayNext, onAddToQueue,
 }: TrackCardProps) {
   const [expanded, setExpanded] = useState(false)
+  const [editingTags, setEditingTags] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const name = trackName(filename)
 
@@ -95,7 +111,9 @@ export default function TrackCard({
       className="relative transition-all group flex-1"
       style={{
         minHeight: '36px',
-        maxHeight: '64px',
+        maxHeight: editingTags ? 'none' : '64px',
+        overflow: editingTags ? 'visible' : undefined,
+        zIndex: editingTags ? 20 : undefined,
         background: isPlaying
           ? 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.06))'
           : 'linear-gradient(160deg, #0f0d09, #080705)',
@@ -122,6 +140,34 @@ export default function TrackCard({
           {name}
         </span>
 
+        {/* Tag pills (read-only display) */}
+        {tags.length > 0 && !editingTags && (
+          <div className="flex items-center gap-1 shrink-0 max-w-[40%] overflow-hidden">
+            {tags.slice(0, 3).map(tag => (
+              <span
+                key={tag}
+                className="px-1.5 truncate"
+                style={{
+                  background: 'rgba(200,146,42,0.12)',
+                  border: '1px solid rgba(200,146,42,0.25)',
+                  fontSize: '10px',
+                  fontFamily: 'monospace',
+                  color: '#c8922a',
+                  lineHeight: '16px',
+                  maxWidth: '80px',
+                }}
+              >
+                {tag}
+              </span>
+            ))}
+            {tags.length > 3 && (
+              <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b4e15' }}>
+                +{tags.length - 3}
+              </span>
+            )}
+          </div>
+        )}
+
         {showReorder && (
           <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1.5" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
@@ -144,6 +190,56 @@ export default function TrackCard({
           </button>
         )}
 
+        {/* Tag edit toggle */}
+        {onTagsChange && (
+          <button
+            onClick={() => setEditingTags(e => !e)}
+            className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
+            title="Edit tags"
+            style={{ color: editingTags ? '#c8922a' : undefined, fontSize: '14px' }}
+          >
+            <TagIcon />
+          </button>
+        )}
+
+        {/* Queue actions */}
+        {(onPlayNext || onAddToQueue) && (
+          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            {onPlayNext && (
+              <button
+                onClick={onPlayNext}
+                className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+                title="Play next"
+                style={{
+                  fontSize: '9px',
+                  fontFamily: 'monospace',
+                  color: '#6b4e15',
+                  border: '1px solid rgba(200,146,42,0.2)',
+                  lineHeight: '14px',
+                }}
+              >
+                NEXT
+              </button>
+            )}
+            {onAddToQueue && (
+              <button
+                onClick={onAddToQueue}
+                className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+                title="Add to queue"
+                style={{
+                  fontSize: '9px',
+                  fontFamily: 'monospace',
+                  color: '#6b4e15',
+                  border: '1px solid rgba(200,146,42,0.2)',
+                  lineHeight: '14px',
+                }}
+              >
+                QUEUE
+              </button>
+            )}
+          </div>
+        )}
+
         <button
           onClick={onPin}
           className="w-8 h-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
@@ -161,7 +257,14 @@ export default function TrackCard({
         </span>
       </div>
 
-      {expanded && meta && <MetadataTooltip meta={meta} anchorRef={cardRef} />}
+      {expanded && meta && <MetadataTooltip meta={meta} filename={filename} anchorRef={cardRef} />}
+
+      {/* Inline tag editor */}
+      {editingTags && onTagsChange && (
+        <div className="px-3 pb-2 pt-1" style={{ borderTop: '1px solid rgba(46,36,22,0.3)' }}>
+          <TagInput tags={tags} allTags={allTags} onChange={onTagsChange} />
+        </div>
+      )}
     </div>
   )
 }

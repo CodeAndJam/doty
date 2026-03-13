@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import type { TrackMeta } from '../types'
 import { PinIcon, BrowseIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import TrackCard from './TrackCard'
 import BrowsePanel from './BrowsePanel'
+import QueuePanel from './QueuePanel'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
+import { useQueue } from '../hooks/useQueue'
 
 const PINS_KEY = 'doty:pinnedTracks'
 
@@ -25,23 +27,76 @@ interface Props {
 export default function Soundboard({ recommendations, musicFolder, speakerDeviceId, onNoFolder }: Props) {
   const [pinned, setPinned] = useState<string[]>(loadPins)
   const [browsing, setBrowsing] = useState(false)
+  const [showQueue, setShowQueue] = useState(false)
   const [metaMap, setMetaMap] = useState<Record<string, TrackMeta>>({})
+  const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
+  const [allTags, setAllTags] = useState<string[]>([])
+  const [allFiles, setAllFiles] = useState<string[]>([])
 
-  const { playing, isAudioPlaying, progress, playTrack, seekTo } = useAudioPlayer({
-    speakerDeviceId,
-    onNoFolder,
-    musicFolder,
-  })
+  const queue = useQueue()
 
-  // Fetch metadata once on mount (and when music folder changes)
+  // Ref-based onTrackEnd so the callback always sees current state
+  const trackEndRef = useRef<() => void>(() => {})
+
+  const handleTrackEnd = useCallback(() => { trackEndRef.current() }, [])
+
+  const {
+    playing, isAudioPlaying, progress, currentTime, duration,
+    volume, muted, loopMode,
+    playTrack, stopPlayback, seekTo, seekStart, seekEnd,
+    setVolume, toggleMute, cycleLoopMode,
+  } = useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTrackEnd: handleTrackEnd })
+
+  // Keep the ref in sync with current queue/loop/playback state
+  useEffect(() => {
+    trackEndRef.current = () => {
+      if (queue.tracks.length === 0) {
+        stopPlayback()
+        return
+      }
+      const isLast = queue.currentIndex >= queue.tracks.length - 1
+      if (loopMode === 'single') {
+        // audio.loop = true handles this, but just in case:
+        if (queue.currentTrack) playTrack(queue.currentTrack, true)
+      } else if (loopMode === 'queue' || !isLast) {
+        const track = queue.next(loopMode === 'queue')
+        if (track) playTrack(track, true)
+        else stopPlayback()
+      } else {
+        stopPlayback()
+      }
+    }
+  }, [queue, loopMode, playTrack, stopPlayback])
+
+  // Watch queue.currentTrack — when it changes (from next/prev/jump/enqueue), play it
+  const lastQueueTrackRef = useRef<string | null>(null)
+  const lastQueueIndexRef = useRef<number>(-1)
+  useEffect(() => {
+    const cur = queue.currentTrack
+    const idx = queue.currentIndex
+    if (cur && (cur !== lastQueueTrackRef.current || idx !== lastQueueIndexRef.current)) {
+      playTrack(cur, true) // forceRestart: skip toggle, always start fresh
+      lastQueueTrackRef.current = cur
+      lastQueueIndexRef.current = idx
+    } else if (!cur) {
+      lastQueueTrackRef.current = null
+      lastQueueIndexRef.current = -1
+    }
+  }, [queue.currentTrack, queue.currentIndex]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch metadata and file list on mount (and when music folder changes)
   useEffect(() => {
     if (!musicFolder) return
+    window.doty.listMusic().then(setAllFiles).catch(() => {})
     window.doty.getAllMetadata().then(setMetaMap).catch(() => {})
+    window.doty.getTagsMap().then(setTagsMap).catch(() => {})
+    window.doty.getAllTags().then(setAllTags).catch(() => {})
   }, [musicFolder])
 
-  // Re-fetch metadata after scan completes
+  // Re-fetch after scan completes
   useEffect(() => {
     const unsub = window.doty.onScanComplete(() => {
+      window.doty.listMusic().then(setAllFiles).catch(() => {})
       window.doty.getAllMetadata().then(setMetaMap).catch(() => {})
     })
     return unsub
@@ -49,6 +104,25 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
 
   // Persist pins
   useEffect(() => { savePins(pinned) }, [pinned])
+
+  // Keyboard shortcuts: N = next, P = prev
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
+      if (queue.tracks.length === 0) return
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault()
+        handleSkipNext()
+      } else if (e.key === 'p' || e.key === 'P') {
+        e.preventDefault()
+        handleSkipPrev()
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [queue.tracks.length, loopMode]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function togglePin(filename: string) {
     setPinned(prev =>
@@ -70,11 +144,43 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
     })
   }
 
-  // Suggestions = recommendations minus pinned, plus currently playing track if not pinned
-  const suggestions = recommendations.filter(f => !pinned.includes(f))
-  if (playing && !pinned.includes(playing) && !suggestions.includes(playing)) {
-    suggestions.unshift(playing)
+  function handleTagsChange(filename: string, tags: string[]) {
+    window.doty.setTags(filename, tags).then(() => {
+      setTagsMap(prev => ({ ...prev, [filename]: tags }))
+      window.doty.getAllTags().then(setAllTags).catch(() => {})
+    }).catch(() => {})
   }
+
+  function handleSkipNext() {
+    if (queue.tracks.length === 0) return
+    const track = queue.next(loopMode === 'queue')
+    if (track) playTrack(track, true)
+  }
+
+  function handleSkipPrev() {
+    if (queue.tracks.length === 0) return
+    const track = queue.prev(loopMode === 'queue')
+    if (track) playTrack(track, true)
+  }
+
+  function handleQueuePlay(index: number) {
+    queue.setCurrentIndex(index)
+    const track = queue.tracks[index]
+    if (track) playTrack(track, true)
+  }
+
+  // Recommendations minus pinned
+  const suggestions = recommendations.filter(f => !pinned.includes(f))
+
+  // All remaining tracks: not pinned, not in recommendations
+  const pinnedSet = new Set(pinned)
+  const sugSet = new Set(suggestions)
+  const rest = allFiles.filter(f => !pinnedSet.has(f) && !sugSet.has(f))
+
+  const queuePosition: [number, number] | null =
+    queue.tracks.length > 0 ? [queue.currentIndex, queue.tracks.length] : null
+
+  const hasTracks = pinned.length > 0 || suggestions.length > 0 || rest.length > 0
 
   const emptyState = (msg: string, sub?: string) => (
     <div className="flex-1 flex flex-col items-center justify-center relative" style={{
@@ -95,8 +201,6 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
     </div>
   )
 
-  const hasTracks = pinned.length > 0 || suggestions.length > 0
-
   return (
     <div className="h-full flex flex-col relative">
       {/* Header */}
@@ -113,7 +217,7 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
         <div className="flex items-center gap-3">
           {hasTracks && (
             <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-              {pinned.length > 0 ? `${pinned.length} pinned` : ''}{pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}{suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
+              {allFiles.length} tracks{pinned.length > 0 ? ` / ${pinned.length} pinned` : ''}{suggestions.length > 0 ? ` / ${suggestions.length} attuned` : ''}
             </span>
           )}
           {musicFolder && (
@@ -132,7 +236,7 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
       {!musicFolder
         ? emptyState('No archive selected', 'Open Configuration')
         : !hasTracks
-          ? emptyState('Speak or describe the mood below')
+          ? emptyState('No tracks found in archive')
           : (
             <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
               {/* Pinned section label */}
@@ -156,10 +260,15 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
                   canMoveUp={i > 0}
                   canMoveDown={i < pinned.length - 1}
                   meta={metaMap[f]}
+                  tags={tagsMap[f] || []}
+                  allTags={allTags}
                   onPlay={() => playTrack(f)}
                   onPin={() => togglePin(f)}
                   onMoveUp={() => movePin(f, -1)}
                   onMoveDown={() => movePin(f, 1)}
+                  onTagsChange={(tags) => handleTagsChange(f, tags)}
+                  onPlayNext={() => queue.playNext(f)}
+                  onAddToQueue={() => queue.enqueue(f)}
                 />
               ))}
 
@@ -184,10 +293,48 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
                   canMoveUp={false}
                   canMoveDown={false}
                   meta={metaMap[f]}
+                  tags={tagsMap[f] || []}
+                  allTags={allTags}
                   onPlay={() => playTrack(f)}
                   onPin={() => togglePin(f)}
                   onMoveUp={() => {}}
                   onMoveDown={() => {}}
+                  onTagsChange={(tags) => handleTagsChange(f, tags)}
+                  onPlayNext={() => queue.playNext(f)}
+                  onAddToQueue={() => queue.enqueue(f)}
+                />
+              ))}
+
+              {/* All remaining tracks */}
+              {rest.length > 0 && (
+                <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                  <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x266B;</span>
+                  <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#3a2e1a', textTransform: 'uppercase' }}>
+                    All Tracks
+                  </span>
+                  <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                </div>
+              )}
+              {rest.map((f, i) => (
+                <TrackCard
+                  key={`all-${f}`}
+                  filename={f}
+                  isPlaying={playing === f}
+                  isPinned={false}
+                  rank={pinned.length + suggestions.length + i + 1}
+                  showReorder={false}
+                  canMoveUp={false}
+                  canMoveDown={false}
+                  meta={metaMap[f]}
+                  tags={tagsMap[f] || []}
+                  allTags={allTags}
+                  onPlay={() => playTrack(f)}
+                  onPin={() => togglePin(f)}
+                  onMoveUp={() => {}}
+                  onMoveDown={() => {}}
+                  onTagsChange={(tags) => handleTagsChange(f, tags)}
+                  onPlayNext={() => queue.playNext(f)}
+                  onAddToQueue={() => queue.enqueue(f)}
                 />
               ))}
             </div>
@@ -199,9 +346,26 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
         <BrowsePanel
           pinned={pinned}
           playing={playing}
+          tagsMap={tagsMap}
+          allTags={allTags}
           onPlay={playTrack}
           onPin={togglePin}
           onClose={() => setBrowsing(false)}
+        />
+      )}
+
+      {/* Queue panel */}
+      {showQueue && (
+        <QueuePanel
+          tracks={queue.tracks}
+          currentIndex={queue.currentIndex}
+          playing={playing}
+          isPlaying={isAudioPlaying}
+          onPlay={handleQueuePlay}
+          onRemove={queue.remove}
+          onReorder={queue.reorder}
+          onClear={queue.clear}
+          onClose={() => setShowQueue(false)}
         />
       )}
 
@@ -211,8 +375,22 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
           filename={playing}
           isPlaying={isAudioPlaying}
           progress={progress}
+          currentTime={currentTime}
+          duration={duration}
+          volume={volume}
+          muted={muted}
+          loopMode={loopMode}
+          queuePosition={queuePosition}
           onToggle={() => playTrack(playing)}
           onSeek={seekTo}
+          onSeekStart={seekStart}
+          onSeekEnd={seekEnd}
+          onVolumeChange={setVolume}
+          onToggleMute={toggleMute}
+          onCycleLoop={cycleLoopMode}
+          onSkipNext={queue.tracks.length > 0 ? handleSkipNext : undefined}
+          onSkipPrev={queue.tracks.length > 0 ? handleSkipPrev : undefined}
+          onToggleQueue={() => setShowQueue(q => !q)}
         />
       )}
     </div>

@@ -41,7 +41,54 @@ export function getDb(): Database.Database {
     )
   `)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS track_tags (
+      filename TEXT NOT NULL,
+      tag      TEXT NOT NULL,
+      PRIMARY KEY (filename, tag)
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_tags_tag ON track_tags(tag)`)
+
   return db
+}
+
+// ── Tag queries ───────────────────────────────────────────────────────────────
+
+export function getTags(filename: string): string[] {
+  const db = getDb()
+  const rows = db.prepare('SELECT tag FROM track_tags WHERE filename = ? ORDER BY tag').all(filename) as { tag: string }[]
+  return rows.map(r => r.tag)
+}
+
+export function setTags(filename: string, tags: string[]): void {
+  const db = getDb()
+  const normalized = [...new Set(tags.map(t => t.toLowerCase().trim()).filter(Boolean))]
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM track_tags WHERE filename = ?').run(filename)
+    const insert = db.prepare('INSERT INTO track_tags (filename, tag) VALUES (?, ?)')
+    for (const tag of normalized) {
+      insert.run(filename, tag)
+    }
+  })
+  tx()
+}
+
+export function getAllTags(): string[] {
+  const db = getDb()
+  const rows = db.prepare('SELECT DISTINCT tag FROM track_tags ORDER BY tag').all() as { tag: string }[]
+  return rows.map(r => r.tag)
+}
+
+export function getTagsMap(): Record<string, string[]> {
+  const db = getDb()
+  const rows = db.prepare('SELECT filename, tag FROM track_tags ORDER BY filename, tag').all() as { filename: string; tag: string }[]
+  const map: Record<string, string[]> = {}
+  for (const row of rows) {
+    if (!map[row.filename]) map[row.filename] = []
+    map[row.filename].push(row.tag)
+  }
+  return map
 }
 
 export function closeDb(): void {

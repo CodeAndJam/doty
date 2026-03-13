@@ -46,16 +46,16 @@ if (fs.existsSync(VAD_MODEL_PATH)) {
       sileroVad: {
         model: VAD_MODEL_PATH,
         threshold: 0.3,
-        minSilenceDuration: 0.3,
-        minSpeechDuration: 0.25,
+        minSilenceDuration: 0.15,
+        minSpeechDuration: 0.15,
         windowSize: 512,
-        maxSpeechDuration: 25,
+        maxSpeechDuration: 15,
       },
       sampleRate: SAMPLE_RATE,
       numThreads: 1,
       debug: 0,
     }, 30)
-    console.log('[asr-worker] Silero VAD initialized (threshold=0.3, maxSpeech=25s)')
+    console.log('[asr-worker] Silero VAD initialized (threshold=0.3, minSilence=0.15, maxSpeech=15s)')
   } catch (e) {
     console.error('[asr-worker] VAD init failed, falling back to raw chunks:', e)
     vad = null

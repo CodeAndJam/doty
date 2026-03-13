@@ -15,6 +15,8 @@ export function useRecorder(deviceId?: string) {
       sampleRate: 16000,
       channelCount: 1,
       echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
     }
     if (deviceId) audioConstraints.deviceId = { exact: deviceId }
 

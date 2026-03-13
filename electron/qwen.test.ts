@@ -154,4 +154,30 @@ describe('QwenManager (reranker)', () => {
       expect(result).toEqual(FILES.slice(0, 5))
     })
   })
+
+  describe('scoring with tags', () => {
+    it('includes tags in track description when tagsMap is provided', async () => {
+      const { manager, mockScoreFn } = makeManager()
+      const tagsMap = { 'track-a.mp3': ['combat', 'boss'] }
+      await manager.recommend('test', ['track-a.mp3'], METADATA, 5, tagsMap)
+      const pairs = mockScoreFn.mock.calls[0][0]
+      expect(pairs[0].text_pair).toContain('tags: combat, boss')
+    })
+
+    it('does not include tags section when track has no tags', async () => {
+      const { manager, mockScoreFn } = makeManager()
+      await manager.recommend('test', ['track-a.mp3'], METADATA, 5, {})
+      const pairs = mockScoreFn.mock.calls[0][0]
+      expect(pairs[0].text_pair).not.toContain('tags:')
+    })
+
+    it('includes both metadata and tags in description', async () => {
+      const { manager, mockScoreFn } = makeManager()
+      const tagsMap = { 'track-a.mp3': ['tavern'] }
+      await manager.recommend('test', ['track-a.mp3'], METADATA, 5, tagsMap)
+      const pairs = mockScoreFn.mock.calls[0][0]
+      expect(pairs[0].text_pair).toContain('Artist A')
+      expect(pairs[0].text_pair).toContain('tags: tavern')
+    })
+  })
 })

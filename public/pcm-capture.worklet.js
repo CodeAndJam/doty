@@ -5,7 +5,7 @@
 class PcmCapture extends AudioWorkletProcessor {
   constructor() {
     super()
-    this.segmentSamples = 16000 * 1 // 1 second at 16kHz
+    this.segmentSamples = 16000 * 0.5 // 0.5 seconds at 16kHz — smaller chunks for better VAD in noisy multi-speaker environments
     this.buffer = new Float32Array(this.segmentSamples)
     this.writePos = 0
   }

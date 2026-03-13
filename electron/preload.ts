@@ -73,4 +73,10 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('scan:complete', handler)
     return () => ipcRenderer.removeListener('scan:complete', handler)
   },
+
+  // Tags
+  getTags: (filename: string) => ipcRenderer.invoke('tags:get', filename),
+  setTags: (filename: string, tags: string[]) => ipcRenderer.invoke('tags:set', filename, tags),
+  getAllTags: () => ipcRenderer.invoke('tags:get-all'),
+  getTagsMap: () => ipcRenderer.invoke('tags:get-map'),
 })
