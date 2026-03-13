@@ -184,16 +184,14 @@ function createWindow() {
 }
 
 function registerMusicProtocol() {
+  // Lazy-import to keep the module testable without Electron deps
+  const { handleMusicRequest } = require('./music-protocol') as typeof import('./music-protocol')
   protocol.handle('music', (request) => {
     const musicFolder = store.get('musicFolder', '') as string
-    // music:// is NOT a standard scheme, so the URL is opaque.
-    // music://play/Campfire.mp3 → raw string, extract after "music://play/"
-    const raw = request.url
-    const prefix = 'music://play/'
-    const filename = decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
-    const filePath = join(musicFolder, filename)
-    console.log('[music] request:', raw, '→', filePath, '| exists:', fs.existsSync(filePath))
-    return net.fetch(pathToFileURL(filePath).toString())
+    return handleMusicRequest(
+      { url: request.url, rangeHeader: request.headers.get('Range') },
+      musicFolder,
+    )
   })
 }
 
