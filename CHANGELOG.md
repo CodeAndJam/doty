@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/CodeAndJam/doty/compare/v1.2.0...v1.3.0) (2026-03-13)
+
+
+### Features
+
+* music player with queue, tags, crossfade, and track info tooltip ([6240b7c](https://github.com/CodeAndJam/doty/commit/6240b7c57253da2bed3f55142a1189ac74fe0ba4))
+
+
+### Bug Fixes
+
+* codebase review fixes and TrackCard tests ([4b9d51e](https://github.com/CodeAndJam/doty/commit/4b9d51e953a12fde147102d992e61d3e3878d3cd))
+* **ui:** show track metadata tooltip on hover instead of click ([b3871f1](https://github.com/CodeAndJam/doty/commit/b3871f1636a98b403a52674fbdc961dfd9c997d5))
+
 ## [1.2.0](https://github.com/CodeAndJam/doty/compare/v1.1.0...v1.2.0) (2026-03-11)
 
 
