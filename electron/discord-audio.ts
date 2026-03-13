@@ -20,8 +20,9 @@ try {
  * Create an AudioResource from a music file on disk.
  * Uses ffmpeg to decode any format to PCM s16le stereo 48kHz,
  * then pipes through an Opus encoder for Discord.
+ * @param seekSeconds — start decoding at this offset (0 = beginning)
  */
-export function createMusicResource(musicFolder: string, filename: string, volume = 1.0) {
+export function createMusicResource(musicFolder: string, filename: string, volume = 1.0, seekSeconds = 0) {
   const filePath = join(musicFolder, filename)
 
   if (!fs.existsSync(filePath)) {
@@ -31,6 +32,8 @@ export function createMusicResource(musicFolder: string, filename: string, volum
   // Use prism FFmpeg to decode the audio file to raw PCM
   const ffmpeg = new prism.FFmpeg({
     args: [
+      // Seek BEFORE input so ffmpeg jumps directly (fast, no decoding skipped frames)
+      ...(seekSeconds > 0 ? ['-ss', String(seekSeconds)] : []),
       '-i', filePath,
       '-analyzeduration', '0',
       '-loglevel', '0',

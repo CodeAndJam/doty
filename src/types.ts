@@ -144,8 +144,10 @@ export interface DotyAPI {
   discordGetVoiceChannels: (guildId: string) => Promise<DiscordVoiceChannel[]>
   discordJoinChannel: (guildId: string, channelId: string) => Promise<{ ok: boolean; error?: string }>
   discordLeaveChannel: () => Promise<{ ok: boolean }>
-  discordStreamTrack: (filename: string) => Promise<{ ok: boolean }>
+  discordStreamTrack: (filename: string, seekSeconds?: number) => Promise<{ ok: boolean }>
   discordStopStream: () => Promise<{ ok: boolean }>
+  discordPauseStream: () => Promise<{ ok: boolean }>
+  discordResumeStream: () => Promise<{ ok: boolean }>
   discordSetVolume: (volume: number) => Promise<{ ok: boolean }>
   discordGetVolume: () => Promise<number>
   discordHasToken: () => Promise<boolean>

@@ -351,8 +351,9 @@ export function leaveChannel(): void {
 /**
  * Stream a track to the Discord voice channel.
  * Called by the renderer via IPC whenever a track starts playing locally.
+ * @param seekSeconds — start playback at this offset (0 = beginning)
  */
-export function streamTrack(filename: string): void {
+export function streamTrack(filename: string, seekSeconds = 0): void {
   currentTrack = filename
 
   // Only stream if we're in a voice channel
@@ -362,11 +363,31 @@ export function streamTrack(filename: string): void {
   if (!musicFolder) return
 
   try {
-    const resource = createMusicResource(musicFolder, filename, discordVolume)
+    const resource = createMusicResource(musicFolder, filename, discordVolume, seekSeconds)
     player.play(resource)
-    console.log(`[discord] Streaming: ${filename}`)
+    console.log(`[discord] Streaming: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
   } catch (err) {
     console.error('[discord] Stream error:', err)
+  }
+}
+
+/**
+ * Pause Discord audio streaming (keeps the connection alive).
+ */
+export function pauseStream(): void {
+  if (player) {
+    player.pause(true)
+    console.log('[discord] Stream paused')
+  }
+}
+
+/**
+ * Resume Discord audio streaming after a pause.
+ */
+export function resumeStream(): void {
+  if (player) {
+    player.unpause()
+    console.log('[discord] Stream resumed')
   }
 }
 

@@ -17,6 +17,7 @@ import {
   connect as discordConnect, disconnect as discordDisconnect, destroyDiscord,
   getState as discordGetState, getGuilds, getVoiceChannels,
   joinChannel, leaveChannel, streamTrack, stopStream,
+  pauseStream, resumeStream,
   setDiscordVolume, getDiscordVolume, onStateChange,
   loadToken, clearToken, saveToken,
 } from './discord'
@@ -621,13 +622,23 @@ ipcMain.handle('discord:leave-channel', () => {
   return { ok: true }
 })
 
-ipcMain.handle('discord:stream-track', (_e, filename: string) => {
-  streamTrack(filename)
+ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: number) => {
+  streamTrack(filename, seekSeconds ?? 0)
   return { ok: true }
 })
 
 ipcMain.handle('discord:stop-stream', () => {
   stopStream()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:pause-stream', () => {
+  pauseStream()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:resume-stream', () => {
+  resumeStream()
   return { ok: true }
 })
 
