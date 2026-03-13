@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.0](https://github.com/CodeAndJam/doty/compare/v1.4.0...v1.5.0) (2026-03-13)
+
+
+### Features
+
+* **sfx:** add recommendations, pinning, tags, and metadata tooltip for SFX ([#34](https://github.com/CodeAndJam/doty/issues/34)) ([c3780c9](https://github.com/CodeAndJam/doty/commit/c3780c963573ba4bf1632992f22e4e14a702554b))
+
+
+### Bug Fixes
+
+* **discord:** sync pause, resume, and seek with Discord voice stream ([#32](https://github.com/CodeAndJam/doty/issues/32)) ([0906672](https://github.com/CodeAndJam/doty/commit/0906672b9d86715fec54c3009521f20e4c214188))
+
 ## [1.4.0](https://github.com/CodeAndJam/doty/compare/v1.3.1...v1.4.0) (2026-03-13)
 
 
