@@ -13,6 +13,7 @@ import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, s
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb, getTags, setTags, getAllTags, getTagsMap } from './database'
 import { migrateFromJson } from './metadata-cache'
+import { handleMusicRequest } from './music-protocol'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
