@@ -63,6 +63,31 @@ export interface QueueState {
 
 // ── API types ───────────────────────────────────────────────────────
 
+// ── Discord types ───────────────────────────────────────────────────
+
+export interface DiscordGuild {
+  id: string
+  name: string
+  icon: string | null
+}
+
+export interface DiscordVoiceChannel {
+  id: string
+  name: string
+  guildId: string
+}
+
+export type DiscordStatus = 'disconnected' | 'connecting' | 'ready' | 'error'
+export type DiscordVoiceStatus = 'idle' | 'joining' | 'connected' | 'playing' | 'error'
+
+export interface DiscordState {
+  status: DiscordStatus
+  voiceStatus: DiscordVoiceStatus
+  currentGuildId: string | null
+  currentChannelId: string | null
+  error: string | null
+}
+
 export interface DotyAPI {
   // STT
   sttStart: () => Promise<{ ok: boolean }>
@@ -110,6 +135,22 @@ export interface DotyAPI {
   setTags: (filename: string, tags: string[]) => Promise<{ ok: boolean }>
   getAllTags: () => Promise<string[]>
   getTagsMap: () => Promise<Record<string, string[]>>
+
+  // Discord
+  discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>
+  discordDisconnect: () => Promise<{ ok: boolean }>
+  discordGetState: () => Promise<DiscordState>
+  discordGetGuilds: () => Promise<DiscordGuild[]>
+  discordGetVoiceChannels: (guildId: string) => Promise<DiscordVoiceChannel[]>
+  discordJoinChannel: (guildId: string, channelId: string) => Promise<{ ok: boolean; error?: string }>
+  discordLeaveChannel: () => Promise<{ ok: boolean }>
+  discordStreamTrack: (filename: string) => Promise<{ ok: boolean }>
+  discordStopStream: () => Promise<{ ok: boolean }>
+  discordSetVolume: (volume: number) => Promise<{ ok: boolean }>
+  discordGetVolume: () => Promise<number>
+  discordHasToken: () => Promise<boolean>
+  discordClearToken: () => Promise<{ ok: boolean }>
+  onDiscordState: (cb: (state: DiscordState) => void) => () => void
 }
 
 declare global {
