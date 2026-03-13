@@ -80,6 +80,19 @@ contextBridge.exposeInMainWorld('doty', {
   getAllTags: () => ipcRenderer.invoke('tags:get-all'),
   getTagsMap: () => ipcRenderer.invoke('tags:get-map'),
 
+  // SFX
+  getSfxList: () => ipcRenderer.invoke('sfx:list'),
+  getSfxFolder: () => ipcRenderer.invoke('sfx:get-folder'),
+  pickSfxFolder: () => ipcRenderer.invoke('sfx:pick-folder'),
+  setSfxFolder: (path: string) => ipcRenderer.invoke('sfx:set-folder', path),
+  getSfxRecommendationCount: () => ipcRenderer.invoke('settings:get-sfx-recommendation-count'),
+  setSfxRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-sfx-recommendation-count', count),
+  onSfxRecommendations: (cb: (ids: string[]) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
+    ipcRenderer.on('sfx:recommendations', handler)
+    return () => ipcRenderer.removeListener('sfx:recommendations', handler)
+  },
+
   // Discord
   discordConnect: (token?: string) => ipcRenderer.invoke('discord:connect', token),
   discordDisconnect: () => ipcRenderer.invoke('discord:disconnect'),

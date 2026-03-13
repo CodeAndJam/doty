@@ -52,6 +52,8 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
   const [showQwenLogs, setShowQwenLogs] = useState(false)
   const [qwenLogs, setQwenLogs] = useState<string[]>([])
   const [hotwordsFile, setHotwordsFile] = useState('')
+  const [sfxFolder, setSfxFolder] = useState('')
+  const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -77,6 +79,8 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
     window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
     window.doty.getHotwordsFile().then(setHotwordsFile)
+    window.doty.getSfxFolder().then(setSfxFolder)
+    window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
 
     const unsubProgress = window.doty.onScanProgress((p) => {
       setScanProgress(p)
@@ -388,6 +392,54 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
           </p>
         </div>
 
+        {/* SFX folder */}
+        <div className="mb-5">
+          <Label>Sound Effects Archive</Label>
+          <div className="flex gap-2">
+            <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {sfxFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No SFX archive selected</span>}
+            </div>
+            <button onClick={async () => {
+              const picked = await window.doty.pickSfxFolder()
+              if (picked) setSfxFolder(picked)
+            }} style={btnStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+              Browse
+            </button>
+          </div>
+          {sfxFolder && (
+            <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '6px', fontFamily: "'Crimson Text', serif" }}>
+              Effects loaded from this directory
+            </p>
+          )}
+        </div>
+
+        {/* SFX recommendation count */}
+        <div className="mb-5">
+          <Label>SFX Suggestions</Label>
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min={1}
+              max={10}
+              value={sfxRecommendCount}
+              onChange={(e) => {
+                const v = Number(e.target.value)
+                setSfxRecommendCount(v)
+                window.doty.setSfxRecommendationCount(v)
+              }}
+              style={{ flex: 1, accentColor: '#4a8a6a' }}
+            />
+            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '24px', textAlign: 'right' }}>
+              {sfxRecommendCount}
+            </span>
+          </div>
+          <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            Number of effects to suggest per scene
+          </p>
+        </div>
+
         {/* Crossfade duration */}
         <div className="mb-5">
           <Label>Crossfade</Label>
@@ -494,6 +546,32 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
         {/* Discord integration */}
         <div className="mb-6">
           <DiscordPanel />
+        </div>
+
+        {/* Divider before future features */}
+        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+
+        {/* Future features */}
+        <div className="mb-2">
+          <Label>Coming Soon</Label>
+
+          {/* Autopilot (#12) */}
+          <div className="flex items-center gap-3 mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }} />
+            <div className="flex-1 min-w-0">
+              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Autopilot Mode</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>Auto-play music based on scene context</p>
+            </div>
+          </div>
+
+          {/* Remote Control (#22) */}
+          <div className="flex items-center gap-3" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}>
+            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }} />
+            <div className="flex-1 min-w-0">
+              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Remote Control</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>HTTP API + Stream Deck support</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,14 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import type { TrackMeta } from '../types'
-import { PinIcon, BrowseIcon } from './Icons'
+import { PinIcon, BrowseIcon, MusicNoteIcon, SfxIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import TrackCard from './TrackCard'
 import BrowsePanel from './BrowsePanel'
 import QueuePanel from './QueuePanel'
+import SfxPanel from './SfxPanel'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useQueue } from '../hooks/useQueue'
 
 const PINS_KEY = 'doty:pinnedTracks'
+const TAB_KEY = 'doty:soundboardTab'
+
+type SoundboardTab = 'music' | 'sfx'
 
 function loadPins(): string[] {
   try { return JSON.parse(localStorage.getItem(PINS_KEY) || '[]') } catch { return [] }
@@ -16,15 +20,19 @@ function loadPins(): string[] {
 function savePins(pins: string[]) {
   localStorage.setItem(PINS_KEY, JSON.stringify(pins))
 }
+function loadTab(): SoundboardTab {
+  return (localStorage.getItem(TAB_KEY) as SoundboardTab) || 'music'
+}
 
 interface Props {
   recommendations: string[]
+  sfxRecommendations: string[]
   musicFolder: string
   speakerDeviceId?: string
   onNoFolder: () => void
 }
 
-export default function Soundboard({ recommendations, musicFolder, speakerDeviceId, onNoFolder }: Props) {
+export default function Soundboard({ recommendations, sfxRecommendations, musicFolder, speakerDeviceId, onNoFolder }: Props) {
   const [pinned, setPinned] = useState<string[]>(loadPins)
   const [browsing, setBrowsing] = useState(false)
   const [showQueue, setShowQueue] = useState(false)
@@ -32,7 +40,7 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
   const [allFiles, setAllFiles] = useState<string[]>([])
-
+  const [activeTab, setActiveTab] = useState<SoundboardTab>(loadTab)
   const queue = useQueue()
 
   // Ref-based onTrackEnd so the callback always sees current state
@@ -101,6 +109,9 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
     })
     return unsub
   }, [])
+
+  // Persist tab selection
+  useEffect(() => { localStorage.setItem(TAB_KEY, activeTab) }, [activeTab])
 
   // Persist pins
   useEffect(() => { savePins(pinned) }, [pinned])
@@ -203,24 +214,51 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
 
   return (
     <div className="h-full flex flex-col relative">
-      {/* Header */}
+      {/* Header with tab toggle */}
       <div className="flex items-center justify-between mb-3 shrink-0">
-        <span style={{
-          fontFamily: "'Cinzel', serif",
-          fontSize: '15px',
-          letterSpacing: '0.25em',
-          color: '#6b4e15',
-          textTransform: 'uppercase',
-        }}>
-          Melodic Compendium
-        </span>
+        {/* Tab toggle */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setActiveTab('music')}
+            className="flex items-center gap-1.5 px-2.5 py-1 transition-all"
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: '13px',
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: activeTab === 'music' ? '#c8922a' : '#3a2e1a',
+              border: `1px solid ${activeTab === 'music' ? 'rgba(200,146,42,0.4)' : 'transparent'}`,
+              background: activeTab === 'music' ? 'rgba(200,146,42,0.06)' : 'transparent',
+            }}
+          >
+            <MusicNoteIcon />
+            Music
+          </button>
+          <button
+            onClick={() => setActiveTab('sfx')}
+            className="flex items-center gap-1.5 px-2.5 py-1 transition-all"
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: '13px',
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: activeTab === 'sfx' ? '#4a8a6a' : '#3a2e1a',
+              border: `1px solid ${activeTab === 'sfx' ? 'rgba(74,138,106,0.4)' : 'transparent'}`,
+              background: activeTab === 'sfx' ? 'rgba(74,138,106,0.06)' : 'transparent',
+            }}
+          >
+            <SfxIcon />
+            SFX
+          </button>
+        </div>
+
         <div className="flex items-center gap-3">
-          {hasTracks && (
+          {activeTab === 'music' && hasTracks && (
             <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
               {allFiles.length} tracks{pinned.length > 0 ? ` / ${pinned.length} pinned` : ''}{suggestions.length > 0 ? ` / ${suggestions.length} attuned` : ''}
             </span>
           )}
-          {musicFolder && (
+          {activeTab === 'music' && musicFolder && (
             <button
               onClick={() => setBrowsing(true)}
               className="p-1.5 hover:opacity-80 transition-opacity"
@@ -233,113 +271,125 @@ export default function Soundboard({ recommendations, musicFolder, speakerDevice
         </div>
       </div>
 
-      {!musicFolder
-        ? emptyState('No archive selected', 'Open Configuration')
-        : !hasTracks
-          ? emptyState('No tracks found in archive')
-          : (
-            <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
-              {/* Pinned section label */}
-              {pinned.length > 0 && (
-                <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                  <PinIcon filled />
-                  <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#6b4e15', textTransform: 'uppercase' }}>
-                    Pinned
-                  </span>
-                  <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
-                </div>
-              )}
-              {pinned.map((f, i) => (
-                <TrackCard
-                  key={`pin-${f}`}
-                  filename={f}
-                  isPlaying={playing === f}
-                  isPinned
-                  rank={i + 1}
-                  showReorder
-                  canMoveUp={i > 0}
-                  canMoveDown={i < pinned.length - 1}
-                  meta={metaMap[f]}
-                  tags={tagsMap[f] || []}
-                  allTags={allTags}
-                  onPlay={() => playTrack(f)}
-                  onPin={() => togglePin(f)}
-                  onMoveUp={() => movePin(f, -1)}
-                  onMoveDown={() => movePin(f, 1)}
-                  onTagsChange={(tags) => handleTagsChange(f, tags)}
-                  onPlayNext={() => queue.playNext(f)}
-                  onAddToQueue={() => queue.enqueue(f)}
-                />
-              ))}
+      {/* Music tab content */}
+      {activeTab === 'music' && (
+        <>
+          {!musicFolder
+            ? emptyState('No archive selected', 'Open Configuration')
+            : !hasTracks
+              ? emptyState('No tracks found in archive')
+              : (
+                <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
+                  {/* Pinned section label */}
+                  {pinned.length > 0 && (
+                    <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                      <PinIcon filled />
+                      <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#6b4e15', textTransform: 'uppercase' }}>
+                        Pinned
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
+                    </div>
+                  )}
+                  {pinned.map((f, i) => (
+                    <TrackCard
+                      key={`pin-${f}`}
+                      filename={f}
+                      isPlaying={playing === f}
+                      isPinned
+                      rank={i + 1}
+                      showReorder
+                      canMoveUp={i > 0}
+                      canMoveDown={i < pinned.length - 1}
+                      meta={metaMap[f]}
+                      tags={tagsMap[f] || []}
+                      allTags={allTags}
+                      onPlay={() => playTrack(f)}
+                      onPin={() => togglePin(f)}
+                      onMoveUp={() => movePin(f, -1)}
+                      onMoveDown={() => movePin(f, 1)}
+                      onTagsChange={(tags) => handleTagsChange(f, tags)}
+                      onPlayNext={() => queue.playNext(f)}
+                      onAddToQueue={() => queue.enqueue(f)}
+                    />
+                  ))}
 
-              {/* Suggestions section label */}
-              {suggestions.length > 0 && (
-                <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                  <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
-                  <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#3a2e1a', textTransform: 'uppercase' }}>
-                    Suggestions
-                  </span>
-                  <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
-                </div>
-              )}
-              {suggestions.map((f, i) => (
-                <TrackCard
-                  key={`sug-${f}`}
-                  filename={f}
-                  isPlaying={playing === f}
-                  isPinned={false}
-                  rank={pinned.length + i + 1}
-                  showReorder={false}
-                  canMoveUp={false}
-                  canMoveDown={false}
-                  meta={metaMap[f]}
-                  tags={tagsMap[f] || []}
-                  allTags={allTags}
-                  onPlay={() => playTrack(f)}
-                  onPin={() => togglePin(f)}
-                  onMoveUp={() => {}}
-                  onMoveDown={() => {}}
-                  onTagsChange={(tags) => handleTagsChange(f, tags)}
-                  onPlayNext={() => queue.playNext(f)}
-                  onAddToQueue={() => queue.enqueue(f)}
-                />
-              ))}
+                  {/* Suggestions section label */}
+                  {suggestions.length > 0 && (
+                    <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                      <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
+                      <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#3a2e1a', textTransform: 'uppercase' }}>
+                        Suggestions
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                    </div>
+                  )}
+                  {suggestions.map((f, i) => (
+                    <TrackCard
+                      key={`sug-${f}`}
+                      filename={f}
+                      isPlaying={playing === f}
+                      isPinned={false}
+                      rank={pinned.length + i + 1}
+                      showReorder={false}
+                      canMoveUp={false}
+                      canMoveDown={false}
+                      meta={metaMap[f]}
+                      tags={tagsMap[f] || []}
+                      allTags={allTags}
+                      onPlay={() => playTrack(f)}
+                      onPin={() => togglePin(f)}
+                      onMoveUp={() => {}}
+                      onMoveDown={() => {}}
+                      onTagsChange={(tags) => handleTagsChange(f, tags)}
+                      onPlayNext={() => queue.playNext(f)}
+                      onAddToQueue={() => queue.enqueue(f)}
+                    />
+                  ))}
 
-              {/* All remaining tracks */}
-              {rest.length > 0 && (
-                <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                  <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x266B;</span>
-                  <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#3a2e1a', textTransform: 'uppercase' }}>
-                    All Tracks
-                  </span>
-                  <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                  {/* All remaining tracks */}
+                  {rest.length > 0 && (
+                    <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                      <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x266B;</span>
+                      <span style={{ fontFamily: "'Cinzel', serif", fontSize: '11px', letterSpacing: '0.2em', color: '#3a2e1a', textTransform: 'uppercase' }}>
+                        All Tracks
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                    </div>
+                  )}
+                  {rest.map((f, i) => (
+                    <TrackCard
+                      key={`all-${f}`}
+                      filename={f}
+                      isPlaying={playing === f}
+                      isPinned={false}
+                      rank={pinned.length + suggestions.length + i + 1}
+                      showReorder={false}
+                      canMoveUp={false}
+                      canMoveDown={false}
+                      meta={metaMap[f]}
+                      tags={tagsMap[f] || []}
+                      allTags={allTags}
+                      onPlay={() => playTrack(f)}
+                      onPin={() => togglePin(f)}
+                      onMoveUp={() => {}}
+                      onMoveDown={() => {}}
+                      onTagsChange={(tags) => handleTagsChange(f, tags)}
+                      onPlayNext={() => queue.playNext(f)}
+                      onAddToQueue={() => queue.enqueue(f)}
+                    />
+                  ))}
                 </div>
-              )}
-              {rest.map((f, i) => (
-                <TrackCard
-                  key={`all-${f}`}
-                  filename={f}
-                  isPlaying={playing === f}
-                  isPinned={false}
-                  rank={pinned.length + suggestions.length + i + 1}
-                  showReorder={false}
-                  canMoveUp={false}
-                  canMoveDown={false}
-                  meta={metaMap[f]}
-                  tags={tagsMap[f] || []}
-                  allTags={allTags}
-                  onPlay={() => playTrack(f)}
-                  onPin={() => togglePin(f)}
-                  onMoveUp={() => {}}
-                  onMoveDown={() => {}}
-                  onTagsChange={(tags) => handleTagsChange(f, tags)}
-                  onPlayNext={() => queue.playNext(f)}
-                  onAddToQueue={() => queue.enqueue(f)}
-                />
-              ))}
-            </div>
-          )
-      }
+              )
+          }
+        </>
+      )}
+
+      {/* SFX tab content */}
+      {activeTab === 'sfx' && (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <SfxPanel sfxRecommendations={sfxRecommendations} />
+        </div>
+      )}
 
       {/* Browse all tracks panel */}
       {browsing && musicFolder && (
