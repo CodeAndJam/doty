@@ -8,6 +8,8 @@ interface StoreData {
   transcriptFolder?: string
   recommendationCount?: number
   hotwordsFile?: string
+  discordToken?: string // encrypted via safeStorage
+  discordVolume?: number // 0..1, independent of local volume
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')

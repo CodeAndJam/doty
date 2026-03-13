@@ -215,6 +215,9 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
       }
     }
 
+    // Mirror playback to Discord (fire-and-forget)
+    window.doty.discordStreamTrack(filename).catch(() => {})
+
     // Crossfade: fade out old, fade in new
     if (prev && !prev.paused) {
       const prevVol = prev.volume
@@ -249,6 +252,7 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
       audioRef.current.pause()
       cancelAnimationFrame(rafRef.current)
     }
+    window.doty.discordStopStream().catch(() => {})
     setPlaying(null)
     setIsAudioPlaying(false)
     setProgress(0)

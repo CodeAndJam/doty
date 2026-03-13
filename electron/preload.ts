@@ -79,4 +79,24 @@ contextBridge.exposeInMainWorld('doty', {
   setTags: (filename: string, tags: string[]) => ipcRenderer.invoke('tags:set', filename, tags),
   getAllTags: () => ipcRenderer.invoke('tags:get-all'),
   getTagsMap: () => ipcRenderer.invoke('tags:get-map'),
+
+  // Discord
+  discordConnect: (token?: string) => ipcRenderer.invoke('discord:connect', token),
+  discordDisconnect: () => ipcRenderer.invoke('discord:disconnect'),
+  discordGetState: () => ipcRenderer.invoke('discord:get-state'),
+  discordGetGuilds: () => ipcRenderer.invoke('discord:get-guilds'),
+  discordGetVoiceChannels: (guildId: string) => ipcRenderer.invoke('discord:get-voice-channels', guildId),
+  discordJoinChannel: (guildId: string, channelId: string) => ipcRenderer.invoke('discord:join-channel', guildId, channelId),
+  discordLeaveChannel: () => ipcRenderer.invoke('discord:leave-channel'),
+  discordStreamTrack: (filename: string) => ipcRenderer.invoke('discord:stream-track', filename),
+  discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
+  discordSetVolume: (volume: number) => ipcRenderer.invoke('discord:set-volume', volume),
+  discordGetVolume: () => ipcRenderer.invoke('discord:get-volume'),
+  discordHasToken: () => ipcRenderer.invoke('discord:has-token'),
+  discordClearToken: () => ipcRenderer.invoke('discord:clear-token'),
+  onDiscordState: (cb: (state: any) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, s: any) => cb(s)
+    ipcRenderer.on('discord:state', handler)
+    return () => ipcRenderer.removeListener('discord:state', handler)
+  },
 })

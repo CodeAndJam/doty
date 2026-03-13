@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import type { ScanProgress } from '../types'
 import { onQwenLog } from '../hooks/useQwen'
 import { useCrossfade } from '../hooks/useCrossfade'
+import DiscordPanel from './DiscordPanel'
 
 interface Props {
   onClose: () => void
@@ -485,6 +486,14 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
               </div>
             )}
           </div>
+        </div>
+
+        {/* Divider before Discord */}
+        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+
+        {/* Discord integration */}
+        <div className="mb-6">
+          <DiscordPanel />
         </div>
       </div>
     </div>

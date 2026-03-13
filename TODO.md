@@ -7,6 +7,8 @@
 - [ ] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
 - [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
 - [ ] Show on tooltip the directory
+- [ ] Discord: add `asarUnpack` config for native modules (packaging)
+- [ ] Discord: integration tests for connect/disconnect/stream lifecycle
 
 ## Music Player — Implementation Order
 
@@ -17,7 +19,7 @@
 5. [x] #25 — Custom user tags on tracks for search and recommendation
 6. [x] #19 — Music queue with drag-to-reorder and queue loop
 7. [x] #20 — Crossfade with configurable fade duration (replaces "Smooth transitions between musics")
-8. [ ] #21 — Discord bot integration for audio streaming
+8. [x] #21 — Discord bot integration for audio streaming
 9. [ ] #22 — HTTP remote control API with Stream Deck plugin support
 
 ## Done

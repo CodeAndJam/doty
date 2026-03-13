@@ -13,6 +13,13 @@ import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, s
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb, getTags, setTags, getAllTags, getTagsMap } from './database'
 import { migrateFromJson } from './metadata-cache'
+import {
+  connect as discordConnect, disconnect as discordDisconnect, destroyDiscord,
+  getState as discordGetState, getGuilds, getVoiceChannels,
+  joinChannel, leaveChannel, streamTrack, stopStream,
+  setDiscordVolume, getDiscordVolume, onStateChange,
+  loadToken, clearToken, saveToken,
+} from './discord'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -320,16 +327,23 @@ app.whenReady().then(async () => {
 
   const musicFolder = store.get('musicFolder', '') as string
   if (musicFolder) launchScanner(musicFolder)
+
+  // Forward Discord state changes to renderer
+  onStateChange((discordState) => {
+    mainWindow?.webContents.send('discord:state', discordState)
+  })
 })
 
 app.on('before-quit', () => {
   freeRecognizer()
   stopScanner()
   closeDb()
+  destroyDiscord()
 })
 
 app.on('window-all-closed', () => {
   freeRecognizer()
+  destroyDiscord()
   app.quit()
 })
 
@@ -568,5 +582,67 @@ ipcMain.handle('model:download', async () => {
   // Download auxiliary STT models (VAD, denoiser, punctuation)
   await downloadAuxModels()
 
+  return { ok: true }
+})
+
+// ── IPC: Discord ──────────────────────────────────────────────────────────────
+
+ipcMain.handle('discord:connect', async (_e, token?: string) => {
+  try {
+    await discordConnect(token)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle('discord:disconnect', async () => {
+  await discordDisconnect()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:get-state', () => discordGetState())
+
+ipcMain.handle('discord:get-guilds', () => getGuilds())
+
+ipcMain.handle('discord:get-voice-channels', (_e, guildId: string) => getVoiceChannels(guildId))
+
+ipcMain.handle('discord:join-channel', async (_e, guildId: string, channelId: string) => {
+  try {
+    await joinChannel(guildId, channelId)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle('discord:leave-channel', () => {
+  leaveChannel()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:stream-track', (_e, filename: string) => {
+  streamTrack(filename)
+  return { ok: true }
+})
+
+ipcMain.handle('discord:stop-stream', () => {
+  stopStream()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:set-volume', (_e, volume: number) => {
+  setDiscordVolume(volume)
+  return { ok: true }
+})
+
+ipcMain.handle('discord:get-volume', () => getDiscordVolume())
+
+ipcMain.handle('discord:has-token', () => {
+  return loadToken() !== ''
+})
+
+ipcMain.handle('discord:clear-token', () => {
+  clearToken()
   return { ok: true }
 })
