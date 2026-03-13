@@ -182,7 +182,7 @@ export default function QueuePanel({
           {tracks.length > 0 && (
             <button
               onClick={onClear}
-              className="px-2 py-0.5 hover:opac0 transition-opacity"
+              className="px-2 py-0.5 hover:opacity-80 transition-opacity"
               style={{
                 fontSize: '11px',
                 fontFamily: 'monospace',

@@ -69,6 +69,31 @@ describe('useQueue', () => {
       act(() => result.current.remove(5))
       expect(result.current.tracks).toEqual(['a.mp3'])
     })
+
+    it('clamps currentIndex when removing last item at current position', () => {
+      const { result } = renderHook(() => useQueue())
+      act(() => result.current.setQueue(['a.mp3', 'b.mp3', 'c.mp3'], 2))
+      act(() => result.current.remove(2))
+      expect(result.current.tracks).toEqual(['a.mp3', 'b.mp3'])
+      expect(result.current.currentIndex).toBe(1) // clamped to last valid index
+    })
+
+    it('resets to -1 when removing the only track', () => {
+      const { result } = renderHook(() => useQueue())
+      act(() => result.current.setQueue(['a.mp3'], 0))
+      act(() => result.current.remove(0))
+      expect(result.current.tracks).toEqual([])
+      expect(result.current.currentIndex).toBe(-1)
+      expect(result.current.currentTrack).toBeNull()
+    })
+
+    it('keeps currentIndex stable when removing after it', () => {
+      const { result } = renderHook(() => useQueue())
+      act(() => result.current.setQueue(['a.mp3', 'b.mp3', 'c.mp3'], 0))
+      act(() => result.current.remove(2))
+      expect(result.current.tracks).toEqual(['a.mp3', 'b.mp3'])
+      expect(result.current.currentIndex).toBe(0)
+    })
   })
 
   describe('clear', () => {

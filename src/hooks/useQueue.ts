@@ -50,16 +50,18 @@ export function useQueue(): UseQueueReturn {
   const remove = useCallback((index: number) => {
     setTracks(prev => {
       if (index < 0 || index >= prev.length) return prev
-      return prev.filter((_, i) => i !== index)
-    })
-    setCurrentIndex(prev => {
-      if (index < prev) return prev - 1
-      if (index === prev) {
-        // Removing current track — stay at same index (next track slides in)
-        // If it was the last track, move back
-        return prev
-      }
-      return prev
+      const next = prev.filter((_, i) => i !== index)
+      // Adjust currentIndex after removal
+      setCurrentIndex(ci => {
+        if (next.length === 0) return -1
+        if (index < ci) return ci - 1
+        if (index === ci) {
+          // Removing current track — clamp to valid range
+          return Math.min(ci, next.length - 1)
+        }
+        return ci
+      })
+      return next
     })
   }, [])
 

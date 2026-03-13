@@ -3,15 +3,10 @@ import ReactDOM from 'react-dom'
 import type { TrackMeta } from '../types'
 import { PlayIcon, PauseIcon, PinIcon, ChevronUp, ChevronDown, InfoIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
+import { formatTime } from '../lib/formatTime'
 import TagInput from './TagInput'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-export function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  return `${m}:${s.toString().padStart(2, '0')}`
-}
 
 function MetaRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   if (value == null || value === '') return null
@@ -57,7 +52,7 @@ function MetadataTooltip({ meta, filename, anchorRef }: { meta: TrackMeta; filen
         <MetaRow label="Key" value={meta.key && meta.scale ? `${meta.key} ${meta.scale}` : meta.key || null} />
         <MetaRow label="Energy" value={meta.energy != null ? `${Math.round(meta.energy * 100)}%` : null} />
         <MetaRow label="Dance" value={meta.danceability != null ? `${Math.round(meta.danceability * 100)}%` : null} />
-        <MetaRow label="Duration" value={meta.duration ? formatDuration(meta.duration) : null} />
+        <MetaRow label="Duration" value={meta.duration ? formatTime(meta.duration) : null} />
         <MetaRow label="Artist" value={meta.artist} />
         <MetaRow label="Album" value={meta.album} />
         <MetaRow label="Genre" value={meta.genre} />
