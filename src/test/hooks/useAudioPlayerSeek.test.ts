@@ -11,6 +11,14 @@ vi.stubGlobal('localStorage', {
   removeItem: (k: string) => storage.delete(k),
 })
 
+// Stub window.doty IPC bridge (playTrack calls discordStreamTrack)
+vi.stubGlobal('doty', {
+  discordStreamTrack: vi.fn().mockResolvedValue({ ok: true }),
+  discordStopStream: vi.fn().mockResolvedValue({ ok: true }),
+  discordPauseStream: vi.fn().mockResolvedValue({ ok: true }),
+  discordResumeStream: vi.fn().mockResolvedValue({ ok: true }),
+})
+
 describe('useAudioPlayer — seek', () => {
   let audioMocks: ReturnType<typeof installMockAudioConstructor>
   let rafCallbacks: (() => void)[]

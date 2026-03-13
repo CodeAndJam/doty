@@ -112,9 +112,11 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
         if (isAudioPlaying) {
           audioRef.current.pause()
           setIsAudioPlaying(false)
+          window.doty.discordPauseStream().catch(() => {})
         } else {
           audioRef.current.play()
           setIsAudioPlaying(true)
+          window.doty.discordResumeStream().catch(() => {})
         }
       } else if (e.key === 'm' || e.key === 'M') {
         toggleMute()
@@ -164,6 +166,7 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
           audioRef.current.pause()
         }
         setIsAudioPlaying(false)
+        window.doty.discordPauseStream().catch(() => {})
       } else {
         const fadeDur = pauseFadeMs(crossfadeMs)
         if (fadeDur > 0) {
@@ -174,6 +177,7 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
           audioRef.current.play()
         }
         setIsAudioPlaying(true)
+        window.doty.discordResumeStream().catch(() => {})
       }
       return
     }
@@ -266,8 +270,12 @@ export function useAudioPlayer({ speakerDeviceId, onNoFolder, musicFolder, onTra
       a.currentTime = pct * a.duration
       setProgress(pct)
       setCurrentTime(a.currentTime)
+      // Re-stream from the new position on Discord
+      if (playing) {
+        window.doty.discordStreamTrack(playing, a.currentTime).catch(() => {})
+      }
     }
-  }, [])
+  }, [playing])
 
   /** Call when user starts dragging the seek bar. */
   const seekStart = useCallback(() => { seekingRef.current = true }, [])
