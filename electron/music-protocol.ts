@@ -22,15 +22,26 @@ export function parseMusicUrl(raw: string): string {
   return decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
 }
 
-/** Build a ReadableStream from a Node fs.ReadStream. */
-function nodeStreamToWeb(stream: fs.ReadStream): ReadableStream {
+/** Build a ReadableStream from a Node fs.ReadStream, guarding against
+ *  enqueue-after-close crashes that happen when Chromium cancels a request
+ *  mid-stream (e.g. rapid seeking). */
+function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
+  let closed = false
   return new ReadableStream({
     start(controller) {
-      stream.on('data', (chunk: Buffer | string) => controller.enqueue(chunk))
-      stream.on('end', () => controller.close())
-      stream.on('error', (err) => controller.error(err))
+      nodeStream.on('data', (chunk: Buffer | string) => {
+        if (!closed) {
+          try { controller.enqueue(chunk) } catch { closed = true; nodeStream.destroy() }
+        }
+      })
+      nodeStream.on('end', () => {
+        if (!closed) { closed = true; try { controller.close() } catch { /* already closed */ } }
+      })
+      nodeStream.on('error', (err) => {
+        if (!closed) { closed = true; try { controller.error(err) } catch { /* already errored */ } }
+      })
     },
-    cancel() { stream.destroy() },
+    cancel() { closed = true; nodeStream.destroy() },
   })
 }
 
@@ -61,6 +72,15 @@ export function handleMusicRequest(request: MusicRequestInfo, musicFolder: strin
     const match = /bytes=(\d+)-(\d*)/.exec(request.rangeHeader)
     const start = match ? parseInt(match[1], 10) : 0
     const end = match && match[2] ? parseInt(match[2], 10) : total - 1
+
+    // Validate range bounds
+    if (start >= total || end >= total || start > end) {
+      return new Response('Range Not Satisfiable', {
+        status: 416,
+        headers: { 'Content-Range': `bytes */${total}` },
+      })
+    }
+
     const chunkSize = end - start + 1
 
     const readable = nodeStreamToWeb(fs.createReadStream(filePath, { start, end }))

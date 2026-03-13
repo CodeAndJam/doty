@@ -13,7 +13,6 @@ import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, s
 import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
 import { getDb, closeDb, getTags, setTags, getAllTags, getTagsMap } from './database'
 import { migrateFromJson } from './metadata-cache'
-import { handleMusicRequest } from './music-protocol'
 import fs from 'fs'
 import https from 'https'
 import { exec } from 'child_process'
@@ -184,15 +183,101 @@ function createWindow() {
   }
 }
 
+/** MIME type lookup for audio files. */
+function audioMime(ext: string): string {
+  const map: Record<string, string> = {
+    '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
+    '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.aac': 'audio/aac',
+  }
+  return map[ext.toLowerCase()] ?? 'application/octet-stream'
+}
+
 function registerMusicProtocol() {
-  // Lazy-import to keep the module testable without Electron deps
-  const { handleMusicRequest } = require('./music-protocol') as typeof import('./music-protocol')
   protocol.handle('music', (request) => {
+    try {
     const musicFolder = store.get('musicFolder', '') as string
-    return handleMusicRequest(
-      { url: request.url, rangeHeader: request.headers.get('Range') },
-      musicFolder,
-    )
+    const raw = request.url
+    const prefix = 'music://play/'
+    const filename = decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
+    const filePath = join(musicFolder, filename)
+
+    if (!fs.existsSync(filePath)) {
+      return new Response('Not found', { status: 404 })
+    }
+
+    const stat = fs.statSync(filePath)
+    const total = stat.size
+    const ext = filePath.slice(filePath.lastIndexOf('.'))
+    const mime = audioMime(ext)
+
+    /** Wrap a Node fs.ReadStream into a web ReadableStream, guarding against
+     *  enqueue-after-close crashes that happen when Chromium cancels a request
+     *  mid-stream (e.g. rapid seeking). */
+    function nodeToWeb(nodeStream: fs.ReadStream): ReadableStream {
+      let closed = false
+      return new ReadableStream({
+        start(controller) {
+          nodeStream.on('data', (chunk: Buffer | string) => {
+            if (!closed) {
+              try { controller.enqueue(chunk) } catch { closed = true; nodeStream.destroy() }
+            }
+          })
+          nodeStream.on('end', () => {
+            if (!closed) { closed = true; try { controller.close() } catch { /* already closed */ } }
+          })
+          nodeStream.on('error', (err) => {
+            if (!closed) { closed = true; try { controller.error(err) } catch { /* already errored */ } }
+          })
+        },
+        cancel() { closed = true; nodeStream.destroy() },
+      })
+    }
+
+    // Handle Range requests — required for audio seeking.
+    // Without this, setting audio.currentTime causes Chromium to request a byte
+    // range, but net.fetch(file://) always returns the full file from byte 0,
+    // so the seek position resets to the beginning.
+    const rangeHeader = request.headers.get('Range')
+    if (rangeHeader) {
+      const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
+      const start = match ? parseInt(match[1], 10) : 0
+      const end = match && match[2] ? parseInt(match[2], 10) : total - 1
+
+      // Validate range bounds
+      if (start >= total || end >= total || start > end) {
+        return new Response('Range Not Satisfiable', {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${total}` },
+        })
+      }
+
+      const chunkSize = end - start + 1
+
+      return new Response(nodeToWeb(fs.createReadStream(filePath, { start, end })), {
+        status: 206,
+        headers: {
+          'Content-Type': mime,
+          'Content-Length': String(chunkSize),
+          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges': 'bytes',
+        },
+      })
+    }
+
+    // Full file response — advertise Accept-Ranges so Chromium knows
+    // it can send Range requests for seeking.
+    return new Response(nodeToWeb(fs.createReadStream(filePath)), {
+      status: 200,
+      headers: {
+        'Content-Type': mime,
+        'Content-Length': String(total),
+        'Accept-Ranges': 'bytes',
+      },
+    })
+    } catch (err) {
+      console.error('[music-protocol] unhandled error:', err)
+      return new Response('Internal error', { status: 500 })
+    }
   })
 }
 
