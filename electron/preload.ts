@@ -99,10 +99,13 @@ contextBridge.exposeInMainWorld('doty', {
   discordGetState: () => ipcRenderer.invoke('discord:get-state'),
   discordGetGuilds: () => ipcRenderer.invoke('discord:get-guilds'),
   discordGetVoiceChannels: (guildId: string) => ipcRenderer.invoke('discord:get-voice-channels', guildId),
-  discordJoinChannel: (guildId: string, channelId: string) => ipcRenderer.invoke('discord:join-channel', guildId, channelId),
+  discordJoinChannel: (guildId: string, channelId: string) =>
+    ipcRenderer.invoke('discord:join-channel', guildId, channelId),
   discordLeaveChannel: () => ipcRenderer.invoke('discord:leave-channel'),
-  discordStreamTrack: (filename: string, seekSeconds?: number) => ipcRenderer.invoke('discord:stream-track', filename, seekSeconds),
-  discordStreamSfx: (absolutePath: string, volume?: number) => ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
+  discordStreamTrack: (filename: string, seekSeconds?: number) =>
+    ipcRenderer.invoke('discord:stream-track', filename, seekSeconds),
+  discordStreamSfx: (absolutePath: string, volume?: number) =>
+    ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
   discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
   discordPauseStream: () => ipcRenderer.invoke('discord:pause-stream'),
   discordResumeStream: () => ipcRenderer.invoke('discord:resume-stream'),
@@ -110,6 +113,8 @@ contextBridge.exposeInMainWorld('doty', {
   discordGetVolume: () => ipcRenderer.invoke('discord:get-volume'),
   discordHasToken: () => ipcRenderer.invoke('discord:has-token'),
   discordClearToken: () => ipcRenderer.invoke('discord:clear-token'),
+  discordGetAutoConnect: () => ipcRenderer.invoke('discord:get-auto-connect'),
+  discordSetAutoConnect: (enabled: boolean) => ipcRenderer.invoke('discord:set-auto-connect', enabled),
   onDiscordState: (cb: (state: any) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, s: any) => cb(s)
     ipcRenderer.on('discord:state', handler)

@@ -216,6 +216,8 @@ export interface DotyAPI {
   discordGetVolume: () => Promise<number>
   discordHasToken: () => Promise<boolean>
   discordClearToken: () => Promise<{ ok: boolean }>
+  discordGetAutoConnect: () => Promise<boolean>
+  discordSetAutoConnect: (enabled: boolean) => Promise<{ ok: boolean }>
   onDiscordState: (cb: (state: DiscordState) => void) => () => void
 }
 

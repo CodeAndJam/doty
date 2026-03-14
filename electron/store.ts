@@ -1,6 +1,6 @@
+import fs from 'node:fs'
+import { join } from 'node:path'
 import { app } from 'electron'
-import { join } from 'path'
-import fs from 'fs'
 
 interface StoreData {
   musicFolder?: string
@@ -12,6 +12,9 @@ interface StoreData {
   sfxRecommendationCount?: number
   discordToken?: string // encrypted via safeStorage
   discordVolume?: number // 0..1, independent of local volume
+  discordAutoConnect?: boolean // auto-connect to last channel on startup
+  discordLastGuildId?: string // last joined guild
+  discordLastChannelId?: string // last joined channel
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')

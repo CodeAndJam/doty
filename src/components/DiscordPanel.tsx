@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import type { DiscordState, DiscordGuild, DiscordVoiceChannel } from '../types'
+import { useEffect, useState } from 'react'
+import type { DiscordGuild, DiscordState, DiscordVoiceChannel } from '../types'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -27,15 +27,17 @@ const btnStyle: React.CSSProperties = {
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{
-      fontFamily: "'Cinzel', serif",
-      fontSize: '15px',
-      letterSpacing: '0.25em',
-      color: '#6b4e15',
-      textTransform: 'uppercase',
-      display: 'block',
-      marginBottom: '8px',
-    }}>
+    <span
+      style={{
+        fontFamily: "'Cinzel', serif",
+        fontSize: '15px',
+        letterSpacing: '0.25em',
+        color: '#6b4e15',
+        textTransform: 'uppercase',
+        display: 'block',
+        marginBottom: '8px',
+      }}
+    >
       {children}
     </span>
   )
@@ -43,10 +45,16 @@ function Label({ children }: { children: React.ReactNode }) {
 
 function StatusDot({ color, shadow }: { color: string; shadow: string }) {
   return (
-    <div style={{
-      width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
-      background: color, boxShadow: shadow,
-    }} />
+    <div
+      style={{
+        width: '6px',
+        height: '6px',
+        borderRadius: '50%',
+        flexShrink: 0,
+        background: color,
+        boxShadow: shadow,
+      }}
+    />
   )
 }
 
@@ -67,12 +75,14 @@ export default function DiscordPanel() {
   const [selectedChannel, setSelectedChannel] = useState('')
   const [volume, setVolume] = useState(1)
   const [connecting, setConnecting] = useState(false)
+  const [autoConnect, setAutoConnect] = useState(false)
 
   // Load initial state
   useEffect(() => {
     window.doty.discordGetState().then(setState)
     window.doty.discordHasToken().then(setHasToken)
     window.doty.discordGetVolume().then(setVolume)
+    window.doty.discordGetAutoConnect().then(setAutoConnect)
 
     const unsub = window.doty.onDiscordState((s) => {
       setState(s)
@@ -150,9 +160,25 @@ export default function DiscordPanel() {
   const isConnected = state.status === 'ready'
   const isInVoice = state.voiceStatus === 'connected' || state.voiceStatus === 'playing'
 
-  const statusColor = isConnected ? '#4a8a6a' : state.status === 'error' ? '#ef4444' : state.status === 'connecting' ? '#c8922a' : '#3a2e1a'
-  const statusShadow = isConnected ? '0 0 6px rgba(74,138,106,0.7)' : state.status === 'error' ? '0 0 6px rgba(239,68,68,0.7)' : '0 0 6px rgba(200,146,42,0.5)'
-  const statusLabel = isConnected ? 'Connected' : state.status === 'connecting' ? 'Connecting...' : state.status === 'error' ? 'Error' : 'Disconnected'
+  const statusColor = isConnected
+    ? '#4a8a6a'
+    : state.status === 'error'
+      ? '#ef4444'
+      : state.status === 'connecting'
+        ? '#c8922a'
+        : '#3a2e1a'
+  const statusShadow = isConnected
+    ? '0 0 6px rgba(74,138,106,0.7)'
+    : state.status === 'error'
+      ? '0 0 6px rgba(239,68,68,0.7)'
+      : '0 0 6px rgba(200,146,42,0.5)'
+  const statusLabel = isConnected
+    ? 'Connected'
+    : state.status === 'connecting'
+      ? 'Connecting...'
+      : state.status === 'error'
+        ? 'Error'
+        : 'Disconnected'
 
   const voiceColor = isInVoice ? '#4a8a6a' : state.voiceStatus === 'joining' ? '#c8922a' : '#3a2e1a'
   const voiceShadow = isInVoice ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.5)'
@@ -162,7 +188,10 @@ export default function DiscordPanel() {
       {/* Connection status */}
       <div className="mb-4">
         <Label>Discord Conduit</Label>
-        <div className="flex items-center gap-3 mb-3" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+        <div
+          className="flex items-center gap-3 mb-3"
+          style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+        >
           <StatusDot color={statusColor} shadow={statusShadow} />
           <div className="flex-1 min-w-0">
             <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Bot Gateway</p>
@@ -172,18 +201,32 @@ export default function DiscordPanel() {
             <button
               onClick={hasToken && !showTokenInput ? handleConnect : () => setShowTokenInput(true)}
               disabled={connecting}
-              style={{ ...btnStyle, opacity: connecting ? 0.5 : 1, cursor: connecting ? 'not-allowed' : 'pointer', fontSize: '13px', padding: '5px 10px' }}
-              onMouseEnter={e => { if (!connecting) e.currentTarget.style.background = 'rgba(200,146,42,0.15)' }}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+              style={{
+                ...btnStyle,
+                opacity: connecting ? 0.5 : 1,
+                cursor: connecting ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                padding: '5px 10px',
+              }}
+              onMouseEnter={(e) => {
+                if (!connecting) e.currentTarget.style.background = 'rgba(200,146,42,0.15)'
+              }}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
             >
               {connecting ? 'Connecting...' : hasToken ? 'Connect' : 'Set Token'}
             </button>
           ) : (
             <button
               onClick={handleDisconnect}
-              style={{ ...btnStyle, fontSize: '13px', padding: '5px 10px', borderColor: 'rgba(239,68,68,0.3)', color: '#ef4444' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+              style={{
+                ...btnStyle,
+                fontSize: '13px',
+                padding: '5px 10px',
+                borderColor: 'rgba(239,68,68,0.3)',
+                color: '#ef4444',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
             >
               Disconnect
             </button>
@@ -207,14 +250,16 @@ export default function DiscordPanel() {
                 onChange={(e) => setTokenInput(e.target.value)}
                 placeholder="Bot token..."
                 style={inputStyle}
-                onKeyDown={(e) => { if (e.key === 'Enter' && tokenInput.trim()) handleConnect() }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && tokenInput.trim()) handleConnect()
+                }}
               />
               <button
                 onClick={handleConnect}
                 disabled={!tokenInput.trim() || connecting}
                 style={{ ...btnStyle, opacity: !tokenInput.trim() || connecting ? 0.5 : 1 }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
               >
                 Connect
               </button>
@@ -229,12 +274,46 @@ export default function DiscordPanel() {
         {hasToken && !isConnected && !showTokenInput && (
           <button
             onClick={handleClearToken}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a2e1a', fontSize: '12px', fontFamily: 'monospace' }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#3a2e1a',
+              fontSize: '12px',
+              fontFamily: 'monospace',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
           >
             clear saved token
           </button>
+        )}
+
+        {/* Auto-connect toggle */}
+        {hasToken && (
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              marginTop: '8px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              color: '#6b4e15',
+              fontFamily: "'Crimson Text', serif",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={autoConnect}
+              onChange={(e) => {
+                setAutoConnect(e.target.checked)
+                window.doty.discordSetAutoConnect(e.target.checked)
+              }}
+              style={{ accentColor: '#c8922a' }}
+            />
+            Auto-connect to last channel on startup
+          </label>
         )}
       </div>
 
@@ -245,7 +324,10 @@ export default function DiscordPanel() {
 
           {/* Voice status */}
           {isInVoice && (
-            <div className="flex items-center gap-3 mb-3" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div
+              className="flex items-center gap-3 mb-3"
+              style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+            >
               <StatusDot color={voiceColor} shadow={voiceShadow} />
               <div className="flex-1 min-w-0">
                 <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
@@ -254,9 +336,15 @@ export default function DiscordPanel() {
               </div>
               <button
                 onClick={handleLeave}
-                style={{ ...btnStyle, fontSize: '13px', padding: '5px 10px', borderColor: 'rgba(239,68,68,0.3)', color: '#ef4444' }}
-                onMouseEnter={e => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                style={{
+                  ...btnStyle,
+                  fontSize: '13px',
+                  padding: '5px 10px',
+                  borderColor: 'rgba(239,68,68,0.3)',
+                  color: '#ef4444',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(239,68,68,0.1)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
               >
                 Leave
               </button>
@@ -264,53 +352,61 @@ export default function DiscordPanel() {
           )}
 
           {/* Guild picker */}
-          {!isInVoice && (
-            <>
-              {guilds.length === 0 ? (
-                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", marginBottom: '8px' }}>
-                  Bot is not in any servers. Invite it first.
-                </p>
-              ) : (
-                <>
-                  <select
-                    value={selectedGuild}
-                    onChange={(e) => setSelectedGuild(e.target.value)}
-                    style={{ ...inputStyle, marginBottom: '8px' }}
-                  >
-                    <option value="">Select a server...</option>
-                    {guilds.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
+          {!isInVoice &&
+            (guilds.length === 0 ? (
+              <p
+                style={{
+                  fontSize: '13px',
+                  color: '#3a2e1a',
+                  fontFamily: "'Crimson Text', serif",
+                  marginBottom: '8px',
+                }}
+              >
+                Bot is not in any servers. Invite it first.
+              </p>
+            ) : (
+              <>
+                <select
+                  value={selectedGuild}
+                  onChange={(e) => setSelectedGuild(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: '8px' }}
+                >
+                  <option value="">Select a server...</option>
+                  {guilds.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
 
-                  {/* Channel picker */}
-                  {selectedGuild && (
-                    <div className="flex gap-2">
-                      <select
-                        value={selectedChannel}
-                        onChange={(e) => setSelectedChannel(e.target.value)}
-                        style={{ ...inputStyle, flex: 1 }}
-                      >
-                        <option value="">Select a channel...</option>
-                        {channels.map((ch) => (
-                          <option key={ch.id} value={ch.id}>{ch.name}</option>
-                        ))}
-                      </select>
-                      <button
-                        onClick={handleJoin}
-                        disabled={!selectedChannel}
-                        style={{ ...btnStyle, opacity: selectedChannel ? 1 : 0.5 }}
-                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
-                      >
-                        Join
-                      </button>
-                    </div>
-                  )}
-                </>
-              )}
-            </>
-          )}
+                {/* Channel picker */}
+                {selectedGuild && (
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedChannel}
+                      onChange={(e) => setSelectedChannel(e.target.value)}
+                      style={{ ...inputStyle, flex: 1 }}
+                    >
+                      <option value="">Select a channel...</option>
+                      {channels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>
+                          {ch.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleJoin}
+                      disabled={!selectedChannel}
+                      style={{ ...btnStyle, opacity: selectedChannel ? 1 : 0.5 }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                    >
+                      Join
+                    </button>
+                  </div>
+                )}
+              </>
+            ))}
         </div>
       )}
 
@@ -328,7 +424,15 @@ export default function DiscordPanel() {
               onChange={(e) => handleVolumeChange(Number(e.target.value))}
               style={{ flex: 1, accentColor: '#c8922a' }}
             />
-            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '36px', textAlign: 'right' }}>
+            <span
+              style={{
+                fontSize: '15px',
+                color: '#c8b07a',
+                fontFamily: 'monospace',
+                minWidth: '36px',
+                textAlign: 'right',
+              }}
+            >
               {Math.round(volume * 100)}%
             </span>
           </div>
