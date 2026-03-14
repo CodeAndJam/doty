@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import PlayerBar, { trackName } from '../../components/PlayerBar'
 import type { LoopMode } from '../../types'
 
@@ -24,7 +24,9 @@ const defaults = {
 function renderBar(overrides: Partial<typeof defaults> = {}) {
   const props = { ...defaults, ...overrides }
   // Reset all mocks
-  Object.values(props).forEach(v => { if (typeof v === 'function') (v as ReturnType<typeof vi.fn>).mockClear() })
+  Object.values(props).forEach((v) => {
+    if (typeof v === 'function') (v as ReturnType<typeof vi.fn>).mockClear()
+  })
   return render(<PlayerBar {...props} />)
 }
 

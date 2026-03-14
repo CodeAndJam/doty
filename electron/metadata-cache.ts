@@ -1,5 +1,5 @@
-import { getDb } from './database'
 import type { TrackMetadata } from './analyzer'
+import { getDb } from './database'
 
 export interface FullTrackMetadata extends TrackMetadata {
   title: string | null
@@ -76,11 +76,23 @@ export function setCached(relPath: string, meta: FullTrackMetadata): void {
       (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     relPath,
-    meta.title, meta.artist, meta.album, meta.genre,
-    meta.year, meta.trackNo, meta.duration,
-    meta.bpm, meta.bpmConfidence, meta.key, meta.scale,
-    meta.danceability, meta.energy,
-    meta.bitrate, meta.sampleRate, meta.channels, meta.codec,
+    meta.title,
+    meta.artist,
+    meta.album,
+    meta.genre,
+    meta.year,
+    meta.trackNo,
+    meta.duration,
+    meta.bpm,
+    meta.bpmConfidence,
+    meta.key,
+    meta.scale,
+    meta.danceability,
+    meta.energy,
+    meta.bitrate,
+    meta.sampleRate,
+    meta.channels,
+    meta.codec,
     meta.mtime,
   )
 }
@@ -106,9 +118,9 @@ export function getCache(): Record<string, FullTrackMetadata> {
 }
 
 export function migrateFromJson(): void {
-  const { join } = require('path')
+  const { join } = require('node:path')
   const { app: electronApp } = require('electron')
-  const fs = require('fs')
+  const fs = require('node:fs')
 
   const jsonPath = join(electronApp.getPath('home'), '.doty', 'music-metadata.json')
   if (!fs.existsSync(jsonPath)) return
@@ -125,15 +137,22 @@ export function migrateFromJson(): void {
     const tx = db.transaction(() => {
       for (const [path, meta] of Object.entries(data)) {
         insert.run(
-          path, meta.duration, meta.bpm, meta.bpmConfidence,
-          meta.key, meta.scale, meta.danceability, meta.energy, meta.mtime,
+          path,
+          meta.duration,
+          meta.bpm,
+          meta.bpmConfidence,
+          meta.key,
+          meta.scale,
+          meta.danceability,
+          meta.energy,
+          meta.mtime,
         )
       }
     })
     tx()
 
     // Rename old file so we don't migrate again
-    fs.renameSync(jsonPath, jsonPath + '.migrated')
+    fs.renameSync(jsonPath, `${jsonPath}.migrated`)
     console.log(`[db] migrated ${Object.keys(data).length} tracks from JSON to SQLite`)
   } catch (e) {
     console.error('[db] JSON migration failed:', e)

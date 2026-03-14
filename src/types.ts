@@ -208,6 +208,7 @@ export interface DotyAPI {
   discordJoinChannel: (guildId: string, channelId: string) => Promise<{ ok: boolean; error?: string }>
   discordLeaveChannel: () => Promise<{ ok: boolean }>
   discordStreamTrack: (filename: string, seekSeconds?: number) => Promise<{ ok: boolean }>
+  discordStreamSfx: (absolutePath: string, volume?: number) => Promise<{ ok: boolean }>
   discordStopStream: () => Promise<{ ok: boolean }>
   discordPauseStream: () => Promise<{ ok: boolean }>
   discordResumeStream: () => Promise<{ ok: boolean }>
@@ -215,6 +216,8 @@ export interface DotyAPI {
   discordGetVolume: () => Promise<number>
   discordHasToken: () => Promise<boolean>
   discordClearToken: () => Promise<{ ok: boolean }>
+  discordGetAutoConnect: () => Promise<boolean>
+  discordSetAutoConnect: (enabled: boolean) => Promise<{ ok: boolean }>
   onDiscordState: (cb: (state: DiscordState) => void) => () => void
 }
 

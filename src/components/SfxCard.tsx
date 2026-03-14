@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
+import { formatTime } from '../lib/formatTime'
 import type { SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS, type SfxCategory } from '../types'
-import { PlayIcon, StopIcon, LoopSmallIcon, PinIcon, TagIcon, InfoIcon } from './Icons'
-import { formatTime } from '../lib/formatTime'
+import { InfoIcon, LoopSmallIcon, PinIcon, PlayIcon, StopIcon, TagIcon } from './Icons'
 import TagInput from './TagInput'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -13,12 +13,22 @@ function MetaRow({ label, value }: { label: string; value: string | number | nul
   return (
     <div className="flex justify-between gap-2 py-0.5">
       <span style={{ color: '#3a6b52', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>{value}</span>
+      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
+        {value}
+      </span>
     </div>
   )
 }
 
-function SfxMetadataTooltip({ sfx, tags, anchorRef }: { sfx: SfxMeta; tags: string[]; anchorRef: React.RefObject<HTMLDivElement | null> }) {
+function SfxMetadataTooltip({
+  sfx,
+  tags,
+  anchorRef,
+}: {
+  sfx: SfxMeta
+  tags: string[]
+  anchorRef: React.RefObject<HTMLDivElement | null>
+}) {
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
   useEffect(() => {
@@ -32,16 +42,19 @@ function SfxMetadataTooltip({ sfx, tags, anchorRef }: { sfx: SfxMeta; tags: stri
   const categoryLabel = SFX_CATEGORY_LABELS[sfx.category as SfxCategory] ?? sfx.category
 
   return ReactDOM.createPortal(
-    <div className="fixed px-3 py-2" style={{
-      zIndex: 9999,
-      top: Math.max(8, pos.top - 8),
-      left: pos.left,
-      width: pos.width,
-      transform: 'translateY(-100%)',
-      background: '#0f0d09',
-      border: '1px solid rgba(74,138,106,0.3)',
-      boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
-    }}>
+    <div
+      className="fixed px-3 py-2"
+      style={{
+        zIndex: 9999,
+        top: Math.max(8, pos.top - 8),
+        left: pos.left,
+        width: pos.width,
+        transform: 'translateY(-100%)',
+        background: '#0f0d09',
+        border: '1px solid rgba(74,138,106,0.3)',
+        boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
+      }}
+    >
       <div className="grid grid-cols-1 gap-y-0">
         <MetaRow label="Category" value={categoryLabel} />
         {sfx.description && <MetaRow label="Desc" value={sfx.description} />}
@@ -58,7 +71,7 @@ function SfxMetadataTooltip({ sfx, tags, anchorRef }: { sfx: SfxMeta; tags: stri
         )}
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }
 
@@ -81,9 +94,20 @@ interface SfxCardProps {
 }
 
 export default function SfxCard({
-  sfx, channelId: _channelId, isPlaying, isLooping, isPinned, channelVolume,
-  tags, allTags,
-  onPlay, onStop, onToggleLoop, onVolumeChange, onPin, onTagsChange,
+  sfx,
+  channelId: _channelId,
+  isPlaying,
+  isLooping,
+  isPinned,
+  channelVolume,
+  tags,
+  allTags,
+  onPlay,
+  onStop,
+  onToggleLoop,
+  onVolumeChange,
+  onPin,
+  onTagsChange,
 }: SfxCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [editingTags, setEditingTags] = useState(false)
@@ -107,7 +131,7 @@ export default function SfxCard({
       <div className="flex items-center gap-2">
         {/* Play / Stop button */}
         <button
-          onClick={() => isPlaying ? onStop() : onPlay()}
+          onClick={() => (isPlaying ? onStop() : onPlay())}
           className="w-7 h-7 flex items-center justify-center shrink-0"
           style={{
             border: `1px solid ${isPlaying ? 'rgba(74,138,106,0.5)' : '#2e2416'}`,
@@ -121,18 +145,21 @@ export default function SfxCard({
         </button>
 
         {/* Label */}
-        <span className="flex-1 min-w-0 truncate" style={{
-          fontFamily: "'Crimson Text', serif",
-          fontSize: '14px',
-          color: isPlaying ? '#a8d5b8' : '#8a7050',
-        }}>
+        <span
+          className="flex-1 min-w-0 truncate"
+          style={{
+            fontFamily: "'Crimson Text', serif",
+            fontSize: '14px',
+            color: isPlaying ? '#a8d5b8' : '#8a7050',
+          }}
+        >
           {sfx.label}
         </span>
 
         {/* Tag pills (read-only display) */}
         {tags.length > 0 && !editingTags && (
           <div className="flex items-center gap-0.5 shrink-0 max-w-[30%] overflow-hidden">
-            {tags.slice(0, 2).map(tag => (
+            {tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
                 className="px-1 truncate"
@@ -150,16 +177,14 @@ export default function SfxCard({
               </span>
             ))}
             {tags.length > 2 && (
-              <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#3a2e1a' }}>
-                +{tags.length - 2}
-              </span>
+              <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#3a2e1a' }}>+{tags.length - 2}</span>
             )}
           </div>
         )}
 
         {/* Loop toggle — visible when playing or on hover */}
         <button
-          onClick={() => isPlaying ? onToggleLoop() : onPlay(true)}
+          onClick={() => (isPlaying ? onToggleLoop() : onPlay(true))}
           className={`w-6 h-6 flex items-center justify-center shrink-0 transition-opacity ${
             isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
           }`}
@@ -185,7 +210,7 @@ export default function SfxCard({
 
         {/* Tag edit toggle */}
         <button
-          onClick={() => setEditingTags(e => !e)}
+          onClick={() => setEditingTags((e) => !e)}
           className="w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0"
           title="Edit tags"
           style={{ color: editingTags ? '#4a8a6a' : '#3a2e1a' }}
@@ -203,11 +228,7 @@ export default function SfxCard({
         </button>
 
         {/* Info tooltip toggle */}
-        <div
-          className="relative"
-          onMouseEnter={() => setExpanded(true)}
-          onMouseLeave={() => setExpanded(false)}
-        >
+        <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
           <button
             className="w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
             title="Effect details"
@@ -220,14 +241,17 @@ export default function SfxCard({
       </div>
 
       {/* Category badge */}
-      <span className="absolute top-1 right-1.5" style={{
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416',
-        pointerEvents: 'none',
-        textTransform: 'uppercase',
-        letterSpacing: '0.05em',
-      }}>
+      <span
+        className="absolute top-1 right-1.5"
+        style={{
+          fontFamily: 'monospace',
+          fontSize: '9px',
+          color: isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416',
+          pointerEvents: 'none',
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+        }}
+      >
         {sfx.category}
       </span>
 

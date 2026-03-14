@@ -3,9 +3,10 @@
  * Runs in a worker_threads context — receives a file path via workerData,
  * analyzes it with essentia.js + ffmpeg + music-metadata, posts the result back.
  */
-import { workerData, parentPort } from 'worker_threads'
-import { spawn } from 'child_process'
-import fs from 'fs'
+
+import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import { parentPort, workerData } from 'node:worker_threads'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 let ffmpegPath: string = require('ffmpeg-static')
@@ -27,14 +28,11 @@ function decodeAudio(filePath: string): Promise<{ samples: Float32Array; duratio
     const sampleRate = 44100
     const chunks: Buffer[] = []
 
-    const ff = spawn(ffmpegPath, [
-      '-i', filePath,
-      '-f', 'f32le',
-      '-ar', String(sampleRate),
-      '-ac', '1',
-      '-vn',
-      'pipe:1',
-    ], { stdio: ['ignore', 'pipe', 'ignore'] })
+    const ff = spawn(
+      ffmpegPath,
+      ['-i', filePath, '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
+      { stdio: ['ignore', 'pipe', 'ignore'] },
+    )
 
     ff.stdout.on('data', (chunk: Buffer) => chunks.push(chunk))
     ff.on('error', reject)
@@ -69,9 +67,16 @@ async function extractTags(filePath: string) {
   } catch (e) {
     console.error('[analyze-worker] tag extraction failed:', e)
     return {
-      title: null, artist: null, album: null, genre: null,
-      year: null, trackNo: null, bitrate: null, sampleRate: null,
-      channels: null, codec: null,
+      title: null,
+      artist: null,
+      album: null,
+      genre: null,
+      year: null,
+      trackNo: null,
+      bitrate: null,
+      sampleRate: null,
+      channels: null,
+      codec: null,
     }
   }
 }
@@ -81,43 +86,56 @@ async function run() {
   const mtime = fs.statSync(filePath).mtimeMs
 
   // Run tag extraction and audio analysis in parallel
-  const [tags, audioData] = await Promise.all([
-    extractTags(filePath),
-    decodeAudio(filePath),
-  ])
+  const [tags, audioData] = await Promise.all([extractTags(filePath), decodeAudio(filePath)])
 
   const essentia = getEssentia()
   const { samples, duration } = audioData
   const signal = essentia.arrayToVector(samples)
 
-  let bpm = 0, bpmConfidence = 0
+  let bpm = 0,
+    bpmConfidence = 0
   try {
     const r = essentia.RhythmDescriptors(signal)
     bpm = Math.round(r.bpm)
     bpmConfidence = parseFloat((r.confidence ?? 0).toFixed(2))
-  } catch { /* leave 0 */ }
+  } catch {
+    /* leave 0 */
+  }
 
-  let key = 'Unknown', scale = 'major'
+  let key = 'Unknown',
+    scale = 'major'
   try {
     const k = essentia.KeyExtractor(signal)
     key = k.key
     scale = k.scale
-  } catch { /* leave Unknown */ }
+  } catch {
+    /* leave Unknown */
+  }
 
   let danceability = 0
   try {
     danceability = parseFloat(essentia.Danceability(signal).danceability.toFixed(2))
-  } catch { /* leave 0 */ }
+  } catch {
+    /* leave 0 */
+  }
 
   let energy = 0
   try {
     const e = essentia.Energy(signal).energy
     energy = parseFloat(Math.min(1, Math.sqrt(e / samples.length) * 10).toFixed(2))
-  } catch { /* leave 0 */ }
+  } catch {
+    /* leave 0 */
+  }
 
   parentPort!.postMessage({
-    bpm, bpmConfidence, key, scale, danceability, energy,
-    duration: Math.round(duration), mtime,
+    bpm,
+    bpmConfidence,
+    key,
+    scale,
+    danceability,
+    energy,
+    duration: Math.round(duration),
+    mtime,
     ...tags,
   })
 }

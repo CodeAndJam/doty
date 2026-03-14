@@ -4,7 +4,7 @@
  * Uses ms-marco-MiniLM-L-6-v2 for cross-encoder scoring.
  * Must use process.parentPort (not process.send) for IPC.
  */
-import { join } from 'path'
+import { join } from 'node:path'
 
 const { appPath, homePath } = process.env as { appPath: string; homePath: string }
 
@@ -21,7 +21,7 @@ async function loadReranker() {
   process.parentPort.postMessage({ type: 'status', status: 'loading' })
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(
-    join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
+    join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs'),
   )
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
@@ -38,8 +38,8 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   console.log(`[reranker-child] received rerank request id=${id}`)
   try {
     await loadReranker()
-    const queries = pairs.map(p => p.text)
-    const passages = pairs.map(p => p.text_pair)
+    const queries = pairs.map((p) => p.text)
+    const passages = pairs.map((p) => p.text_pair)
     const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
     const { logits } = await model(inputs)
     const scores: number[] = Array.from(logits.data as Float32Array)

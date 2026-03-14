@@ -1,30 +1,59 @@
-import { describe, it, expect, vi } from 'vitest'
-import { QwenManager } from './qwen'
+import { describe, expect, it, vi } from 'vitest'
 import type { TrackMetadata } from './analyzer'
+import { QwenManager } from './qwen'
 
 const FILES = [
-  'track-a.mp3', 'track-b.mp3', 'track-c.mp3', 'track-d.mp3', 'track-e.mp3',
-  'track-f.mp3', 'track-g.mp3', 'track-h.mp3', 'track-i.mp3', 'track-j.mp3',
+  'track-a.mp3',
+  'track-b.mp3',
+  'track-c.mp3',
+  'track-d.mp3',
+  'track-e.mp3',
+  'track-f.mp3',
+  'track-g.mp3',
+  'track-h.mp3',
+  'track-i.mp3',
+  'track-j.mp3',
   'track-k.mp3',
 ]
 
 const META_BASE: TrackMetadata = {
-  bpm: 120, bpmConfidence: 0.9, key: 'C', scale: 'major',
-  danceability: 0.5, energy: 0.5, duration: 200, mtime: 0,
-  title: null, artist: null, album: null, genre: null,
-  year: null, trackNo: null, bitrate: null, sampleRate: null,
-  channels: null, codec: null,
+  bpm: 120,
+  bpmConfidence: 0.9,
+  key: 'C',
+  scale: 'major',
+  danceability: 0.5,
+  energy: 0.5,
+  duration: 200,
+  mtime: 0,
+  title: null,
+  artist: null,
+  album: null,
+  genre: null,
+  year: null,
+  trackNo: null,
+  bitrate: null,
+  sampleRate: null,
+  channels: null,
+  codec: null,
 }
 
 const METADATA: Record<string, TrackMetadata> = {
-  'track-a.mp3': { ...META_BASE, bpm: 128, key: 'C', scale: 'major', danceability: 0.8, energy: 0.7, artist: 'Artist A' },
+  'track-a.mp3': {
+    ...META_BASE,
+    bpm: 128,
+    key: 'C',
+    scale: 'major',
+    danceability: 0.8,
+    energy: 0.7,
+    artist: 'Artist A',
+  },
   'track-b.mp3': { ...META_BASE, bpm: 140, key: 'A', scale: 'minor', danceability: 0.6, energy: 0.9, genre: 'Metal' },
 }
 
 /** Mock ScoreFn: returns a score per pair based on text_pair content */
 function makeMockScoreFn(scoreMap?: Map<string, number>) {
   return vi.fn().mockImplementation(async (pairs: Array<{ text: string; text_pair: string }>) => {
-    return pairs.map(p => scoreMap?.get(p.text_pair) ?? 0.5)
+    return pairs.map((p) => scoreMap?.get(p.text_pair) ?? 0.5)
   })
 }
 

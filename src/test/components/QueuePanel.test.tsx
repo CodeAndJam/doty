@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import QueuePanel from '../../components/QueuePanel'
 
 // Mock @dnd-kit to avoid complex DnD setup in tests
@@ -87,7 +87,7 @@ describe('QueuePanel', () => {
     const onPlay = vi.fn()
     render(<QueuePanel {...defaultProps} onPlay={onPlay} />)
     // Each track has a play button — find them by their index labels
-    const playButtons = screen.getAllByRole('button').filter(b => {
+    const playButtons = screen.getAllByRole('button').filter((b) => {
       const svg = b.querySelector('svg')
       return svg && b.classList.contains('w-6')
     })

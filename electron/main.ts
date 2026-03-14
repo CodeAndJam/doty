@@ -1,29 +1,53 @@
-import { app, BrowserWindow, ipcMain, protocol, dialog, net } from 'electron'
-import { join } from 'path'
-import { pathToFileURL } from 'url'
-import { store } from './store'
+import { exec } from 'node:child_process'
+import fs from 'node:fs'
+import https from 'node:https'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
+import { closeDb, getAllTags, getDb, getTags, getTagsMap, setTags } from './database'
 import {
-  isModelReady, isRerankerCached, MODEL_URL, MODEL_DIR,
-  VAD_MODEL_URL, VAD_MODEL_PATH, isVadReady,
-  DENOISER_MODEL_URL, DENOISER_MODEL_PATH, isDenoiserReady,
-  PUNCT_MODEL_URL, PUNCT_MODEL_DIR, isPunctReady,
-  DEFAULT_HOTWORDS_PATH,
-} from './model-paths'
-import { initRecognizer, transcribeFloat32, freeRecognizer, restartRecognizer, setOnFlushText } from './asr'
-import { startScanner, stopScanner, getMetadata, getAllMetadata } from './scanner'
-import { getDb, closeDb, getTags, setTags, getAllTags, getTagsMap } from './database'
+  clearToken,
+  destroyDiscord,
+  connect as discordConnect,
+  disconnect as discordDisconnect,
+  getState as discordGetState,
+  getAutoConnect,
+  getDiscordVolume,
+  getGuilds,
+  getVoiceChannels,
+  joinChannel,
+  leaveChannel,
+  loadToken,
+  onStateChange,
+  pauseStream,
+  resumeStream,
+  setAutoConnect,
+  setDiscordVolume,
+  stopStream,
+  streamSfx,
+  streamTrack,
+  tryAutoConnect,
+} from './discord'
 import { migrateFromJson } from './metadata-cache'
 import {
-  connect as discordConnect, disconnect as discordDisconnect, destroyDiscord,
-  getState as discordGetState, getGuilds, getVoiceChannels,
-  joinChannel, leaveChannel, streamTrack, stopStream,
-  pauseStream, resumeStream,
-  setDiscordVolume, getDiscordVolume, onStateChange,
-  loadToken, clearToken, saveToken,
-} from './discord'
-import fs from 'fs'
-import https from 'https'
-import { exec } from 'child_process'
+  DEFAULT_HOTWORDS_PATH,
+  DENOISER_MODEL_PATH,
+  DENOISER_MODEL_URL,
+  isDenoiserReady,
+  isModelReady,
+  isPunctReady,
+  isRerankerCached,
+  isVadReady,
+  MODEL_DIR,
+  MODEL_URL,
+  PUNCT_MODEL_DIR,
+  PUNCT_MODEL_URL,
+  VAD_MODEL_PATH,
+  VAD_MODEL_URL,
+} from './model-paths'
+import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import { store } from './store'
 
 // ── Download helper ───────────────────────────────────────────────────────────
 /** Download a file from a URL (follows redirects). Ensures parent dir exists. */
@@ -32,22 +56,29 @@ function downloadFile(url: string, destPath: string): Promise<void> {
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
     const file = fs.createWriteStream(destPath)
     const get = (u: string) => {
-      https.get(u, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return get(res.headers.location!)
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
-        res.pipe(file)
-        file.on('finish', () => file.close(() => resolve()))
-        res.on('error', reject)
-      }).on('error', reject)
+      https
+        .get(u, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            return get(res.headers.location!)
+          }
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
+          res.pipe(file)
+          file.on('finish', () => file.close(() => resolve()))
+          res.on('error', reject)
+        })
+        .on('error', reject)
     }
     get(url)
   })
 }
 
 /** Download a tar.bz2 archive, extract it, and optionally rename the extracted dir. */
-async function downloadAndExtractTarBz2(url: string, destDir: string, extractedName?: string, finalDir?: string): Promise<void> {
+async function downloadAndExtractTarBz2(
+  url: string,
+  destDir: string,
+  extractedName?: string,
+  finalDir?: string,
+): Promise<void> {
   const tarPath = join(destDir, 'download.tar.bz2')
   fs.mkdirSync(destDir, { recursive: true })
   await downloadFile(url, tarPath)
@@ -61,7 +92,11 @@ async function downloadAndExtractTarBz2(url: string, destDir: string, extractedN
           fs.renameSync(extracted, finalDir)
         }
       }
-      try { fs.unlinkSync(tarPath) } catch { /* ignore */ }
+      try {
+        fs.unlinkSync(tarPath)
+      } catch {
+        /* ignore */
+      }
       resolve()
     })
   })
@@ -128,7 +163,9 @@ function listMusicFiles(dir: string, root?: string): string[] {
         results.push(full.slice(base.length + 1))
       }
     }
-  } catch { /* skip unreadable dirs */ }
+  } catch {
+    /* skip unreadable dirs */
+  }
   return results
 }
 
@@ -169,10 +206,8 @@ function registerAppProtocol() {
 }
 
 function createWindow() {
-  const iconPath = app.isPackaged
-    ? join(process.resourcesPath, 'icon.icns')
-    : join(__dirname, '../../build/icon.png')
-  
+  const iconPath = app.isPackaged ? join(process.resourcesPath, 'icon.icns') : join(__dirname, '../../build/icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -198,8 +233,12 @@ function createWindow() {
 /** MIME type lookup for audio files. */
 function audioMime(ext: string): string {
   const map: Record<string, string> = {
-    '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.aac': 'audio/aac',
+    '.mp3': 'audio/mpeg',
+    '.flac': 'audio/flac',
+    '.wav': 'audio/wav',
+    '.m4a': 'audio/mp4',
+    '.ogg': 'audio/ogg',
+    '.aac': 'audio/aac',
   }
   return map[ext.toLowerCase()] ?? 'application/octet-stream'
 }
@@ -207,95 +246,119 @@ function audioMime(ext: string): string {
 function registerMusicProtocol() {
   protocol.handle('music', (request) => {
     try {
-    const musicFolder = store.get('musicFolder', '') as string
-    const raw = request.url
-    const prefix = 'music://play/'
-    const filename = decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
-    // Support absolute paths (for SFX) or relative paths (for music).
-    // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
-    // like /Users/x/sfx/boom.mp3 arrives as "Users/x/sfx/boom.mp3" (leading
-    // slash consumed by the music://play/ prefix).  We try the relative path
-    // first; if it doesn't exist we retry as an absolute path with "/" prepended.
-    let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
+      const musicFolder = store.get('musicFolder', '') as string
+      const raw = request.url
+      const prefix = 'music://play/'
+      const filename = decodeURIComponent(
+        raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length),
+      )
+      // Support absolute paths (for SFX) or relative paths (for music).
+      // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
+      // like /Users/x/sfx/boom.mp3 arrives as "Users/x/sfx/boom.mp3" (leading
+      // slash consumed by the music://play/ prefix).  We try the relative path
+      // first; if it doesn't exist we retry as an absolute path with "/" prepended.
+      let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
 
-    if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
-      const abs = '/' + filename
-      if (fs.existsSync(abs)) filePath = abs
-    }
+      if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
+        const abs = `/${filename}`
+        if (fs.existsSync(abs)) filePath = abs
+      }
 
-    if (!fs.existsSync(filePath)) {
-      return new Response('Not found', { status: 404 })
-    }
+      if (!fs.existsSync(filePath)) {
+        return new Response('Not found', { status: 404 })
+      }
 
-    const stat = fs.statSync(filePath)
-    const total = stat.size
-    const ext = filePath.slice(filePath.lastIndexOf('.'))
-    const mime = audioMime(ext)
+      const stat = fs.statSync(filePath)
+      const total = stat.size
+      const ext = filePath.slice(filePath.lastIndexOf('.'))
+      const mime = audioMime(ext)
 
-    /** Wrap a Node fs.ReadStream into a web ReadableStream, guarding against
-     *  enqueue-after-close crashes that happen when Chromium cancels a request
-     *  mid-stream (e.g. rapid seeking). */
-    function nodeToWeb(nodeStream: fs.ReadStream): ReadableStream {
-      let closed = false
-      return new ReadableStream({
-        start(controller) {
-          nodeStream.on('data', (chunk: Buffer | string) => {
-            if (!closed) {
-              try { controller.enqueue(chunk) } catch { closed = true; nodeStream.destroy() }
-            }
-          })
-          nodeStream.on('end', () => {
-            if (!closed) { closed = true; try { controller.close() } catch { /* already closed */ } }
-          })
-          nodeStream.on('error', (err) => {
-            if (!closed) { closed = true; try { controller.error(err) } catch { /* already errored */ } }
-          })
-        },
-        cancel() { closed = true; nodeStream.destroy() },
-      })
-    }
-
-    // Handle Range requests — required for audio seeking.
-    // Without this, setting audio.currentTime causes Chromium to request a byte
-    // range, but net.fetch(file://) always returns the full file from byte 0,
-    // so the seek position resets to the beginning.
-    const rangeHeader = request.headers.get('Range')
-    if (rangeHeader) {
-      const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
-      const start = match ? parseInt(match[1], 10) : 0
-      const end = match && match[2] ? parseInt(match[2], 10) : total - 1
-
-      // Validate range bounds
-      if (start >= total || end >= total || start > end) {
-        return new Response('Range Not Satisfiable', {
-          status: 416,
-          headers: { 'Content-Range': `bytes */${total}` },
+      /** Wrap a Node fs.ReadStream into a web ReadableStream, guarding against
+       *  enqueue-after-close crashes that happen when Chromium cancels a request
+       *  mid-stream (e.g. rapid seeking). */
+      function nodeToWeb(nodeStream: fs.ReadStream): ReadableStream {
+        let closed = false
+        return new ReadableStream({
+          start(controller) {
+            nodeStream.on('data', (chunk: Buffer | string) => {
+              if (!closed) {
+                try {
+                  controller.enqueue(chunk)
+                } catch {
+                  closed = true
+                  nodeStream.destroy()
+                }
+              }
+            })
+            nodeStream.on('end', () => {
+              if (!closed) {
+                closed = true
+                try {
+                  controller.close()
+                } catch {
+                  /* already closed */
+                }
+              }
+            })
+            nodeStream.on('error', (err) => {
+              if (!closed) {
+                closed = true
+                try {
+                  controller.error(err)
+                } catch {
+                  /* already errored */
+                }
+              }
+            })
+          },
+          cancel() {
+            closed = true
+            nodeStream.destroy()
+          },
         })
       }
 
-      const chunkSize = end - start + 1
+      // Handle Range requests — required for audio seeking.
+      // Without this, setting audio.currentTime causes Chromium to request a byte
+      // range, but net.fetch(file://) always returns the full file from byte 0,
+      // so the seek position resets to the beginning.
+      const rangeHeader = request.headers.get('Range')
+      if (rangeHeader) {
+        const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
+        const start = match ? parseInt(match[1], 10) : 0
+        const end = match?.[2] ? parseInt(match[2], 10) : total - 1
 
-      return new Response(nodeToWeb(fs.createReadStream(filePath, { start, end })), {
-        status: 206,
+        // Validate range bounds
+        if (start >= total || end >= total || start > end) {
+          return new Response('Range Not Satisfiable', {
+            status: 416,
+            headers: { 'Content-Range': `bytes */${total}` },
+          })
+        }
+
+        const chunkSize = end - start + 1
+
+        return new Response(nodeToWeb(fs.createReadStream(filePath, { start, end })), {
+          status: 206,
+          headers: {
+            'Content-Type': mime,
+            'Content-Length': String(chunkSize),
+            'Content-Range': `bytes ${start}-${end}/${total}`,
+            'Accept-Ranges': 'bytes',
+          },
+        })
+      }
+
+      // Full file response — advertise Accept-Ranges so Chromium knows
+      // it can send Range requests for seeking.
+      return new Response(nodeToWeb(fs.createReadStream(filePath)), {
+        status: 200,
         headers: {
           'Content-Type': mime,
-          'Content-Length': String(chunkSize),
-          'Content-Range': `bytes ${start}-${end}/${total}`,
+          'Content-Length': String(total),
           'Accept-Ranges': 'bytes',
         },
       })
-    }
-
-    // Full file response — advertise Accept-Ranges so Chromium knows
-    // it can send Range requests for seeking.
-    return new Response(nodeToWeb(fs.createReadStream(filePath)), {
-      status: 200,
-      headers: {
-        'Content-Type': mime,
-        'Content-Length': String(total),
-        'Accept-Ranges': 'bytes',
-      },
-    })
     } catch (err) {
       console.error('[music-protocol] unhandled error:', err)
       return new Response('Internal error', { status: 500 })
@@ -334,9 +397,11 @@ app.whenReady().then(async () => {
         setOnFlushText((text) => {
           mainWindow?.webContents.send('stt:transcript', text)
           const file = getSessionTranscriptFile()
-          if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
         })
-      } catch (e) { console.error('ASR init error:', e) }
+      } catch (e) {
+        console.error('ASR init error:', e)
+      }
     }, 2000)
   }
 
@@ -347,6 +412,9 @@ app.whenReady().then(async () => {
   onStateChange((discordState) => {
     mainWindow?.webContents.send('discord:state', discordState)
   })
+
+  // Auto-connect to last Discord voice channel if enabled
+  tryAutoConnect()
 })
 
 app.on('before-quit', () => {
@@ -380,7 +448,7 @@ ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
     if (text) {
       mainWindow?.webContents.send('stt:transcript', text)
       const file = getSessionTranscriptFile()
-      if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+      if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
     }
     return { text }
   } catch (e) {
@@ -496,7 +564,11 @@ ipcMain.handle('settings:get-hotwords-file', () => store.get('hotwordsFile', '')
 ipcMain.handle('settings:set-hotwords-file', (_e, filePath: string) => {
   store.set('hotwordsFile', filePath)
   // Restart the ASR worker to pick up the new hotwords
-  try { restartRecognizer() } catch (e) { console.error('ASR restart error:', e) }
+  try {
+    restartRecognizer()
+  } catch (e) {
+    console.error('ASR restart error:', e)
+  }
   return { ok: true }
 })
 
@@ -508,7 +580,11 @@ ipcMain.handle('settings:pick-hotwords-file', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('hotwordsFile', result.filePaths[0])
-    try { restartRecognizer() } catch (e) { console.error('ASR restart error:', e) }
+    try {
+      restartRecognizer()
+    } catch (e) {
+      console.error('ASR restart error:', e)
+    }
     return result.filePaths[0]
   }
   return null
@@ -545,29 +621,31 @@ ipcMain.handle('model:download', async () => {
   await new Promise<void>((resolve, reject) => {
     const file = fs.createWriteStream(tarPath)
     const get = (url: string) => {
-      https.get(url, (res) => {
-        if (res.statusCode === 301 || res.statusCode === 302) {
-          return get(res.headers.location!)
-        }
-        if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
-
-        const total = parseInt(res.headers['content-length'] || '0', 10)
-        let downloaded = 0
-
-        res.on('data', (chunk: Buffer) => {
-          downloaded += chunk.length
-          file.write(chunk)
-          if (total > 0) {
-            mainWindow?.webContents.send('model:progress', {
-              percent: Math.round((downloaded / total) * 100),
-              downloadedMB: Math.round(downloaded / 1024 / 1024),
-              totalMB: Math.round(total / 1024 / 1024),
-            })
+      https
+        .get(url, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            return get(res.headers.location!)
           }
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
+
+          const total = parseInt(res.headers['content-length'] || '0', 10)
+          let downloaded = 0
+
+          res.on('data', (chunk: Buffer) => {
+            downloaded += chunk.length
+            file.write(chunk)
+            if (total > 0) {
+              mainWindow?.webContents.send('model:progress', {
+                percent: Math.round((downloaded / total) * 100),
+                downloadedMB: Math.round(downloaded / 1024 / 1024),
+                totalMB: Math.round(total / 1024 / 1024),
+              })
+            }
+          })
+          res.on('end', () => file.close(() => resolve()))
+          res.on('error', reject)
         })
-        res.on('end', () => file.close(() => resolve()))
-        res.on('error', reject)
-      }).on('error', reject)
+        .on('error', reject)
     }
     get(MODEL_URL)
   })
@@ -590,7 +668,7 @@ ipcMain.handle('model:download', async () => {
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
     const file = getSessionTranscriptFile()
-    if (file) fs.appendFileSync(file, text + '\n', 'utf-8')
+    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 
@@ -641,6 +719,11 @@ ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: numb
   return { ok: true }
 })
 
+ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number) => {
+  streamSfx(absolutePath, volume)
+  return { ok: true }
+})
+
 ipcMain.handle('discord:stop-stream', () => {
   stopStream()
   return { ok: true }
@@ -672,14 +755,21 @@ ipcMain.handle('discord:clear-token', () => {
   return { ok: true }
 })
 
+ipcMain.handle('discord:get-auto-connect', () => getAutoConnect())
+
+ipcMain.handle('discord:set-auto-connect', (_e, enabled: boolean) => {
+  setAutoConnect(enabled)
+  return { ok: true }
+})
+
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
 function scanSfxFolder(folder: string): any[] {
   if (!folder || !fs.existsSync(folder)) return []
-  
+
   const results: any[] = []
   const audioRe = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
-  
+
   function scan(dir: string, category: string) {
     try {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -704,7 +794,7 @@ function scanSfxFolder(folder: string): any[] {
       console.error('[sfx] scan error:', e)
     }
   }
-  
+
   scan(folder, '')
   return results
 }

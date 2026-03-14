@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { PlayIcon, PauseIcon, PinIcon, SearchIcon, CloseIcon, TagIcon } from './Icons'
+import { useEffect, useState } from 'react'
+import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
 interface BrowsePanelProps {
@@ -23,49 +23,50 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        onClose()
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
 
   function toggleTagFilter(tag: string) {
-    setActiveTagFilters(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
-    )
+    setActiveTagFilters((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }
 
   const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
-  const filtered = allFiles.filter(f => {
+  const filtered = allFiles.filter((f) => {
     const lower = f.toLowerCase()
     const fileTags = tagsMap[f] || []
 
     // Text search: match filename OR tags
-    const textMatch = tokens.length === 0 || tokens.every(t =>
-      lower.includes(t) || fileTags.some(tag => tag.includes(t))
-    )
+    const textMatch =
+      tokens.length === 0 || tokens.every((t) => lower.includes(t) || fileTags.some((tag) => tag.includes(t)))
 
     // Tag chip filters: must have ALL active tag filters
-    const tagMatch = activeTagFilters.length === 0 ||
-      activeTagFilters.every(t => fileTags.includes(t))
+    const tagMatch = activeTagFilters.length === 0 || activeTagFilters.every((t) => fileTags.includes(t))
 
     return textMatch && tagMatch
   })
 
   return (
-    <div className="absolute inset-0 z-10 flex flex-col" style={{
-      background: '#080705',
-      border: '1px solid #2e2416',
-    }}>
+    <div
+      className="absolute inset-0 z-10 flex flex-col"
+      style={{
+        background: '#080705',
+        border: '1px solid #2e2416',
+      }}
+    >
       {/* Header */}
       <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #2e2416' }}>
         <SearchIcon />
         <input
           type="text"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
           placeholder="Search tracks or tags..."
-          autoFocus
           className="flex-1 bg-transparent outline-none text-sm"
           style={{
             fontFamily: "'Crimson Text', serif",
@@ -73,19 +74,27 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             color: '#c8922a',
           }}
         />
-        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-          {filtered.length}
-        </span>
-        <button onClick={(e) => { e.stopPropagation(); onClose() }} className="p-2 hover:opacity-80" style={{ cursor: 'pointer' }}>
+        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filtered.length}</span>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onClose()
+          }}
+          className="p-2 hover:opacity-80"
+          style={{ cursor: 'pointer' }}
+        >
           <CloseIcon />
         </button>
       </div>
 
       {/* Tag filter chips */}
       {allTags.length > 0 && (
-        <div className="flex items-center gap-1 px-3 py-1.5 shrink-0 overflow-x-auto" style={{ borderBottom: '1px solid rgba(46,36,22,0.3)' }}>
+        <div
+          className="flex items-center gap-1 px-3 py-1.5 shrink-0 overflow-x-auto"
+          style={{ borderBottom: '1px solid rgba(46,36,22,0.3)' }}
+        >
           <TagIcon />
-          {allTags.map(tag => {
+          {allTags.map((tag) => {
             const active = activeTagFilters.includes(tag)
             return (
               <button
@@ -120,7 +129,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
 
       {/* File list */}
       <div className="flex-1 overflow-y-auto">
-        {filtered.map(f => {
+        {filtered.map((f) => {
           const isPinned = pinned.includes(f)
           const isPlaying = playing === f
           const fileTags = tagsMap[f] || []
@@ -133,22 +142,29 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 background: isPlaying ? 'rgba(200,146,42,0.06)' : 'transparent',
               }}
             >
-              <button onClick={() => onPlay(f)} className="w-5 h-5 flex items-center justify-center shrink-0" style={{
-                border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416'}`,
-              }}>
+              <button
+                onClick={() => onPlay(f)}
+                className="w-5 h-5 flex items-center justify-center shrink-0"
+                style={{
+                  border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416'}`,
+                }}
+              >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
               </button>
-              <span className="flex-1 min-w-0 truncate" style={{
-                fontFamily: "'Crimson Text', serif",
-                fontSize: '14px',
-                color: isPlaying ? '#e8d5a3' : '#8a7050',
-              }}>
+              <span
+                className="flex-1 min-w-0 truncate"
+                style={{
+                  fontFamily: "'Crimson Text', serif",
+                  fontSize: '14px',
+                  color: isPlaying ? '#e8d5a3' : '#8a7050',
+                }}
+              >
                 {trackName(f)}
               </span>
               {/* Inline tag pills */}
               {fileTags.length > 0 && (
                 <div className="flex items-center gap-0.5 shrink-0">
-                  {fileTags.slice(0, 2).map(tag => (
+                  {fileTags.slice(0, 2).map((tag) => (
                     <span
                       key={tag}
                       className="px-1 truncate"

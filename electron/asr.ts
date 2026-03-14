@@ -1,8 +1,8 @@
-import { join } from 'path'
-import { Worker } from 'worker_threads'
-import { MODEL_DIR, VAD_MODEL_PATH, DENOISER_MODEL_PATH, PUNCT_MODEL_PATH } from './model-paths'
+import fs from 'node:fs'
+import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
+import { DENOISER_MODEL_PATH, MODEL_DIR, PUNCT_MODEL_PATH, VAD_MODEL_PATH } from './model-paths'
 import { store } from './store'
-import fs from 'fs'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
 
@@ -55,7 +55,9 @@ function getWorker(): Worker {
     worker = null
   })
 
-  worker.on('exit', () => { worker = null })
+  worker.on('exit', () => {
+    worker = null
+  })
 
   return worker
 }

@@ -2,25 +2,39 @@
  * Discord bot client — manages connection, voice channels, and audio streaming.
  * Runs in the Electron main process.
  */
+
 import {
-  Client,
-  GatewayIntentBits,
-  ChannelType,
-  type VoiceBasedChannel,
-  type Guild,
-} from 'discord.js'
-import {
-  joinVoiceChannel,
-  createAudioPlayer,
-  AudioPlayerStatus,
-  VoiceConnectionStatus,
-  entersState,
-  type VoiceConnection,
   type AudioPlayer,
+  AudioPlayerStatus,
+  type AudioResource,
+  createAudioPlayer,
+  entersState,
+  joinVoiceChannel,
+  type VoiceConnection,
+  VoiceConnectionStatus,
 } from '@discordjs/voice'
-import { createMusicResource } from './discord-audio'
-import { store } from './store'
+import { ChannelType, Client, GatewayIntentBits, type Guild, type VoiceBasedChannel } from 'discord.js'
 import { safeStorage } from 'electron'
+import { createMusicResource, createSfxResource } from './discord-audio'
+import { store } from './store'
+
+// ── Verbose logging ───────────────────────────────────────────────────────────
+
+let verbose = true
+
+function log(msg: string): void {
+  console.log(`[discord] ${msg}`)
+}
+
+function vlog(msg: string): void {
+  if (verbose) console.log(`[discord:v] ${msg}`)
+}
+
+/** Enable or disable verbose Discord logging at runtime */
+export function setDiscordVerbose(enabled: boolean): void {
+  verbose = enabled
+  log(`Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,18 +50,9 @@ export interface DiscordVoiceChannel {
   guildId: string
 }
 
-export type DiscordStatus =
-  | 'disconnected'
-  | 'connecting'
-  | 'ready'
-  | 'error'
+export type DiscordStatus = 'disconnected' | 'connecting' | 'ready' | 'error'
 
-export type DiscordVoiceStatus =
-  | 'idle'
-  | 'joining'
-  | 'connected'
-  | 'playing'
-  | 'error'
+export type DiscordVoiceStatus = 'idle' | 'joining' | 'connected' | 'playing' | 'error'
 
 export interface DiscordState {
   status: DiscordStatus
@@ -65,8 +70,23 @@ let client: Client | null = null
 let player: AudioPlayer | null = null
 let connection: VoiceConnection | null = null
 let currentTrack: string | null = null
+let currentResource: AudioResource | null = null
 let discordVolume = 1.0
 let stateListeners: StateListener[] = []
+
+/**
+ * SFX interrupt state.
+ *
+ * When an SFX plays it temporarily takes over the AudioPlayer.
+ * `sfxPlaying` is true while an SFX resource is the active resource.
+ * `sfxTransitioning` is true between calling player.play(sfx) and the
+ * player entering the Playing state — this prevents the Idle event
+ * (fired when the *previous* resource is displaced) from being
+ * misinterpreted as the SFX finishing.
+ */
+let sfxPlaying = false
+let sfxTransitioning = false
+let sfxQueue: { path: string; volume: number }[] = []
 
 let state: DiscordState = {
   status: 'disconnected',
@@ -83,7 +103,9 @@ function setState(patch: Partial<DiscordState>) {
 
 export function onStateChange(fn: StateListener): () => void {
   stateListeners.push(fn)
-  return () => { stateListeners = stateListeners.filter((l) => l !== fn) }
+  return () => {
+    stateListeners = stateListeners.filter((l) => l !== fn)
+  }
 }
 
 export function getState(): DiscordState {
@@ -126,10 +148,52 @@ export function clearToken(): void {
 export function setDiscordVolume(vol: number): void {
   discordVolume = Math.max(0, Math.min(1, vol))
   store.set('discordVolume', discordVolume)
+  // Apply to the live stream immediately (only when music is active)
+  if (!sfxPlaying && !sfxTransitioning) {
+    currentResource?.volume?.setVolume(discordVolume)
+  }
 }
 
 export function getDiscordVolume(): number {
   return discordVolume
+}
+
+// ── Auto-connect ──────────────────────────────────────────────────────────────
+
+export function setAutoConnect(enabled: boolean): void {
+  store.set('discordAutoConnect', enabled)
+  log(`Auto-connect ${enabled ? 'enabled' : 'disabled'}`)
+}
+
+export function getAutoConnect(): boolean {
+  return (store.get('discordAutoConnect', false) as boolean) ?? false
+}
+
+/**
+ * Try to reconnect to the last voice channel on startup.
+ * Called once from main.ts after the app is ready.
+ * Silently does nothing if auto-connect is off, no token, or last channel is missing.
+ */
+export async function tryAutoConnect(): Promise<void> {
+  if (!getAutoConnect()) return
+  const token = loadToken()
+  if (!token) return
+
+  const guildId = store.get('discordLastGuildId', '') as string
+  const channelId = store.get('discordLastChannelId', '') as string
+  if (!guildId || !channelId) {
+    log('Auto-connect: no last channel saved')
+    return
+  }
+
+  log(`Auto-connect: connecting to guild=${guildId} channel=${channelId}`)
+  try {
+    await connect()
+    await joinChannel(guildId, channelId)
+    log('Auto-connect: success')
+  } catch (err) {
+    log(`Auto-connect: failed — ${err instanceof Error ? err.message : err}`)
+  }
 }
 
 // ── Connect / Disconnect ──────────────────────────────────────────────────────
@@ -148,10 +212,7 @@ export async function connect(token?: string): Promise<void> {
   setState({ status: 'connecting', error: null })
 
   client = new Client({
-    intents: [
-      GatewayIntentBits.Guilds,
-      GatewayIntentBits.GuildVoiceStates,
-    ],
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   })
 
   // Load persisted volume
@@ -180,9 +241,7 @@ export async function connect(token?: string): Promise<void> {
 
     client!.login(botToken).catch((err) => {
       clearTimeout(timeout)
-      const msg = err.message?.includes('TOKEN_INVALID')
-        ? 'Invalid bot token'
-        : err.message || 'Login failed'
+      const msg = err.message?.includes('TOKEN_INVALID') ? 'Invalid bot token' : err.message || 'Login failed'
       console.error('[discord] Login failed:', msg)
       setState({ status: 'error', error: msg })
       reject(new Error(msg))
@@ -254,15 +313,56 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
     player = createAudioPlayer()
 
     player.on(AudioPlayerStatus.Playing, () => {
+      vlog(`EVENT Playing | sfxTransitioning=${sfxTransitioning} sfxPlaying=${sfxPlaying}`)
+      if (sfxTransitioning) {
+        sfxTransitioning = false
+        sfxPlaying = true
+        log('SFX now playing')
+      }
       setState({ voiceStatus: 'playing' })
     })
 
     player.on(AudioPlayerStatus.Idle, () => {
+      vlog(`EVENT Idle | sfxTransitioning=${sfxTransitioning} sfxPlaying=${sfxPlaying} queue=${sfxQueue.length}`)
+
+      if (sfxTransitioning) {
+        vlog('Ignoring Idle during SFX transition (displaced resource)')
+        return
+      }
+
+      if (sfxPlaying) {
+        sfxPlaying = false
+        log(`SFX finished, queue=${sfxQueue.length}`)
+        if (sfxQueue.length > 0) {
+          const next = sfxQueue.shift()!
+          playNextSfx(next.path, next.volume)
+        } else {
+          resumeMusicAfterSfx()
+        }
+        return
+      }
+
+      vlog('Player idle (normal)')
       setState({ voiceStatus: 'connected' })
     })
 
+    player.on(AudioPlayerStatus.Buffering, () => {
+      vlog(`EVENT Buffering | sfxTransitioning=${sfxTransitioning} sfxPlaying=${sfxPlaying}`)
+    })
+
+    player.on(AudioPlayerStatus.AutoPaused, () => {
+      vlog(`EVENT AutoPaused | sfxTransitioning=${sfxTransitioning} sfxPlaying=${sfxPlaying}`)
+    })
+
     player.on('error', (err) => {
-      console.error('[discord] Player error:', err.message)
+      log(`Player error: ${err.message}`)
+      vlog(`Error detail | sfxTransitioning=${sfxTransitioning} sfxPlaying=${sfxPlaying}`)
+      if (sfxPlaying || sfxTransitioning) {
+        sfxPlaying = false
+        sfxTransitioning = false
+        sfxQueue = []
+        resumeMusicAfterSfx()
+      }
       setState({ voiceStatus: 'error', error: `Player: ${err.message}` })
     })
   }
@@ -315,6 +415,9 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
       currentChannelId: channelId,
       error: null,
     })
+    // Persist for auto-connect on next launch
+    store.set('discordLastGuildId', guildId)
+    store.set('discordLastChannelId', channelId)
     console.log(`[discord] Joined voice channel: ${channel.name}`)
 
     // If a track was already playing locally, start streaming it
@@ -331,6 +434,10 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 }
 
 export function leaveChannel(): void {
+  sfxPlaying = false
+  sfxTransitioning = false
+  sfxQueue = []
+  currentResource = null
   if (player) {
     player.stop(true)
   }
@@ -349,26 +456,124 @@ export function leaveChannel(): void {
 // ── Audio streaming ───────────────────────────────────────────────────────────
 
 /**
- * Stream a track to the Discord voice channel.
- * Called by the renderer via IPC whenever a track starts playing locally.
+ * Stream a music track to the Discord voice channel.
  * @param seekSeconds — start playback at this offset (0 = beginning)
  */
 export function streamTrack(filename: string, seekSeconds = 0): void {
   currentTrack = filename
+  vlog(
+    `streamTrack: ${filename}, seek=${seekSeconds}, player=${!!player}, conn=${!!connection}, sfxPlaying=${sfxPlaying}, sfxTransitioning=${sfxTransitioning}`,
+  )
 
-  // Only stream if we're in a voice channel
-  if (!player || !connection) return
+  if (!player || !connection) {
+    vlog('streamTrack: no player or connection, skipping')
+    return
+  }
+
+  // Don't interrupt an active SFX — the music will resume when SFX finishes
+  if (sfxPlaying || sfxTransitioning) {
+    log(`Music track noted (SFX active): ${filename}`)
+    return
+  }
 
   const musicFolder = store.get('musicFolder', '') as string
-  if (!musicFolder) return
+  if (!musicFolder) {
+    vlog('streamTrack: no musicFolder configured')
+    return
+  }
 
   try {
     const resource = createMusicResource(musicFolder, filename, discordVolume, seekSeconds)
+    currentResource = resource
     player.play(resource)
-    console.log(`[discord] Streaming: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
+    log(`Streaming: ${filename}${seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''}`)
   } catch (err) {
-    console.error('[discord] Stream error:', err)
+    log(`Stream error: ${err}`)
   }
+}
+
+/**
+ * Play an SFX directly through the player, interrupting music temporarily.
+ * Sets the transition guard so the Idle event from displacing the old
+ * resource is ignored.
+ */
+function playNextSfx(absolutePath: string, volume: number): void {
+  vlog(`playNextSfx: ${absolutePath.split('/').pop()}, vol=${volume}, player=${!!player}, conn=${!!connection}`)
+  if (!player || !connection) {
+    vlog('playNextSfx: no player or connection')
+    return
+  }
+
+  try {
+    const resource = createSfxResource(absolutePath, volume)
+    vlog('SFX resource created, setting sfxTransitioning=true')
+    // Set transition guard BEFORE calling play() — the Idle event from
+    // the displaced resource will fire synchronously or on next tick.
+    sfxTransitioning = true
+    sfxPlaying = false
+    player.play(resource)
+    log(`SFX starting: ${absolutePath.split('/').pop()} (vol=${volume.toFixed(2)})`)
+  } catch (err) {
+    log(`SFX play error: ${err}`)
+    sfxTransitioning = false
+    sfxPlaying = false
+    resumeMusicAfterSfx()
+  }
+}
+
+/**
+ * Resume music streaming after SFX finishes.
+ * Restarts the current track from the beginning (seek position is lost,
+ * but for background music in a D&D session this is acceptable).
+ */
+function resumeMusicAfterSfx(): void {
+  vlog(`resumeMusicAfterSfx: currentTrack=${currentTrack}, player=${!!player}, conn=${!!connection}`)
+  if (!currentTrack || !player || !connection) {
+    vlog('resumeMusicAfterSfx: nothing to resume')
+    return
+  }
+
+  const musicFolder = store.get('musicFolder', '') as string
+  if (!musicFolder) {
+    vlog('resumeMusicAfterSfx: no musicFolder')
+    return
+  }
+
+  try {
+    const resource = createMusicResource(musicFolder, currentTrack, discordVolume, 0)
+    currentResource = resource
+    player.play(resource)
+    log(`Music resumed: ${currentTrack}`)
+  } catch (err) {
+    log(`Failed to resume music: ${err}`)
+  }
+}
+
+/**
+ * Stream an SFX to Discord, temporarily interrupting music.
+ * Music resumes automatically when the SFX finishes.
+ * @param absolutePath — absolute path to the SFX file
+ * @param volume — SFX volume 0..1 (defaults to current Discord volume)
+ */
+export function streamSfx(absolutePath: string, volume?: number): void {
+  const fname = absolutePath.split('/').pop()
+  log(
+    `streamSfx: ${fname}, player=${!!player}, conn=${!!connection}, sfxPlaying=${sfxPlaying}, sfxTransitioning=${sfxTransitioning}`,
+  )
+  if (!player || !connection) {
+    vlog('streamSfx: no player or connection — is the bot in a voice channel?')
+    return
+  }
+
+  const vol = volume ?? discordVolume
+
+  if (sfxPlaying || sfxTransitioning) {
+    sfxQueue.push({ path: absolutePath, volume: vol })
+    log(`SFX queued: ${fname} (${sfxQueue.length} in queue)`)
+    return
+  }
+
+  playNextSfx(absolutePath, vol)
 }
 
 /**
@@ -377,7 +582,7 @@ export function streamTrack(filename: string, seekSeconds = 0): void {
 export function pauseStream(): void {
   if (player) {
     player.pause(true)
-    console.log('[discord] Stream paused')
+    log('Stream paused')
   }
 }
 
@@ -387,7 +592,7 @@ export function pauseStream(): void {
 export function resumeStream(): void {
   if (player) {
     player.unpause()
-    console.log('[discord] Stream resumed')
+    log('Stream resumed')
   }
 }
 
@@ -395,7 +600,12 @@ export function resumeStream(): void {
  * Stop streaming audio to Discord (e.g. when local playback stops).
  */
 export function stopStream(): void {
+  vlog(`stopStream: currentTrack=${currentTrack}, sfxPlaying=${sfxPlaying}`)
   currentTrack = null
+  currentResource = null
+  sfxPlaying = false
+  sfxTransitioning = false
+  sfxQueue = []
   if (player) {
     player.stop(true)
   }

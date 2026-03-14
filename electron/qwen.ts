@@ -1,4 +1,4 @@
-import { join } from 'path'
+import { join } from 'node:path'
 import type { TrackMetadata } from './analyzer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -21,7 +21,9 @@ export function onQwenStatus(cb: (status: 'loading' | 'ready') => void) {
 }
 
 /** No-op — kept for API compatibility with main.ts */
-export function killQwenChild() { /* nothing to kill */ }
+export function killQwenChild() {
+  /* nothing to kill */
+}
 
 function getReranker(): Promise<ScoreFn> {
   if (_rerankerPromise) return _rerankerPromise
@@ -29,11 +31,11 @@ function getReranker(): Promise<ScoreFn> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { app } = require('electron')
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('fs')
+  const fs = require('node:fs')
   let appPath = app.getAppPath()
-  while (appPath !== require('path').dirname(appPath)) {
+  while (appPath !== require('node:path').dirname(appPath)) {
     if (fs.existsSync(join(appPath, 'node_modules/@huggingface/transformers'))) break
-    appPath = require('path').dirname(appPath)
+    appPath = require('node:path').dirname(appPath)
   }
   const homePath = app.getPath('home')
   const transformersPath = join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
@@ -49,13 +51,14 @@ function getReranker(): Promise<ScoreFn> {
   _rerankerPromise = Promise.all([
     AutoTokenizer.from_pretrained(MODEL_ID),
     AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
-  ]).then(([tokenizer, model]: [unknown, unknown]) => {
+  ])
+    .then(([tokenizer, model]: [unknown, unknown]) => {
       console.log('[reranker] model ready')
       _onStatus?.('ready')
       // Return a scoring function that batches all pairs in one call
       const scoreFn: ScoreFn = async (pairs) => {
-        const queries = pairs.map(p => p.text)
-        const passages = pairs.map(p => p.text_pair)
+        const queries = pairs.map((p) => p.text)
+        const passages = pairs.map((p) => p.text_pair)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const inputs = (tokenizer as any)(queries, { text_pair: passages, padding: true, truncation: true })
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,7 +132,7 @@ export class QwenManager {
       const candidates = files.slice(0, 100)
 
       // Build (transcript, track_description) pairs
-      const pairs = candidates.map(f => ({
+      const pairs = candidates.map((f) => ({
         text: recentTranscript,
         text_pair: describeTrack(f, metadata[f] ?? null, tagsMap[f]),
       }))
@@ -144,7 +147,7 @@ export class QwenManager {
       const scored = candidates.map((file, i) => ({ file, score: scores[i] }))
       scored.sort((a, b) => b.score - a.score)
 
-      const results = scored.slice(0, count).map(s => s.file)
+      const results = scored.slice(0, count).map((s) => s.file)
       if (results.length > 0) {
         console.log('[reranker] recommendations:', results)
         return results

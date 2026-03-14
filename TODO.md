@@ -13,6 +13,7 @@
 - [ ] #11 SFX: wire up SFX recommendation engine (reranker or keyword-based)
 - [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
+- [ ] Address Biome lint warnings: 60× `useButtonType`, 9× `useIterableCallbackReturn`, 4× `useExhaustiveDependencies`, 3× `useKeyWithClickEvents`
 
 ## Music Player — Implementation Order
 

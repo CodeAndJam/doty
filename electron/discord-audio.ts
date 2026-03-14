@@ -2,11 +2,12 @@
  * Discord audio pipeline — reads audio files from disk and creates
  * AudioResource instances for @discordjs/voice to stream to Discord.
  */
+
+import { exec } from 'node:child_process'
+import fs from 'node:fs'
+import { join } from 'node:path'
 import { createAudioResource, StreamType } from '@discordjs/voice'
-import { join } from 'path'
-import fs from 'fs'
 import prism from 'prism-media'
-import { exec } from 'child_process'
 
 // ffmpeg path — use bundled ffmpeg-static if available
 let ffmpegPath: string
@@ -34,20 +35,51 @@ export function createMusicResource(musicFolder: string, filename: string, volum
     args: [
       // Seek BEFORE input so ffmpeg jumps directly (fast, no decoding skipped frames)
       ...(seekSeconds > 0 ? ['-ss', String(seekSeconds)] : []),
-      '-i', filePath,
-      '-analyzeduration', '0',
-      '-loglevel', '0',
-      '-f', 's16le',
-      '-ar', '48000',
-      '-ac', '2',
-      // Apply volume filter if not 1.0
-      ...(volume !== 1.0 ? ['-af', `volume=${volume}`] : []),
+      '-i',
+      filePath,
+      '-analyzeduration',
+      '0',
+      '-loglevel',
+      '0',
+      '-f',
+      's16le',
+      '-ar',
+      '48000',
+      '-ac',
+      '2',
     ],
   })
 
-  return createAudioResource(ffmpeg, {
+  // Use inlineVolume so the volume transformer can be adjusted at runtime
+  const resource = createAudioResource(ffmpeg, {
     inputType: StreamType.Raw,
+    inlineVolume: true,
   })
+  resource.volume?.setVolume(volume)
+  return resource
+}
+
+/**
+ * Create an AudioResource from an SFX file (absolute path).
+ * Same pipeline as music but takes an absolute path directly.
+ * @param absolutePath — absolute path to the SFX audio file
+ * @param volume — playback volume 0..1
+ */
+export function createSfxResource(absolutePath: string, volume = 1.0) {
+  if (!fs.existsSync(absolutePath)) {
+    throw new Error(`[discord-audio] SFX file not found: ${absolutePath}`)
+  }
+
+  const ffmpeg = new prism.FFmpeg({
+    args: ['-i', absolutePath, '-analyzeduration', '0', '-loglevel', '0', '-f', 's16le', '-ar', '48000', '-ac', '2'],
+  })
+
+  const resource = createAudioResource(ffmpeg, {
+    inputType: StreamType.Raw,
+    inlineVolume: true,
+  })
+  resource.volume?.setVolume(volume)
+  return resource
 }
 
 /**

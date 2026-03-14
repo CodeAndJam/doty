@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useCallback, useRef, useState } from 'react'
 
 /** Maximum simultaneous SFX channels */
 const MAX_CHANNELS = 8
@@ -54,66 +54,82 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   masterRef.current = masterVolume
 
   const removeChannel = useCallback((id: string) => {
-    setChannels(prev => prev.filter(c => c.id !== id))
+    setChannels((prev) => prev.filter((c) => c.id !== id))
   }, [])
 
-  const play = useCallback((sfxId: string, label: string, filename: string, loop = false): string | null => {
-    // Evict oldest channel if at max
-    if (channelsRef.current.length >= MAX_CHANNELS) {
-      const oldest = channelsRef.current[0]
-      oldest.audio.pause()
-      setChannels(prev => prev.slice(1))
-    }
+  const play = useCallback(
+    (sfxId: string, label: string, filename: string, loop = false): string | null => {
+      // Evict oldest channel if at max
+      if (channelsRef.current.length >= MAX_CHANNELS) {
+        const oldest = channelsRef.current[0]
+        oldest.audio.pause()
+        setChannels((prev) => prev.slice(1))
+      }
 
-    const id = `sfx-${++channelCounter}`
-    const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
-    const vol = masterRef.current
-    audio.volume = vol
-    audio.loop = loop
+      const id = `sfx-${++channelCounter}`
+      const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
+      const vol = masterRef.current
+      audio.volume = vol
+      audio.loop = loop
 
-    audio.onended = () => {
-      if (!loop) removeChannel(id)
-    }
-    audio.onerror = () => removeChannel(id)
+      audio.onended = () => {
+        if (!loop) removeChannel(id)
+      }
+      audio.onerror = () => removeChannel(id)
 
-    audio.play().catch(() => removeChannel(id))
+      audio.play().catch(() => removeChannel(id))
 
-    const channel: SfxChannel = { id, sfxId, label, audio, playing: true, looping: loop, volume: vol }
-    setChannels(prev => [...prev, channel])
-    return id
-  }, [removeChannel])
+      // Stream SFX to Discord as an overlay on top of music (fire-and-forget)
+      window.doty.discordStreamSfx(filename).catch(() => {})
+
+      const channel: SfxChannel = { id, sfxId, label, audio, playing: true, looping: loop, volume: vol }
+      setChannels((prev) => [...prev, channel])
+      return id
+    },
+    [removeChannel],
+  )
 
   const stop = useCallback((channelId: string) => {
-    setChannels(prev => {
-      const ch = prev.find(c => c.id === channelId)
-      if (ch) { ch.audio.pause(); ch.audio.currentTime = 0 }
-      return prev.filter(c => c.id !== channelId)
+    setChannels((prev) => {
+      const ch = prev.find((c) => c.id === channelId)
+      if (ch) {
+        ch.audio.pause()
+        ch.audio.currentTime = 0
+      }
+      return prev.filter((c) => c.id !== channelId)
     })
   }, [])
 
   const stopAll = useCallback(() => {
-    channelsRef.current.forEach(ch => { ch.audio.pause(); ch.audio.currentTime = 0 })
+    channelsRef.current.forEach((ch) => {
+      ch.audio.pause()
+      ch.audio.currentTime = 0
+    })
     setChannels([])
   }, [])
 
   const toggleLoop = useCallback((channelId: string) => {
-    setChannels(prev => prev.map(ch => {
-      if (ch.id === channelId) {
-        ch.audio.loop = !ch.looping
-        return { ...ch, looping: !ch.looping }
-      }
-      return ch
-    }))
+    setChannels((prev) =>
+      prev.map((ch) => {
+        if (ch.id === channelId) {
+          ch.audio.loop = !ch.looping
+          return { ...ch, looping: !ch.looping }
+        }
+        return ch
+      }),
+    )
   }, [])
 
   const setChannelVolume = useCallback((channelId: string, volume: number) => {
-    setChannels(prev => prev.map(ch => {
-      if (ch.id === channelId) {
-        ch.audio.volume = volume * masterRef.current
-        return { ...ch, volume }
-      }
-      return ch
-    }))
+    setChannels((prev) =>
+      prev.map((ch) => {
+        if (ch.id === channelId) {
+          ch.audio.volume = volume * masterRef.current
+          return { ...ch, volume }
+        }
+        return ch
+      }),
+    )
   }, [])
 
   const setMasterVolume = useCallback((vol: number) => {
@@ -122,7 +138,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
     masterRef.current = clamped
     localStorage.setItem(MASTER_VOL_KEY, String(clamped))
     // Update all active channels
-    channelsRef.current.forEach(ch => {
+    channelsRef.current.forEach((ch) => {
       ch.audio.volume = ch.volume * clamped
     })
   }, [])

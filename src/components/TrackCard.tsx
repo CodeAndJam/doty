@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
-import type { TrackMeta } from '../types'
-import { PlayIcon, PauseIcon, PinIcon, ChevronUp, ChevronDown, InfoIcon, TagIcon } from './Icons'
-import { trackName } from './PlayerBar'
 import { formatTime } from '../lib/formatTime'
+import type { TrackMeta } from '../types'
+import { ChevronDown, ChevronUp, InfoIcon, PauseIcon, PinIcon, PlayIcon, TagIcon } from './Icons'
+import { trackName } from './PlayerBar'
 import TagInput from './TagInput'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -13,7 +13,9 @@ function MetaRow({ label, value }: { label: string; value: string | number | nul
   return (
     <div className="flex justify-between gap-2 py-0.5">
       <span style={{ color: '#6b4e15', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>{value}</span>
+      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
+        {value}
+      </span>
     </div>
   )
 }
@@ -24,7 +26,15 @@ function dirName(filename: string): string {
   return idx > 0 ? filename.substring(0, idx) : ''
 }
 
-function MetadataTooltip({ meta, filename, anchorRef }: { meta: TrackMeta; filename: string; anchorRef: React.RefObject<HTMLDivElement | null> }) {
+function MetadataTooltip({
+  meta,
+  filename,
+  anchorRef,
+}: {
+  meta: TrackMeta
+  filename: string
+  anchorRef: React.RefObject<HTMLDivElement | null>
+}) {
   const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
   useEffect(() => {
@@ -36,19 +46,29 @@ function MetadataTooltip({ meta, filename, anchorRef }: { meta: TrackMeta; filen
   if (!pos) return null
 
   return ReactDOM.createPortal(
-    <div className="fixed px-3 py-2" style={{
-      zIndex: 9999,
-      top: Math.max(8, pos.top - 8),
-      left: pos.left,
-      width: pos.width,
-      transform: 'translateY(-100%)',
-      background: '#0f0d09',
-      border: '1px solid rgba(200,146,42,0.3)',
-      boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
-    }}>
+    <div
+      className="fixed px-3 py-2"
+      style={{
+        zIndex: 9999,
+        top: Math.max(8, pos.top - 8),
+        left: pos.left,
+        width: pos.width,
+        transform: 'translateY(-100%)',
+        background: '#0f0d09',
+        border: '1px solid rgba(200,146,42,0.3)',
+        boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
+      }}
+    >
       <div className="grid grid-cols-2 gap-x-4 gap-y-0">
-        {dirName(filename) && <div className="col-span-2"><MetaRow label="Dir" value={dirName(filename)} /></div>}
-        <MetaRow label="BPM" value={meta.bpm ? `${Math.round(meta.bpm)} (${Math.round(meta.bpmConfidence * 100)}%)` : null} />
+        {dirName(filename) && (
+          <div className="col-span-2">
+            <MetaRow label="Dir" value={dirName(filename)} />
+          </div>
+        )}
+        <MetaRow
+          label="BPM"
+          value={meta.bpm ? `${Math.round(meta.bpm)} (${Math.round(meta.bpmConfidence * 100)}%)` : null}
+        />
         <MetaRow label="Key" value={meta.key && meta.scale ? `${meta.key} ${meta.scale}` : meta.key || null} />
         <MetaRow label="Energy" value={meta.energy != null ? `${Math.round(meta.energy * 100)}%` : null} />
         <MetaRow label="Dance" value={meta.danceability != null ? `${Math.round(meta.danceability * 100)}%` : null} />
@@ -62,7 +82,7 @@ function MetadataTooltip({ meta, filename, anchorRef }: { meta: TrackMeta; filen
         <MetaRow label="Sample" value={meta.sampleRate ? `${(meta.sampleRate / 1000).toFixed(1)} kHz` : null} />
       </div>
     </div>,
-    document.body
+    document.body,
   )
 }
 
@@ -89,10 +109,23 @@ interface TrackCardProps {
 }
 
 export default function TrackCard({
-  filename, isPlaying, isPinned, rank, showReorder,
-  canMoveUp, canMoveDown, meta, tags = [], allTags = [],
-  onPlay, onPin, onMoveUp, onMoveDown, onTagsChange,
-  onPlayNext, onAddToQueue,
+  filename,
+  isPlaying,
+  isPinned,
+  rank,
+  showReorder,
+  canMoveUp,
+  canMoveDown,
+  meta,
+  tags = [],
+  allTags = [],
+  onPlay,
+  onPin,
+  onMoveUp,
+  onMoveDown,
+  onTagsChange,
+  onPlayNext,
+  onAddToQueue,
 }: TrackCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [editingTags, setEditingTags] = useState(false)
@@ -119,26 +152,33 @@ export default function TrackCard({
       }}
     >
       <div className="flex items-center gap-3 px-3 h-full">
-        <button onClick={onPlay} className="w-9 h-9 flex items-center justify-center shrink-0" style={{
-          border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
-          background: isPlaying ? 'rgba(200,146,42,0.1)' : 'transparent',
-          borderRadius: '4px',
-        }}>
+        <button
+          onClick={onPlay}
+          className="w-9 h-9 flex items-center justify-center shrink-0"
+          style={{
+            border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
+            background: isPlaying ? 'rgba(200,146,42,0.1)' : 'transparent',
+            borderRadius: '4px',
+          }}
+        >
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
         </button>
 
-        <span className="flex-1 min-w-0 truncate" style={{
-          fontFamily: "'Crimson Text', serif",
-          fontSize: '17px',
-          color: isPlaying ? '#e8d5a3' : '#8a7050',
-        }}>
+        <span
+          className="flex-1 min-w-0 truncate"
+          style={{
+            fontFamily: "'Crimson Text', serif",
+            fontSize: '17px',
+            color: isPlaying ? '#e8d5a3' : '#8a7050',
+          }}
+        >
           {name}
         </span>
 
         {/* Tag pills (read-only display) */}
         {tags.length > 0 && !editingTags && (
           <div className="flex items-center gap-1 shrink-0 max-w-[40%] overflow-hidden">
-            {tags.slice(0, 3).map(tag => (
+            {tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
                 className="px-1.5 truncate"
@@ -156,9 +196,7 @@ export default function TrackCard({
               </span>
             ))}
             {tags.length > 3 && (
-              <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b4e15' }}>
-                +{tags.length - 3}
-              </span>
+              <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b4e15' }}>+{tags.length - 3}</span>
             )}
           </div>
         )}
@@ -168,18 +206,19 @@ export default function TrackCard({
             <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1.5" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
               <ChevronUp />
             </button>
-            <button onClick={onMoveDown} disabled={!canMoveDown} className="p-1.5" style={{ opacity: canMoveDown ? 1 : 0.3 }}>
+            <button
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              className="p-1.5"
+              style={{ opacity: canMoveDown ? 1 : 0.3 }}
+            >
               <ChevronDown />
             </button>
           </div>
         )}
 
         {meta && (
-          <div
-            className="relative"
-            onMouseEnter={() => setExpanded(true)}
-            onMouseLeave={() => setExpanded(false)}
-          >
+          <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
             <button
               className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
               title="Track details"
@@ -194,7 +233,7 @@ export default function TrackCard({
         {/* Tag edit toggle */}
         {onTagsChange && (
           <button
-            onClick={() => setEditingTags(e => !e)}
+            onClick={() => setEditingTags((e) => !e)}
             className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
             title="Edit tags"
             style={{ color: editingTags ? '#c8922a' : undefined, fontSize: '14px' }}
@@ -249,11 +288,15 @@ export default function TrackCard({
           <PinIcon filled={isPinned} />
         </button>
 
-        <span className="absolute top-1.5 right-1.5" style={{
-          fontFamily: 'monospace', fontSize: '11px',
-          color: isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416',
-          pointerEvents: 'none',
-        }}>
+        <span
+          className="absolute top-1.5 right-1.5"
+          style={{
+            fontFamily: 'monospace',
+            fontSize: '11px',
+            color: isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416',
+            pointerEvents: 'none',
+          }}
+        >
           {String(rank).padStart(2, '0')}
         </span>
       </div>

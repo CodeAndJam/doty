@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 const VOLUME_KEY = 'doty:volume'
 const MUTED_KEY = 'doty:muted'
@@ -7,11 +7,17 @@ function loadVolume(): number {
   try {
     const v = parseFloat(localStorage.getItem(VOLUME_KEY) ?? '1')
     return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1
-  } catch { return 1 }
+  } catch {
+    return 1
+  }
 }
 
 function loadMuted(): boolean {
-  try { return localStorage.getItem(MUTED_KEY) === 'true' } catch { return false }
+  try {
+    return localStorage.getItem(MUTED_KEY) === 'true'
+  } catch {
+    return false
+  }
 }
 
 export interface UseVolumeReturn {
@@ -30,13 +36,17 @@ export function useVolume(): UseVolumeReturn {
   const setVolume = useCallback((v: number) => {
     const clamped = Math.max(0, Math.min(1, v))
     setVolumeState(clamped)
-    try { localStorage.setItem(VOLUME_KEY, String(clamped)) } catch {}
+    try {
+      localStorage.setItem(VOLUME_KEY, String(clamped))
+    } catch {}
   }, [])
 
   const toggleMute = useCallback(() => {
-    setMuted(prev => {
+    setMuted((prev) => {
       const next = !prev
-      try { localStorage.setItem(MUTED_KEY, String(next)) } catch {}
+      try {
+        localStorage.setItem(MUTED_KEY, String(next))
+      } catch {}
       return next
     })
   }, [])

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
 import TrackCard from '../../components/TrackCard'
 
 const defaults = {
@@ -77,7 +77,7 @@ describe('TrackCard', () => {
     // The reorder buttons are the small chevron buttons
     const allButtons = screen.getAllByRole('button')
     // Find the two reorder buttons (they have p-1.5 class)
-    const reorderBtns = allButtons.filter(b => b.classList.contains('p-1.5'))
+    const reorderBtns = allButtons.filter((b) => b.classList.contains('p-1.5'))
     expect(reorderBtns).toHaveLength(2)
     fireEvent.click(reorderBtns[0]) // up
     fireEvent.click(reorderBtns[1]) // down
@@ -108,11 +108,24 @@ describe('TrackCard', () => {
 
   it('shows metadata tooltip on hover when meta is provided', () => {
     const meta = {
-      bpm: 120, bpmConfidence: 0.9, key: 'C', scale: 'minor',
-      danceability: 0.5, energy: 0.7, duration: 185, mtime: 0,
-      title: null, artist: 'Bard', album: null, genre: 'Fantasy',
-      year: null, trackNo: null, bitrate: 320, sampleRate: 44100,
-      channels: 2, codec: 'mp3',
+      bpm: 120,
+      bpmConfidence: 0.9,
+      key: 'C',
+      scale: 'minor',
+      danceability: 0.5,
+      energy: 0.7,
+      duration: 185,
+      mtime: 0,
+      title: null,
+      artist: 'Bard',
+      album: null,
+      genre: 'Fantasy',
+      year: null,
+      trackNo: null,
+      bitrate: 320,
+      sampleRate: 44100,
+      channels: 2,
+      codec: 'mp3',
     }
     renderCard({ meta } as any)
     const infoWrapper = screen.getByTitle('Track details').parentElement!
@@ -126,11 +139,24 @@ describe('TrackCard', () => {
 
   it('hides metadata tooltip on mouse leave', () => {
     const meta = {
-      bpm: 120, bpmConfidence: 0.9, key: 'C', scale: 'minor',
-      danceability: 0.5, energy: 0.7, duration: 185, mtime: 0,
-      title: null, artist: 'Bard', album: null, genre: null,
-      year: null, trackNo: null, bitrate: null, sampleRate: null,
-      channels: null, codec: null,
+      bpm: 120,
+      bpmConfidence: 0.9,
+      key: 'C',
+      scale: 'minor',
+      danceability: 0.5,
+      energy: 0.7,
+      duration: 185,
+      mtime: 0,
+      title: null,
+      artist: 'Bard',
+      album: null,
+      genre: null,
+      year: null,
+      trackNo: null,
+      bitrate: null,
+      sampleRate: null,
+      channels: null,
+      codec: null,
     }
     renderCard({ meta } as any)
     const infoWrapper = screen.getByTitle('Track details').parentElement!
@@ -142,11 +168,24 @@ describe('TrackCard', () => {
 
   it('shows directory in metadata tooltip', () => {
     const meta = {
-      bpm: 0, bpmConfidence: 0, key: '', scale: '',
-      danceability: 0, energy: 0, duration: 0, mtime: 0,
-      title: null, artist: null, album: null, genre: null,
-      year: null, trackNo: null, bitrate: null, sampleRate: null,
-      channels: null, codec: null,
+      bpm: 0,
+      bpmConfidence: 0,
+      key: '',
+      scale: '',
+      danceability: 0,
+      energy: 0,
+      duration: 0,
+      mtime: 0,
+      title: null,
+      artist: null,
+      album: null,
+      genre: null,
+      year: null,
+      trackNo: null,
+      bitrate: null,
+      sampleRate: null,
+      channels: null,
+      codec: null,
     }
     renderCard({ meta } as any)
     const infoWrapper = screen.getByTitle('Track details').parentElement!

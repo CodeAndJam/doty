@@ -9,10 +9,11 @@
  *
  * @vitest-environment node
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { join } from 'path'
-import { mkdtempSync, rmSync } from 'fs'
-import { tmpdir } from 'os'
+
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
@@ -63,11 +64,9 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
   })
 
   /** Score (query, passage) pairs in a single batched call — returns raw logits. */
-  async function scoreBatch(
-    pairs: Array<{ query: string; passage: string }>,
-  ): Promise<number[]> {
-    const queries = pairs.map(p => p.query)
-    const passages = pairs.map(p => p.passage)
+  async function scoreBatch(pairs: Array<{ query: string; passage: string }>): Promise<number[]> {
+    const queries = pairs.map((p) => p.query)
+    const passages = pairs.map((p) => p.passage)
     const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
     const { logits } = await model(inputs)
     return Array.from(logits.data as Float32Array)
@@ -106,7 +105,7 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
     console.log('[integration] multi-pair scores:', scores)
 
     expect(scores).toHaveLength(3)
-    scores.forEach(s => expect(typeof s).toBe('number'))
+    scores.forEach((s) => expect(typeof s).toBe('number'))
 
     // Horror/haunted tracks should score higher than relaxation for "dark spooky dungeon"
     const [horrorScore, relaxScore] = scores

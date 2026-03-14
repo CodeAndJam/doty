@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import ModelDownload from './components/ModelDownload'
+import { useEffect, useState } from 'react'
 import MainLayout from './components/MainLayout'
+import ModelDownload from './components/ModelDownload'
 import './types'
 
 type AppState = 'loading' | 'download-model' | 'ready'

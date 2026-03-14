@@ -1,5 +1,5 @@
-import { join } from 'path'
-import { Worker } from 'worker_threads'
+import { join } from 'node:path'
+import { Worker } from 'node:worker_threads'
 
 export interface TrackMetadata {
   bpm: number

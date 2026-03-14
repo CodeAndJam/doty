@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 const KEY = 'doty:crossfadeMs'
 const DEFAULT_MS = 800
@@ -9,7 +9,9 @@ function loadCrossfade(): number {
   try {
     const v = parseInt(localStorage.getItem(KEY) ?? '', 10)
     return Number.isFinite(v) && v >= MIN_MS && v <= MAX_MS ? v : DEFAULT_MS
-  } catch { return DEFAULT_MS }
+  } catch {
+    return DEFAULT_MS
+  }
 }
 
 export interface UseCrossfadeReturn {
@@ -25,7 +27,9 @@ export function useCrossfade(): UseCrossfadeReturn {
   const setCrossfadeMs = useCallback((ms: number) => {
     const clamped = Math.max(MIN_MS, Math.min(MAX_MS, Math.round(ms)))
     setCrossfadeMsState(clamped)
-    try { localStorage.setItem(KEY, String(clamped)) } catch {}
+    try {
+      localStorage.setItem(KEY, String(clamped))
+    } catch {}
   }, [])
 
   return { crossfadeMs, setCrossfadeMs }

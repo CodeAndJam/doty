@@ -1,6 +1,6 @@
-import { join } from 'path'
+import fs from 'node:fs'
+import { join } from 'node:path'
 import { app } from 'electron'
-import fs from 'fs'
 
 // Model dir: ~/.doty/models/parakeet-tdt-0.6b-v3-int8/
 export const MODEL_DIR = join(app.getPath('home'), '.doty', 'models', 'parakeet-tdt-0.6b-v3-int8')
@@ -9,8 +9,7 @@ export const MODEL_URL =
 
 // Silero VAD model: ~/.doty/models/silero_vad.onnx
 export const VAD_MODEL_PATH = join(app.getPath('home'), '.doty', 'models', 'silero_vad.onnx')
-export const VAD_MODEL_URL =
-  'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx'
+export const VAD_MODEL_URL = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx'
 
 // GTCRN speech denoiser: ~/.doty/models/gtcrn_simple.onnx (~48K params, ultra-lightweight)
 export const DENOISER_MODEL_PATH = join(app.getPath('home'), '.doty', 'models', 'gtcrn_simple.onnx')

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
 
 interface TagInputProps {
@@ -15,9 +15,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
 
   const trimmed = input.toLowerCase().trim()
-  const suggestions = trimmed
-    ? allTags.filter(t => t.includes(trimmed) && !tags.includes(t)).slice(0, 6)
-    : []
+  const suggestions = trimmed ? allTags.filter((t) => t.includes(trimmed) && !tags.includes(t)).slice(0, 6) : []
 
   // Update dropdown position when suggestions change or focus changes
   useEffect(() => {
@@ -38,7 +36,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
   }
 
   function removeTag(tag: string) {
-    onChange(tags.filter(t => t !== tag))
+    onChange(tags.filter((t) => t !== tag))
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -75,7 +73,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
         }}
         onClick={() => inputRef.current?.focus()}
       >
-        {tags.map(tag => (
+        {tags.map((tag) => (
           <span
             key={tag}
             className="inline-flex items-center gap-0.5 px-1.5 py-0"
@@ -90,7 +88,10 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           >
             {tag}
             <button
-              onClick={(e) => { e.stopPropagation(); removeTag(tag) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                removeTag(tag)
+              }}
               className="ml-0.5 hover:opacity-100 opacity-60"
               style={{ fontSize: '13px', color: '#c8922a', lineHeight: 1 }}
             >
@@ -102,7 +103,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           ref={inputRef}
           type="text"
           value={input}
-          onChange={e => setInput(e.target.value)}
+          onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
           placeholder={tags.length === 0 ? 'add tag...' : ''}
@@ -116,39 +117,45 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
       </div>
 
       {/* Autocomplete dropdown — rendered via portal to escape overflow clipping */}
-      {focused && suggestions.length > 0 && dropdownPos && ReactDOM.createPortal(
-        <div
-          className="fixed"
-          style={{
-            top: dropdownPos.top,
-            left: dropdownPos.left,
-            width: dropdownPos.width,
-            zIndex: 9999,
-            background: '#0f0d09',
-            border: '1px solid #2e2416',
-            borderTop: 'none',
-            maxHeight: '120px',
-            overflowY: 'auto',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
-          }}
-        >
-          {suggestions.map(s => (
-            <button
-              key={s}
-              className="block w-full text-left px-2 py-1 hover:bg-[rgba(200,146,42,0.1)]"
-              style={{
-                fontSize: '11px',
-                fontFamily: 'monospace',
-                color: '#8a7050',
-              }}
-              onMouseDown={(e) => { e.preventDefault(); addTag(s) }}
-            >
-              {s}
-            </button>
-          ))}
-        </div>,
-        document.body
-      )}
+      {focused &&
+        suggestions.length > 0 &&
+        dropdownPos &&
+        ReactDOM.createPortal(
+          <div
+            className="fixed"
+            style={{
+              top: dropdownPos.top,
+              left: dropdownPos.left,
+              width: dropdownPos.width,
+              zIndex: 9999,
+              background: '#0f0d09',
+              border: '1px solid #2e2416',
+              borderTop: 'none',
+              maxHeight: '120px',
+              overflowY: 'auto',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.6)',
+            }}
+          >
+            {suggestions.map((s) => (
+              <button
+                key={s}
+                className="block w-full text-left px-2 py-1 hover:bg-[rgba(200,146,42,0.1)]"
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: '#8a7050',
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  addTag(s)
+                }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

@@ -8,19 +8,19 @@
  * text-classification pipeline) to extract raw logits — the pipeline applies
  * softmax which always returns 1.0 for single-label cross-encoders.
  */
-import { AutoTokenizer, AutoModelForSequenceClassification, env } from '@huggingface/transformers'
+import { AutoModelForSequenceClassification, AutoTokenizer, env } from '@huggingface/transformers'
 
 const t0 = Date.now()
 const elapsed = () => `+${((Date.now() - t0) / 1000).toFixed(1)}s`
 
 function log(...args: unknown[]) {
-  const msg = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')
+  const msg = args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')
   console.log(`[reranker-worker ${elapsed()}]`, ...args)
   self.postMessage({ type: 'log', message: msg })
 }
 
 function logError(...args: unknown[]) {
-  const msg = args.map(a => typeof a === 'string' ? a : String(a)).join(' ')
+  const msg = args.map((a) => (typeof a === 'string' ? a : String(a))).join(' ')
   console.error(`[reranker-worker ${elapsed()}]`, ...args)
   self.postMessage({ type: 'log', message: `ERROR: ${msg}` })
 }
@@ -97,25 +97,29 @@ function getReranker() {
         dtype: 'q4',
         progress_callback: progressCb,
       }),
-    ]).then(([tokenizer, model]) => {
-      log('model ready — reranker loaded successfully')
-      self.postMessage({ type: 'status', status: 'ready' })
-      return { tokenizer, model }
-    }).catch((err) => {
-      logError('model load FAILED:', err)
-      logError('error name:', (err as Error)?.name, 'message:', (err as Error)?.message)
-      if ((err as Error)?.stack) logError('stack:', (err as Error).stack)
-      self.postMessage({ type: 'status', status: 'error', message: String(err) })
-      modelPromise = null
-      throw err
-    })
+    ])
+      .then(([tokenizer, model]) => {
+        log('model ready — reranker loaded successfully')
+        self.postMessage({ type: 'status', status: 'ready' })
+        return { tokenizer, model }
+      })
+      .catch((err) => {
+        logError('model load FAILED:', err)
+        logError('error name:', (err as Error)?.name, 'message:', (err as Error)?.message)
+        if ((err as Error)?.stack) logError('stack:', (err as Error).stack)
+        self.postMessage({ type: 'status', status: 'error', message: String(err) })
+        modelPromise = null
+        throw err
+      })
   }
   return modelPromise
 }
 
 // Start loading immediately when the worker is created
 log('calling getReranker() to start model load...')
-getReranker().catch(() => { /* error already logged above */ })
+getReranker().catch(() => {
+  /* error already logged above */
+})
 
 /**
  * Message protocol:
@@ -127,8 +131,8 @@ self.onmessage = async (e: MessageEvent) => {
   log('received rerank request id=', id, 'pairs=', pairs.length)
   try {
     const { tokenizer, model } = await getReranker()
-    const queries = pairs.map(p => p.text)
-    const passages = pairs.map(p => p.text_pair)
+    const queries = pairs.map((p) => p.text)
+    const passages = pairs.map((p) => p.text_pair)
     const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
     const { logits } = await model(inputs)
     const scores: number[] = Array.from(logits.data as Float32Array)
