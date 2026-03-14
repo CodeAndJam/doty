@@ -139,13 +139,16 @@ export default function SfxPanel({ sfxRecommendations }: Props) {
         isPlaying={!!ch?.playing}
         isLooping={ch?.looping ?? false}
         isPinned={pinnedSet.has(sfx.id)}
-        channelVolume={ch?.volume ?? sfxPlayer.masterVolume}
+        channelVolume={ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)}
         tags={tagsMap[sfx.filename] || []}
         allTags={allTags}
         onPlay={(loop) => sfxPlayer.play(sfx.id, sfx.label, sfx.filename, loop)}
         onStop={() => ch && sfxPlayer.stop(ch.id)}
         onToggleLoop={() => ch && sfxPlayer.toggleLoop(ch.id)}
-        onVolumeChange={(v) => ch && sfxPlayer.setChannelVolume(ch.id, v)}
+        onVolumeChange={(v) => {
+          sfxPlayer.setSfxVolume(sfx.id, v)
+          if (ch) sfxPlayer.setChannelVolume(ch.id, v)
+        }}
         onPin={() => togglePin(sfx.id)}
         onTagsChange={(tags) => handleTagsChange(sfx.filename, tags)}
       />

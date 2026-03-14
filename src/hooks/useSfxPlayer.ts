@@ -30,9 +30,14 @@ export interface UseSfxPlayerReturn {
   setChannelVolume: (channelId: string, volume: number) => void
   /** Set master SFX volume (0..1) */
   setMasterVolume: (volume: number) => void
+  /** Get persisted per-SFX volume (0..1), falls back to master */
+  getSfxVolume: (sfxId: string) => number
+  /** Set persisted per-SFX volume (0..1) */
+  setSfxVolume: (sfxId: string, volume: number) => void
 }
 
 const MASTER_VOL_KEY = 'doty:sfxMasterVolume'
+const SFX_VOL_PREFIX = 'doty:sfxVol:'
 
 function loadMasterVolume(): number {
   try {
@@ -40,6 +45,17 @@ function loadMasterVolume(): number {
     return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.7
   } catch {
     return 0.7
+  }
+}
+
+function loadSfxVolume(sfxId: string): number | null {
+  try {
+    const raw = localStorage.getItem(SFX_VOL_PREFIX + sfxId)
+    if (raw == null) return null
+    const v = parseFloat(raw)
+    return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : null
+  } catch {
+    return null
   }
 }
 
@@ -68,7 +84,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
 
       const id = `sfx-${++channelCounter}`
       const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
-      const vol = masterRef.current
+      const vol = loadSfxVolume(sfxId) ?? masterRef.current
       audio.volume = vol
       audio.loop = loop
 
@@ -143,6 +159,26 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
     })
   }, [])
 
+  const getSfxVolume = useCallback(
+    (sfxId: string): number => loadSfxVolume(sfxId) ?? masterRef.current,
+    [],
+  )
+
+  const setSfxVolume = useCallback(
+    (sfxId: string, volume: number) => {
+      const clamped = Math.max(0, Math.min(1, volume))
+      localStorage.setItem(SFX_VOL_PREFIX + sfxId, String(clamped))
+      // If this SFX is currently playing, update the active channel too
+      const ch = channelsRef.current.find((c) => c.sfxId === sfxId)
+      if (ch) {
+        ch.audio.volume = clamped
+        ch.volume = clamped
+        setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, volume: clamped } : c)))
+      }
+    },
+    [],
+  )
+
   // Strip audio refs from public API
   const publicChannels = channels.map(({ audio: _, ...rest }) => rest)
 
@@ -155,5 +191,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
     toggleLoop,
     setChannelVolume,
     setMasterVolume,
+    getSfxVolume,
+    setSfxVolume,
   }
 }

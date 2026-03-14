@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom'
 import { formatTime } from '../lib/formatTime'
 import type { SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS, type SfxCategory } from '../types'
-import { InfoIcon, LoopSmallIcon, PinIcon, PlayIcon, StopIcon, TagIcon } from './Icons'
+import { InfoIcon, LoopSmallIcon, PinIcon, PlayIcon, StopIcon, TagIcon, VolumeHighIcon, VolumeLowIcon, VolumeMutedIcon } from './Icons'
 import TagInput from './TagInput'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -111,7 +111,10 @@ export default function SfxCard({
 }: SfxCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [editingTags, setEditingTags] = useState(false)
+  const [showVolume, setShowVolume] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+
+  const VolumeIcon = channelVolume === 0 ? VolumeMutedIcon : channelVolume < 0.5 ? VolumeLowIcon : VolumeHighIcon
 
   return (
     <div
@@ -194,19 +197,54 @@ export default function SfxCard({
           <LoopSmallIcon />
         </button>
 
-        {/* Per-channel volume — only when playing */}
-        {isPlaying && (
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={Math.round(channelVolume * 100)}
-            onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-            className="w-14 shrink-0"
-            style={{ accentColor: '#4a8a6a', height: '2px' }}
-            aria-label={`${sfx.label} volume`}
-          />
-        )}
+        {/* Per-SFX volume — always visible, vertical slider on hover */}
+        <div
+          className="relative flex items-center shrink-0"
+          onMouseEnter={() => setShowVolume(true)}
+          onMouseLeave={() => setShowVolume(false)}
+        >
+          <button
+            type="button"
+            className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+            title="Volume"
+          >
+            <VolumeIcon />
+          </button>
+          {showVolume && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-1" style={{ width: '40px', zIndex: 50 }}>
+              <div
+                className="px-2 py-3 flex flex-col items-center"
+                style={{
+                  background: 'rgba(15,13,9,0.95)',
+                  border: '1px solid rgba(74,138,106,0.3)',
+                  borderRadius: '4px',
+                  width: '32px',
+                  height: '100px',
+                  margin: '0 auto',
+                }}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(channelVolume * 100)}
+                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+                  className="volume-slider"
+                  style={{
+                    writingMode: 'vertical-lr',
+                    direction: 'rtl',
+                    width: '100%',
+                    height: '100%',
+                    appearance: 'none',
+                    background: 'transparent',
+                    cursor: 'pointer',
+                  }}
+                  aria-label={`${sfx.label} volume`}
+                />
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Tag edit toggle */}
         <button
