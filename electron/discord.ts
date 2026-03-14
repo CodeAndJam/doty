@@ -21,7 +21,7 @@ import {
   type AudioPlayer,
   type AudioResource,
 } from '@discordjs/voice'
-import { createPcmStream, createSfxPcmStream } from './discord-audio'
+import { createPcmStream, createSfxPcmStream, createMusicResource } from './discord-audio'
 import { PcmMixer } from './discord-mixer'
 import { store } from './store'
 import { safeStorage } from 'electron'
@@ -341,6 +341,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 }
 
 export function leaveChannel(): void {
+  usingMixer = false
   if (mixer) {
     mixer.destroy()
     mixer = null
@@ -363,35 +364,75 @@ export function leaveChannel(): void {
 
 // ── Audio streaming ───────────────────────────────────────────────────────────
 
+/** Whether we're currently using the mixer (SFX active) vs direct music stream */
+let usingMixer = false
+
 /**
- * Ensure the mixer is running and connected to the player.
- * Creates a new mixer + AudioResource if needed.
+ * Switch to mixer mode: creates a PcmMixer, feeds the current music into it,
+ * and replaces the player's resource with the mixer output.
+ * Returns the mixer instance.
  */
-function ensureMixer(): PcmMixer | null {
-  if (!player || !connection) {
-    console.log('[discord] ensureMixer: no player or connection')
-    return null
+function switchToMixer(): PcmMixer | null {
+  if (!player || !connection) return null
+
+  if (mixer && !mixer.destroyed) return mixer
+
+  console.log('[discord] Switching to mixer mode')
+  mixer = new PcmMixer()
+
+  // If music is currently playing, re-create its PCM stream for the mixer
+  if (currentTrack) {
+    const musicFolder = store.get('musicFolder', '') as string
+    if (musicFolder) {
+      try {
+        const filePath = join(musicFolder, currentTrack)
+        const pcm = createPcmStream(filePath, 0) // restart from beginning (unavoidable)
+        mixer.setMusic(pcm)
+      } catch (err) {
+        console.error('[discord] Failed to feed music into mixer:', err)
+      }
+    }
   }
 
-  if (!mixer || mixer.destroyed) {
-    console.log('[discord] ensureMixer: creating new mixer')
-    mixer = new PcmMixer()
-    const resource = createAudioResource(mixer, {
-      inputType: StreamType.Raw,
-      inlineVolume: true,
-    })
-    resource.volume?.setVolume(discordVolume)
-    currentResource = resource
-    player.play(resource)
-    console.log('[discord] ensureMixer: mixer created and playing')
-  }
-
+  const resource = createAudioResource(mixer, {
+    inputType: StreamType.Raw,
+    inlineVolume: true,
+  })
+  resource.volume?.setVolume(discordVolume)
+  currentResource = resource
+  player.play(resource)
+  usingMixer = true
   return mixer
 }
 
 /**
+ * Switch back to direct music streaming (no mixer).
+ */
+function switchToDirectMusic(): void {
+  if (mixer) {
+    mixer.destroy()
+    mixer = null
+  }
+  usingMixer = false
+
+  if (!currentTrack || !player || !connection) return
+
+  const musicFolder = store.get('musicFolder', '') as string
+  if (!musicFolder) return
+
+  try {
+    const resource = createMusicResource(musicFolder, currentTrack, discordVolume, 0)
+    currentResource = resource
+    player.play(resource)
+    console.log('[discord] Switched back to direct music streaming')
+  } catch (err) {
+    console.error('[discord] Failed to switch back to direct music:', err)
+  }
+}
+
+/**
  * Stream a music track to the Discord voice channel.
- * Sets the music layer of the mixer — SFX continue to overlay.
+ * Uses direct streaming (no mixer) unless SFX are active.
  * @param seekSeconds — start playback at this offset (0 = beginning)
  */
 export function streamTrack(filename: string, seekSeconds = 0): void {
@@ -403,13 +444,20 @@ export function streamTrack(filename: string, seekSeconds = 0): void {
   if (!musicFolder) return
 
   try {
-    const m = ensureMixer()
-    if (!m) return
-
-    const filePath = join(musicFolder, filename)
-    const pcm = createPcmStream(filePath, seekSeconds)
-    m.setMusic(pcm)
-    console.log(`[discord] Streaming: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
+    if (usingMixer && mixer && !mixer.destroyed) {
+      // Mixer is active (SFX playing) — feed music into mixer
+      const filePath = join(musicFolder, filename)
+      const pcm = createPcmStream(filePath, seekSeconds)
+      mixer.setMusic(pcm)
+      console.log(`[discord] Streaming via mixer: ${filename}`)
+    } else {
+      // Direct streaming (normal path, known working)
+      const resource = createMusicResource(musicFolder, filename, discordVolume, seekSeconds)
+      currentResource = resource
+      player.play(resource)
+      usingMixer = false
+      console.log(`[discord] Streaming direct: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
+    }
   } catch (err) {
     console.error('[discord] Stream error:', err)
   }
@@ -417,6 +465,7 @@ export function streamTrack(filename: string, seekSeconds = 0): void {
 
 /**
  * Stream an SFX to Discord, overlaid on top of any current music.
+ * Switches to mixer mode if not already active.
  * @param absolutePath — absolute path to the SFX file
  * @param volume — SFX volume 0..1 (defaults to current Discord volume)
  */
@@ -425,7 +474,7 @@ export function streamSfx(absolutePath: string, volume?: number): void {
   if (!player || !connection) return
 
   try {
-    const m = ensureMixer()
+    const m = switchToMixer()
     if (!m) return
 
     const id = `sfx-${++sfxCounter}`
@@ -464,6 +513,7 @@ export function resumeStream(): void {
 export function stopStream(): void {
   currentTrack = null
   currentResource = null
+  usingMixer = false
   if (mixer) {
     mixer.destroy()
     mixer = null
