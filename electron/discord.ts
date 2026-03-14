@@ -368,9 +368,13 @@ export function leaveChannel(): void {
  * Creates a new mixer + AudioResource if needed.
  */
 function ensureMixer(): PcmMixer | null {
-  if (!player || !connection) return null
+  if (!player || !connection) {
+    console.log('[discord] ensureMixer: no player or connection')
+    return null
+  }
 
   if (!mixer || mixer.destroyed) {
+    console.log('[discord] ensureMixer: creating new mixer')
     mixer = new PcmMixer()
     const resource = createAudioResource(mixer, {
       inputType: StreamType.Raw,
@@ -379,6 +383,7 @@ function ensureMixer(): PcmMixer | null {
     resource.volume?.setVolume(discordVolume)
     currentResource = resource
     player.play(resource)
+    console.log('[discord] ensureMixer: mixer created and playing')
   }
 
   return mixer
@@ -416,6 +421,7 @@ export function streamTrack(filename: string, seekSeconds = 0): void {
  * @param volume — SFX volume 0..1 (defaults to current Discord volume)
  */
 export function streamSfx(absolutePath: string, volume?: number): void {
+  console.log(`[discord] streamSfx called: path=${absolutePath}, player=${!!player}, connection=${!!connection}`)
   if (!player || !connection) return
 
   try {
