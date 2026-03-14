@@ -78,6 +78,9 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
 
     audio.play().catch(() => removeChannel(id))
 
+    // Mirror playback to Discord (fire-and-forget)
+    window.doty.discordStreamTrack(filename).catch(() => {})
+
     const channel: SfxChannel = { id, sfxId, label, audio, playing: true, looping: loop, volume: vol }
     setChannels(prev => [...prev, channel])
     return id

@@ -40,14 +40,16 @@ export function createMusicResource(musicFolder: string, filename: string, volum
       '-f', 's16le',
       '-ar', '48000',
       '-ac', '2',
-      // Apply volume filter if not 1.0
-      ...(volume !== 1.0 ? ['-af', `volume=${volume}`] : []),
     ],
   })
 
-  return createAudioResource(ffmpeg, {
+  // Use inlineVolume so the volume transformer can be adjusted at runtime
+  const resource = createAudioResource(ffmpeg, {
     inputType: StreamType.Raw,
+    inlineVolume: true,
   })
+  resource.volume?.setVolume(volume)
+  return resource
 }
 
 /**

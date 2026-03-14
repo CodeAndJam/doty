@@ -17,6 +17,7 @@ import {
   entersState,
   type VoiceConnection,
   type AudioPlayer,
+  type AudioResource,
 } from '@discordjs/voice'
 import { createMusicResource } from './discord-audio'
 import { store } from './store'
@@ -65,6 +66,7 @@ let client: Client | null = null
 let player: AudioPlayer | null = null
 let connection: VoiceConnection | null = null
 let currentTrack: string | null = null
+let currentResource: AudioResource | null = null
 let discordVolume = 1.0
 let stateListeners: StateListener[] = []
 
@@ -126,6 +128,8 @@ export function clearToken(): void {
 export function setDiscordVolume(vol: number): void {
   discordVolume = Math.max(0, Math.min(1, vol))
   store.set('discordVolume', discordVolume)
+  // Apply to the live stream immediately
+  currentResource?.volume?.setVolume(discordVolume)
 }
 
 export function getDiscordVolume(): number {
@@ -364,6 +368,7 @@ export function streamTrack(filename: string, seekSeconds = 0): void {
 
   try {
     const resource = createMusicResource(musicFolder, filename, discordVolume, seekSeconds)
+    currentResource = resource
     player.play(resource)
     console.log(`[discord] Streaming: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
   } catch (err) {
@@ -396,6 +401,7 @@ export function resumeStream(): void {
  */
 export function stopStream(): void {
   currentTrack = null
+  currentResource = null
   if (player) {
     player.stop(true)
   }
