@@ -1,9 +1,9 @@
-import { join } from 'path'
-import fs from 'fs'
+import fs from 'node:fs'
+import { join } from 'node:path'
 import chokidar from 'chokidar'
 import { analyzeFile } from './analyzer'
-import { getCached, setCached, removeCached, clearCache, getCache } from './metadata-cache'
 import type { FullTrackMetadata } from './metadata-cache'
+import { clearCache, getCache, getCached, removeCached, setCached } from './metadata-cache'
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
 const CONCURRENCY = 2
@@ -12,7 +12,7 @@ type ProgressCallback = (done: number, total: number, current: string) => void
 type CompleteCallback = () => void
 
 let watcher: chokidar.FSWatcher | null = null
-let queue: string[] = []          // absolute paths
+let queue: string[] = [] // absolute paths
 let active = 0
 let done = 0
 let total = 0
@@ -63,7 +63,9 @@ function listAll(dir: string): string[] {
       if (entry.isDirectory()) results.push(...listAll(full))
       else if (AUDIO_RE.test(entry.name)) results.push(full)
     }
-  } catch { /* skip */ }
+  } catch {
+    /* skip */
+  }
   return results
 }
 
@@ -97,7 +99,9 @@ export function startScanner(
       try {
         const mtime = fs.statSync(absPath).mtimeMs
         if (mtime !== cached.mtime) enqueue(absPath)
-      } catch { /* file gone */ }
+      } catch {
+        /* file gone */
+      }
     }
   }
 
@@ -114,7 +118,7 @@ export function startScanner(
       ignoreInitial: true,
       persistent: true,
       depth: 99,
-      useFsEvents: false,   // force polling/kqueue instead of broken fsevents
+      useFsEvents: false, // force polling/kqueue instead of broken fsevents
     })
 
     watcher.on('add', (absPath) => {
@@ -144,11 +148,7 @@ export function stopScanner() {
   active = 0
 }
 
-export function forceRescan(
-  folder: string,
-  progressCb: ProgressCallback,
-  completeCb: CompleteCallback,
-) {
+export function forceRescan(folder: string, progressCb: ProgressCallback, completeCb: CompleteCallback) {
   startScanner(folder, progressCb, completeCb, true)
 }
 

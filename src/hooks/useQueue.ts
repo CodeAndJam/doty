@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 
 export interface UseQueueReturn {
   /** Ordered list of queued track filenames */
@@ -32,27 +32,30 @@ export function useQueue(): UseQueueReturn {
   const [currentIndex, setCurrentIndex] = useState(-1)
 
   const enqueue = useCallback((filename: string) => {
-    setTracks(prev => [...prev, filename])
+    setTracks((prev) => [...prev, filename])
     // If queue was empty, point to the new track
-    setCurrentIndex(prev => prev === -1 ? 0 : prev)
+    setCurrentIndex((prev) => (prev === -1 ? 0 : prev))
   }, [])
 
-  const playNext = useCallback((filename: string) => {
-    setTracks(prev => {
-      const insertAt = currentIndex + 1
-      const next = [...prev]
-      next.splice(insertAt, 0, filename)
-      return next
-    })
-    setCurrentIndex(prev => prev === -1 ? 0 : prev)
-  }, [currentIndex])
+  const playNext = useCallback(
+    (filename: string) => {
+      setTracks((prev) => {
+        const insertAt = currentIndex + 1
+        const next = [...prev]
+        next.splice(insertAt, 0, filename)
+        return next
+      })
+      setCurrentIndex((prev) => (prev === -1 ? 0 : prev))
+    },
+    [currentIndex],
+  )
 
   const remove = useCallback((index: number) => {
-    setTracks(prev => {
+    setTracks((prev) => {
       if (index < 0 || index >= prev.length) return prev
       const next = prev.filter((_, i) => i !== index)
       // Adjust currentIndex after removal
-      setCurrentIndex(ci => {
+      setCurrentIndex((ci) => {
         if (next.length === 0) return -1
         if (index < ci) return ci - 1
         if (index === ci) {
@@ -71,7 +74,7 @@ export function useQueue(): UseQueueReturn {
   }, [])
 
   const reorder = useCallback((fromIndex: number, toIndex: number) => {
-    setTracks(prev => {
+    setTracks((prev) => {
       if (fromIndex < 0 || fromIndex >= prev.length) return prev
       if (toIndex < 0 || toIndex >= prev.length) return prev
       const next = [...prev]
@@ -79,7 +82,7 @@ export function useQueue(): UseQueueReturn {
       next.splice(toIndex, 0, moved)
       return next
     })
-    setCurrentIndex(prev => {
+    setCurrentIndex((prev) => {
       // Adjust current index to follow the currently playing track
       if (prev === fromIndex) return toIndex
       if (fromIndex < prev && toIndex >= prev) return prev - 1
@@ -88,29 +91,53 @@ export function useQueue(): UseQueueReturn {
     })
   }, [])
 
-  const next = useCallback((wrap = false): string | null => {
-    let newIndex = -1
-    setCurrentIndex(ci => {
-      if (tracks.length === 0) { newIndex = -1; return -1 }
-      if (ci + 1 < tracks.length) { newIndex = ci + 1; return ci + 1 }
-      if (wrap) { newIndex = 0; return 0 }
-      newIndex = ci
-      return ci
-    })
-    return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
-  }, [tracks])
+  const next = useCallback(
+    (wrap = false): string | null => {
+      let newIndex = -1
+      setCurrentIndex((ci) => {
+        if (tracks.length === 0) {
+          newIndex = -1
+          return -1
+        }
+        if (ci + 1 < tracks.length) {
+          newIndex = ci + 1
+          return ci + 1
+        }
+        if (wrap) {
+          newIndex = 0
+          return 0
+        }
+        newIndex = ci
+        return ci
+      })
+      return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
+    },
+    [tracks],
+  )
 
-  const prev = useCallback((wrap = false): string | null => {
-    let newIndex = -1
-    setCurrentIndex(ci => {
-      if (tracks.length === 0) { newIndex = -1; return -1 }
-      if (ci - 1 >= 0) { newIndex = ci - 1; return ci - 1 }
-      if (wrap) { newIndex = tracks.length - 1; return tracks.length - 1 }
-      newIndex = ci
-      return ci
-    })
-    return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
-  }, [tracks])
+  const prev = useCallback(
+    (wrap = false): string | null => {
+      let newIndex = -1
+      setCurrentIndex((ci) => {
+        if (tracks.length === 0) {
+          newIndex = -1
+          return -1
+        }
+        if (ci - 1 >= 0) {
+          newIndex = ci - 1
+          return ci - 1
+        }
+        if (wrap) {
+          newIndex = tracks.length - 1
+          return tracks.length - 1
+        }
+        newIndex = ci
+        return ci
+      })
+      return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
+    },
+    [tracks],
+  )
 
   const setQueue = useCallback((newTracks: string[], startIndex = 0) => {
     setTracks(newTracks)

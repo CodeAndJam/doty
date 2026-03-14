@@ -15,7 +15,10 @@
     "pack": "electron-builder --mac dmg",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "biome check .",
+    "lint:fix": "biome check --fix .",
+    "format": "biome format --write ."
   },
   "build": {
     "appId": "com.codeandjam.doty",
@@ -96,6 +99,7 @@
     "sodium-native": "^5.1.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.7",
     "@electron/rebuild": "^4.0.3",
     "@playwright/test": "^1.58.2",
     "@testing-library/jest-dom": "^6.9.1",

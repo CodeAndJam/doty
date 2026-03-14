@@ -42,26 +42,39 @@ export function createMockAudio(duration = 180): MockAudioElement {
     duration,
     paused: true,
     buffered: {
-      get length() { return bufferedRanges.length },
+      get length() {
+        return bufferedRanges.length
+      },
       start: (i: number) => bufferedRanges[i]?.[0] ?? 0,
       end: (i: number) => bufferedRanges[i]?.[1] ?? 0,
     },
 
-    play: vi.fn(() => { mock.paused = false; return Promise.resolve() }),
-    pause: vi.fn(() => { mock.paused = true }),
+    play: vi.fn(() => {
+      mock.paused = false
+      return Promise.resolve()
+    }),
+    pause: vi.fn(() => {
+      mock.paused = true
+    }),
     setSinkId: vi.fn(() => Promise.resolve()),
 
     onended: null,
     onerror: null,
     ontimeupdate: null,
 
-    _simulateEnded() { mock.onended?.() },
-    _simulateError() { mock.onerror?.() },
+    _simulateEnded() {
+      mock.onended?.()
+    },
+    _simulateError() {
+      mock.onerror?.()
+    },
     _simulateTimeUpdate(time: number) {
       mock.currentTime = time
       mock.ontimeupdate?.()
     },
-    _setDuration(d: number) { mock.duration = d },
+    _setDuration(d: number) {
+      mock.duration = d
+    },
     _setBuffered(ranges: [number, number][]) {
       bufferedRanges.length = 0
       bufferedRanges.push(...ranges)
@@ -92,9 +105,18 @@ export function installMockAudioConstructor() {
 
   return {
     MockAudio,
-    get lastInstance() { return instances[instances.length - 1] },
-    get allInstances() { return [...instances] },
-    get instanceCount() { return instances.length },
-    reset() { instances.length = 0; (MockAudio as any).mockClear() },
+    get lastInstance() {
+      return instances[instances.length - 1]
+    },
+    get allInstances() {
+      return [...instances]
+    },
+    get instanceCount() {
+      return instances.length
+    },
+    reset() {
+      instances.length = 0
+      ;(MockAudio as any).mockClear()
+    },
   }
 }

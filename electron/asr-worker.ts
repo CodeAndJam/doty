@@ -1,6 +1,6 @@
-import { workerData, parentPort } from 'worker_threads'
-import { join } from 'path'
-import fs from 'fs'
+import fs from 'node:fs'
+import { join } from 'node:path'
+import { parentPort, workerData } from 'node:worker_threads'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const sherpa = require('sherpa-onnx-node')
@@ -14,8 +14,8 @@ const PUNCT_MODEL_PATH: string | null = workerData.punctModelPath || null
 const SAMPLE_RATE = 16000
 
 // Determine decoding strategy: use beam search when hotwords are available
-const hasHotwords = HOTWORDS_FILE && fs.existsSync(HOTWORDS_FILE)
-  && fs.readFileSync(HOTWORDS_FILE, 'utf-8').trim().length > 0
+const hasHotwords =
+  HOTWORDS_FILE && fs.existsSync(HOTWORDS_FILE) && fs.readFileSync(HOTWORDS_FILE, 'utf-8').trim().length > 0
 
 const recognizer = new sherpa.OfflineRecognizer({
   featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
@@ -42,19 +42,22 @@ const recognizer = new sherpa.OfflineRecognizer({
 let vad: InstanceType<typeof sherpa.Vad> | null = null
 if (fs.existsSync(VAD_MODEL_PATH)) {
   try {
-    vad = new sherpa.Vad({
-      sileroVad: {
-        model: VAD_MODEL_PATH,
-        threshold: 0.3,
-        minSilenceDuration: 0.15,
-        minSpeechDuration: 0.15,
-        windowSize: 512,
-        maxSpeechDuration: 15,
+    vad = new sherpa.Vad(
+      {
+        sileroVad: {
+          model: VAD_MODEL_PATH,
+          threshold: 0.3,
+          minSilenceDuration: 0.15,
+          minSpeechDuration: 0.15,
+          windowSize: 512,
+          maxSpeechDuration: 15,
+        },
+        sampleRate: SAMPLE_RATE,
+        numThreads: 1,
+        debug: 0,
       },
-      sampleRate: SAMPLE_RATE,
-      numThreads: 1,
-      debug: 0,
-    }, 30)
+      30,
+    )
     console.log('[asr-worker] Silero VAD initialized (threshold=0.3, minSilence=0.15, maxSpeech=15s)')
   } catch (e) {
     console.error('[asr-worker] VAD init failed, falling back to raw chunks:', e)

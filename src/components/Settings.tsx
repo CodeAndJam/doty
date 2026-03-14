@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
-import type { ScanProgress } from '../types'
-import { onQwenLog } from '../hooks/useQwen'
+import { useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
+import { onQwenLog } from '../hooks/useQwen'
+import type { ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
 
 interface Props {
@@ -23,21 +23,33 @@ interface AudioDevice {
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <span style={{
-      fontFamily: "'Cinzel', serif",
-      fontSize: '15px',
-      letterSpacing: '0.25em',
-      color: '#6b4e15',
-      textTransform: 'uppercase' as const,
-      display: 'block',
-      marginBottom: '8px',
-    }}>
+    <span
+      style={{
+        fontFamily: "'Cinzel', serif",
+        fontSize: '15px',
+        letterSpacing: '0.25em',
+        color: '#6b4e15',
+        textTransform: 'uppercase' as const,
+        display: 'block',
+        marginBottom: '8px',
+      }}
+    >
       {children}
     </span>
   )
 }
 
-export default function Settings({ onClose, onFolderChange, onMicChange, onSpeakerChange, micDeviceId, speakerDeviceId, qwenStatus, recommendCount, onRecommendCountChange }: Props) {
+export default function Settings({
+  onClose,
+  onFolderChange,
+  onMicChange,
+  onSpeakerChange,
+  micDeviceId,
+  speakerDeviceId,
+  qwenStatus,
+  recommendCount,
+  onRecommendCountChange,
+}: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
   const [sttReady, setSttReady] = useState(false)
@@ -61,15 +73,17 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
   useEffect(() => {
     const unsub = onQwenLog((msg) => {
       const ts = new Date().toLocaleTimeString()
-      setQwenLogs(prev => [...prev.slice(-200), `[${ts}] ${msg}`])
+      setQwenLogs((prev) => [...prev.slice(-200), `[${ts}] ${msg}`])
     })
-    return () => { unsub() }
+    return () => {
+      unsub()
+    }
   }, [])
 
   // Auto-scroll logs
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [qwenLogs])
+  }, [])
 
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
@@ -92,7 +106,8 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
       setLastScanTime(new Date().toLocaleTimeString())
     })
 
-    navigator.mediaDevices.getUserMedia({ audio: true })
+    navigator.mediaDevices
+      .getUserMedia({ audio: true })
       .then(() => navigator.mediaDevices.enumerateDevices())
       .then((devices) => {
         const inputs = devices
@@ -106,13 +121,19 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
       })
       .catch(() => {})
 
-    return () => { unsubProgress(); unsubComplete() }
-  }, [])
+    return () => {
+      unsubProgress()
+      unsubComplete()
+    }
+  }, [refreshTrackCount])
 
   // Escape key to close
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.preventDefault(); onClose() }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
@@ -155,9 +176,8 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
     onSpeakerChange(deviceId || null)
   }
 
-  const scanPercent = scanProgress && scanProgress.total > 0
-    ? Math.round((scanProgress.done / scanProgress.total) * 100)
-    : 0
+  const scanPercent =
+    scanProgress && scanProgress.total > 0 ? Math.round((scanProgress.done / scanProgress.total) * 100) : 0
 
   const qwenIsReady = qwenStatus === 'ready'
   const qwenIsError = qwenStatus === 'error'
@@ -195,28 +215,65 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose} style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}>
-      <div className="relative w-full max-w-md overflow-y-auto" onClick={e => e.stopPropagation()} style={{
-        background: 'linear-gradient(160deg, #0f0d09, #080705)',
-        border: '1px solid #2e2416',
-        boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
-        maxHeight: '90vh',
-        padding: '28px',
-      }}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      onClick={onClose}
+      style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
+    >
+      <div
+        className="relative w-full max-w-md overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'linear-gradient(160deg, #0f0d09, #080705)',
+          border: '1px solid #2e2416',
+          boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
+          maxHeight: '90vh',
+          padding: '28px',
+        }}
+      >
         {/* Corner ornaments */}
-        <div className="absolute top-0 left-0 w-4 h-4" style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }} />
-        <div className="absolute top-0 right-0 w-4 h-4" style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }} />
-        <div className="absolute bottom-0 left-0 w-4 h-4" style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }} />
-        <div className="absolute bottom-0 right-0 w-4 h-4" style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }} />
+        <div
+          className="absolute top-0 left-0 w-4 h-4"
+          style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }}
+        />
+        <div
+          className="absolute top-0 right-0 w-4 h-4"
+          style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }}
+        />
+        <div
+          className="absolute bottom-0 left-0 w-4 h-4"
+          style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }}
+        />
+        <div
+          className="absolute bottom-0 right-0 w-4 h-4"
+          style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }}
+        />
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h2 style={{ fontFamily: "'Cinzel', serif", fontSize: '16px', letterSpacing: '0.2em', color: '#c8922a', textShadow: '0 0 12px rgba(200,146,42,0.4)' }}>
+          <h2
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: '16px',
+              letterSpacing: '0.2em',
+              color: '#c8922a',
+              textShadow: '0 0 12px rgba(200,146,42,0.4)',
+            }}
+          >
             Configuration
           </h2>
-          <button onClick={onClose} style={{ color: '#3a2e1a', transition: 'color 0.2s', cursor: 'pointer', background: 'none', border: 'none' }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}>
+          <button
+            onClick={onClose}
+            style={{
+              color: '#3a2e1a',
+              transition: 'color 0.2s',
+              cursor: 'pointer',
+              background: 'none',
+              border: 'none',
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
+          >
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -224,7 +281,10 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
         </div>
 
         {/* Divider */}
-        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+        <div
+          className="mb-5"
+          style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+        />
 
         {/* Microphone */}
         <div className="mb-5">
@@ -235,7 +295,9 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <select value={selectedMic} onChange={(e) => handleMicChange(e.target.value)} style={inputStyle}>
               <option value="">System default</option>
               {audioDevices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
               ))}
             </select>
           )}
@@ -250,7 +312,9 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <select value={selectedSpeaker} onChange={(e) => handleSpeakerChange(e.target.value)} style={inputStyle}>
               <option value="">System default</option>
               {outputDevices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label}
+                </option>
               ))}
             </select>
           )}
@@ -263,9 +327,12 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {folder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No archive selected</span>}
             </div>
-            <button onClick={pickFolder} style={btnStyle}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+            <button
+              onClick={pickFolder}
+              style={btnStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+            >
               Browse
             </button>
           </div>
@@ -281,24 +348,59 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
           <div className="mb-5">
             <div className="flex items-center justify-between mb-2">
               <Label>Arcane Analysis</Label>
-              <button onClick={rescan} disabled={!!scanProgress}
-                style={{ fontSize: '16px', color: scanProgress ? '#3a2e1a' : '#c8922a', fontFamily: "'Cinzel', serif", letterSpacing: '0.1em', background: 'none', border: 'none', cursor: scanProgress ? 'not-allowed' : 'pointer' }}>
+              <button
+                onClick={rescan}
+                disabled={!!scanProgress}
+                style={{
+                  fontSize: '16px',
+                  color: scanProgress ? '#3a2e1a' : '#c8922a',
+                  fontFamily: "'Cinzel', serif",
+                  letterSpacing: '0.1em',
+                  background: 'none',
+                  border: 'none',
+                  cursor: scanProgress ? 'not-allowed' : 'pointer',
+                }}
+              >
                 Re-analyse
               </button>
             </div>
             {scanProgress ? (
               <div>
                 <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${scanPercent}%`, background: '#c8922a', boxShadow: '0 0 6px rgba(200,146,42,0.6)', transition: 'width 0.2s' }} />
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${scanPercent}%`,
+                      background: '#c8922a',
+                      boxShadow: '0 0 6px rgba(200,146,42,0.6)',
+                      transition: 'width 0.2s',
+                    }}
+                  />
                 </div>
-                <div className="flex justify-between mt-1.5" style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                <div
+                  className="flex justify-between mt-1.5"
+                  style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}
+                >
                   <span className="truncate max-w-[70%]">{scanProgress.current}</span>
-                  <span>{scanProgress.done} / {scanProgress.total}</span>
+                  <span>
+                    {scanProgress.done} / {scanProgress.total}
+                  </span>
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2" style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: scanDone ? '#4a8a6a' : '#2e2416', boxShadow: scanDone ? '0 0 6px rgba(74,138,106,0.7)' : 'none' }} />
+              <div
+                className="flex items-center gap-2"
+                style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}
+              >
+                <div
+                  style={{
+                    width: '6px',
+                    height: '6px',
+                    borderRadius: '50%',
+                    background: scanDone ? '#4a8a6a' : '#2e2416',
+                    boxShadow: scanDone ? '0 0 6px rgba(74,138,106,0.7)' : 'none',
+                  }}
+                />
                 {scanDone ? `Analysis complete${lastScanTime ? ` · ${lastScanTime}` : ''}` : 'Awaiting analysis...'}
               </div>
             )}
@@ -312,9 +414,12 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {transcriptFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No vault selected</span>}
             </div>
-            <button onClick={pickTranscriptFolder} style={btnStyle}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+            <button
+              onClick={pickTranscriptFolder}
+              style={btnStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+            >
               Browse
             </button>
           </div>
@@ -335,22 +440,28 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {hotwordsFile || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No lexicon selected</span>}
             </div>
-            <button onClick={async () => {
-              const picked = await window.doty.pickHotwordsFile()
-              if (picked) setHotwordsFile(picked)
-            }} style={btnStyle}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+            <button
+              onClick={async () => {
+                const picked = await window.doty.pickHotwordsFile()
+                if (picked) setHotwordsFile(picked)
+              }}
+              style={btnStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+            >
               Browse
             </button>
           </div>
           {!hotwordsFile && (
-            <button onClick={async () => {
-              const result = await window.doty.createDefaultHotwords()
-              if (result.ok && result.path) setHotwordsFile(result.path)
-            }} style={{ ...btnStyle, marginTop: '6px', fontSize: '13px', padding: '5px 10px' }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+            <button
+              onClick={async () => {
+                const result = await window.doty.createDefaultHotwords()
+                if (result.ok && result.path) setHotwordsFile(result.path)
+              }}
+              style={{ ...btnStyle, marginTop: '6px', fontSize: '13px', padding: '5px 10px' }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+            >
               Create default lexicon
             </button>
           )}
@@ -359,12 +470,22 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
               <p style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", flex: 1 }}>
                 Beam search enabled with lexicon boosting
               </p>
-              <button onClick={() => {
-                window.doty.setHotwordsFile('')
-                setHotwordsFile('')
-              }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3a2e1a', fontSize: '12px', fontFamily: 'monospace' }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}>
+              <button
+                onClick={() => {
+                  window.doty.setHotwordsFile('')
+                  setHotwordsFile('')
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#3a2e1a',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
+              >
                 clear
               </button>
             </div>
@@ -383,7 +504,15 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
               onChange={(e) => onRecommendCountChange(Number(e.target.value))}
               style={{ flex: 1, accentColor: '#c8922a' }}
             />
-            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '24px', textAlign: 'right' }}>
+            <span
+              style={{
+                fontSize: '15px',
+                color: '#c8b07a',
+                fontFamily: 'monospace',
+                minWidth: '24px',
+                textAlign: 'right',
+              }}
+            >
               {recommendCount}
             </span>
           </div>
@@ -399,12 +528,15 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
             <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {sfxFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No SFX archive selected</span>}
             </div>
-            <button onClick={async () => {
-              const picked = await window.doty.pickSfxFolder()
-              if (picked) setSfxFolder(picked)
-            }} style={btnStyle}
-              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}>
+            <button
+              onClick={async () => {
+                const picked = await window.doty.pickSfxFolder()
+                if (picked) setSfxFolder(picked)
+              }}
+              style={btnStyle}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+            >
               Browse
             </button>
           </div>
@@ -431,7 +563,15 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
               }}
               style={{ flex: 1, accentColor: '#4a8a6a' }}
             />
-            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '24px', textAlign: 'right' }}>
+            <span
+              style={{
+                fontSize: '15px',
+                color: '#c8b07a',
+                fontFamily: 'monospace',
+                minWidth: '24px',
+                textAlign: 'right',
+              }}
+            >
               {sfxRecommendCount}
             </span>
           </div>
@@ -453,7 +593,15 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
               onChange={(e) => setCrossfadeMs(Number(e.target.value))}
               style={{ flex: 1, accentColor: '#c8922a' }}
             />
-            <span style={{ fontSize: '15px', color: '#c8b07a', fontFamily: 'monospace', minWidth: '36px', textAlign: 'right' }}>
+            <span
+              style={{
+                fontSize: '15px',
+                color: '#c8b07a',
+                fontFamily: 'monospace',
+                minWidth: '36px',
+                textAlign: 'right',
+              }}
+            >
               {(crossfadeMs / 1000).toFixed(1)}s
             </span>
           </div>
@@ -467,11 +615,25 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
           <Label>Cognition Engines</Label>
 
           {/* STT model */}
-          <div className="flex items-center gap-3 mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: sttReady ? '#4a8a6a' : '#c8922a', boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)' }} />
+          <div
+            className="flex items-center gap-3 mb-2"
+            style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+          >
+            <div
+              style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '50%',
+                flexShrink: 0,
+                background: sttReady ? '#4a8a6a' : '#c8922a',
+                boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)',
+              }}
+            />
             <div className="flex-1 min-w-0">
               <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Parakeet TDT v3</p>
-              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{sttReady ? 'Attuned' : 'Not yet summoned'}</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                {sttReady ? 'Attuned' : 'Not yet summoned'}
+              </p>
             </div>
             {!sttReady && <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~640 MB</span>}
           </div>
@@ -479,57 +641,74 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
           {/* MiniLM reranker recommendation model */}
           <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
             <div className="flex items-center gap-3">
-              <div style={{
-                width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0,
-                background: qwenDotColor,
-                boxShadow: qwenDotShadow,
-                animation: !qwenIsReady ? 'pulse 1.5s ease-in-out infinite' : 'none',
-              }} />
+              <div
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: qwenDotColor,
+                  boxShadow: qwenDotShadow,
+                  animation: !qwenIsReady ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                }}
+              />
               <div className="flex-1 min-w-0">
-                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>MiniLM-L-6-v2 Reranker</p>
+                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                  MiniLM-L-6-v2 Reranker
+                </p>
                 <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{qwenLabel}</p>
               </div>
               {!qwenIsReady && (
                 <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~80 MB</span>
               )}
               <button
-                onClick={() => setShowQwenLogs(prev => !prev)}
+                onClick={() => setShowQwenLogs((prev) => !prev)}
                 style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: '#3a2e1a', transition: 'color 0.2s', padding: '2px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#3a2e1a',
+                  transition: 'color 0.2s',
+                  padding: '2px',
                 }}
-                onMouseEnter={e => (e.currentTarget.style.color = '#c8922a')}
-                onMouseLeave={e => (e.currentTarget.style.color = '#3a2e1a')}
+                onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
+                onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
                 title={showQwenLogs ? 'Hide logs' : 'Show logs'}
               >
                 <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  {showQwenLogs
-             ? <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                    : <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                  }
+                  {showQwenLogs ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  )}
                 </svg>
               </button>
             </div>
 
             {/* Collapsible log panel */}
             {showQwenLogs && (
-              <div style={{
-                marginTop: '8px',
-                padding: '6px 8px',
-                background: '#050403',
-                border: '1px solid rgba(46,36,22,0.5)',
-                maxHeight: '120px',
-                overflowY: 'auto',
-                fontSize: '11px',
-                fontFamily: 'monospace',
-                color: '#5a4a2a',
-                lineHeight: '1.6',
-              }}>
+              <div
+                style={{
+                  marginTop: '8px',
+                  padding: '6px 8px',
+                  background: '#050403',
+                  border: '1px solid rgba(46,36,22,0.5)',
+                  maxHeight: '120px',
+                  overflowY: 'auto',
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: '#5a4a2a',
+                  lineHeight: '1.6',
+                }}
+              >
                 {qwenLogs.length === 0 ? (
                   <span style={{ fontStyle: 'italic', color: '#3a2e1a' }}>No events yet...</span>
                 ) : (
                   qwenLogs.map((log, i) => (
-                    <div key={i} style={{ color: log.includes('ready') || log.includes('Ready') ? '#4a8a6a' : '#5a4a2a' }}>
+                    <div
+                      key={i}
+                      style={{ color: log.includes('ready') || log.includes('Ready') ? '#4a8a6a' : '#5a4a2a' }}
+                    >
                       {log}
                     </div>
                   ))
@@ -541,7 +720,10 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
         </div>
 
         {/* Divider before Discord */}
-        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+        <div
+          className="mb-5"
+          style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+        />
 
         {/* Discord integration */}
         <div className="mb-6">
@@ -549,27 +731,40 @@ export default function Settings({ onClose, onFolderChange, onMicChange, onSpeak
         </div>
 
         {/* Divider before future features */}
-        <div className="mb-5" style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }} />
+        <div
+          className="mb-5"
+          style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+        />
 
         {/* Future features */}
         <div className="mb-2">
           <Label>Coming Soon</Label>
 
           {/* Autopilot (#12) */}
-          <div className="flex items-center gap-3 mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}>
+          <div
+            className="flex items-center gap-3 mb-2"
+            style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}
+          >
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }} />
             <div className="flex-1 min-w-0">
               <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Autopilot Mode</p>
-              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>Auto-play music based on scene context</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                Auto-play music based on scene context
+              </p>
             </div>
           </div>
 
           {/* Remote Control (#22) */}
-          <div className="flex items-center gap-3" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}>
+          <div
+            className="flex items-center gap-3"
+            style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}
+          >
             <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }} />
             <div className="flex-1 min-w-0">
               <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Remote Control</p>
-              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>HTTP API + Stream Deck support</p>
+              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                HTTP API + Stream Deck support
+              </p>
             </div>
           </div>
         </div>

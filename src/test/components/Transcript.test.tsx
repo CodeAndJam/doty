@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import { describe, expect, it } from 'vitest'
 import Transcript from '../../components/Transcript'
 
 describe('Transcript', () => {
@@ -32,6 +32,6 @@ describe('Transcript', () => {
   it('renders multiple lines correctly', () => {
     const lines = ['Line 1', 'Line 2', 'Line 3']
     render(<Transcript lines={lines} recording={false} />)
-    lines.forEach(line => expect(screen.getByText(line)).toBeInTheDocument())
+    lines.forEach((line) => expect(screen.getByText(line)).toBeInTheDocument())
   })
 })

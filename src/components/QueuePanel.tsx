@@ -1,19 +1,8 @@
-import { useCallback } from 'react'
-import {
-  DndContext,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  SortableContext,
-  verticalListSortingStrategy,
-  useSortable,
-} from '@dnd-kit/sortable'
+import { closestCenter, DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CloseIcon, DragHandleIcon, PlayIcon, PauseIcon } from './Icons'
+import { useCallback } from 'react'
+import { CloseIcon, DragHandleIcon, PauseIcon, PlayIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
 interface QueuePanelProps {
@@ -46,31 +35,18 @@ function SortableQueueItem({
   onPlay: () => void
   onRemove: () => void
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id })
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
-    background: isCurrent
-      ? 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.06))'
-      : 'transparent',
+    background: isCurrent ? 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.06))' : 'transparent',
     borderBottom: '1px solid rgba(46,36,22,0.3)',
   }
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className="flex items-center gap-2 px-3 py-1.5 group"
-    >
+    <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-1.5 group">
       {/* Drag handle */}
       <button
         {...attributes}
@@ -83,11 +59,14 @@ function SortableQueueItem({
       </button>
 
       {/* Index */}
-      <span className="w-5 text-center shrink-0" style={{
-        fontFamily: 'monospace',
-        fontSize: '10px',
-        color: isCurrent ? '#c8922a' : '#3a2e1a',
-      }}>
+      <span
+        className="w-5 text-center shrink-0"
+        style={{
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          color: isCurrent ? '#c8922a' : '#3a2e1a',
+        }}
+      >
         {index + 1}
       </span>
 
@@ -137,40 +116,49 @@ export default function QueuePanel({
   onClear,
   onClose,
 }: QueuePanelProps) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
-  )
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   // dnd-kit uses string IDs — we use "index:filename" to ensure uniqueness
   // even if the same file appears multiple times in the queue
   const itemIds = tracks.map((f, i) => `${i}:${f}`)
 
-  const handleDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event
-    if (!over || active.id === over.id) return
-    const fromIndex = itemIds.indexOf(active.id as string)
-    const toIndex = itemIds.indexOf(over.id as string)
-    if (fromIndex >= 0 && toIndex >= 0) {
-      onReorder(fromIndex, toIndex)
-    }
-  }, [itemIds, onReorder])
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event
+      if (!over || active.id === over.id) return
+      const fromIndex = itemIds.indexOf(active.id as string)
+      const toIndex = itemIds.indexOf(over.id as string)
+      if (fromIndex >= 0 && toIndex >= 0) {
+        onReorder(fromIndex, toIndex)
+      }
+    },
+    [itemIds, onReorder],
+  )
 
   return (
-    <div className="absolute inset-0 z-30 flex flex-col" style={{
-      background: 'rgba(8,7,5,0.97)',
-      backdropFilter: 'blur(8px)',
-    }}>
+    <div
+      className="absolute inset-0 z-30 flex flex-col"
+      style={{
+        background: 'rgba(8,7,5,0.97)',
+        backdropFilter: 'blur(8px)',
+      }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 shrink-0" style={{
-        borderBottom: '1px solid rgba(200,146,42,0.2)',
-      }}>
-        <span style={{
-          fontFamily: "'Cinzel', serif",
-          fontSize: '13px',
-          letterSpacing: '0.2em',
-          color: '#6b4e15',
-          textTransform: 'uppercase',
-        }}>
+      <div
+        className="flex items-center justify-between px-3 py-2 shrink-0"
+        style={{
+          borderBottom: '1px solid rgba(200,146,42,0.2)',
+        }}
+      >
+        <span
+          style={{
+            fontFamily: "'Cinzel', serif",
+            fontSize: '13px',
+            letterSpacing: '0.2em',
+            color: '#6b4e15',
+            textTransform: 'uppercase',
+          }}
+        >
           Queue
           {tracks.length > 0 && (
             <span style={{ fontFamily: 'monospace', fontSize: '11px', marginLeft: '8px', color: '#3a2e1a' }}>
@@ -202,22 +190,20 @@ export default function QueuePanel({
       {/* Queue list */}
       {tracks.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <span style={{
-          fontFamily: "'Cinzel', serif",
-            fontSize: '13px',
-            color: '#3a2e1a',
-            letterSpacing: '0.1em',
-          }}>
+          <span
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: '13px',
+              color: '#3a2e1a',
+              letterSpacing: '0.1em',
+            }}
+          >
             Queue is empty
           </span>
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
               {tracks.map((filename, index) => (
                 <SortableQueueItem

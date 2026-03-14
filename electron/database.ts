@@ -1,6 +1,6 @@
-import { join } from 'path'
-import { app } from 'electron'
+import { join } from 'node:path'
 import Database from 'better-sqlite3'
+import { app } from 'electron'
 
 const DB_PATH = join(app.getPath('home'), '.doty', 'doty.db')
 
@@ -9,7 +9,7 @@ let db: Database.Database | null = null
 export function getDb(): Database.Database {
   if (db) return db
 
-  const fs = require('fs')
+  const fs = require('node:fs')
   fs.mkdirSync(join(DB_PATH, '..'), { recursive: true })
 
   db = new Database(DB_PATH)
@@ -57,13 +57,15 @@ export function getDb(): Database.Database {
 
 export function getTags(filename: string): string[] {
   const db = getDb()
-  const rows = db.prepare('SELECT tag FROM track_tags WHERE filename = ? ORDER BY tag').all(filename) as { tag: string }[]
-  return rows.map(r => r.tag)
+  const rows = db.prepare('SELECT tag FROM track_tags WHERE filename = ? ORDER BY tag').all(filename) as {
+    tag: string
+  }[]
+  return rows.map((r) => r.tag)
 }
 
 export function setTags(filename: string, tags: string[]): void {
   const db = getDb()
-  const normalized = [...new Set(tags.map(t => t.toLowerCase().trim()).filter(Boolean))]
+  const normalized = [...new Set(tags.map((t) => t.toLowerCase().trim()).filter(Boolean))]
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM track_tags WHERE filename = ?').run(filename)
     const insert = db.prepare('INSERT INTO track_tags (filename, tag) VALUES (?, ?)')
@@ -77,12 +79,15 @@ export function setTags(filename: string, tags: string[]): void {
 export function getAllTags(): string[] {
   const db = getDb()
   const rows = db.prepare('SELECT DISTINCT tag FROM track_tags ORDER BY tag').all() as { tag: string }[]
-  return rows.map(r => r.tag)
+  return rows.map((r) => r.tag)
 }
 
 export function getTagsMap(): Record<string, string[]> {
   const db = getDb()
-  const rows = db.prepare('SELECT filename, tag FROM track_tags ORDER BY filename, tag').all() as { filename: string; tag: string }[]
+  const rows = db.prepare('SELECT filename, tag FROM track_tags ORDER BY filename, tag').all() as {
+    filename: string
+    tag: string
+  }[]
   const map: Record<string, string[]> = {}
   for (const row of rows) {
     if (!map[row.filename]) map[row.filename] = []

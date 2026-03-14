@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAudioPlayer } from '../../hooks/useAudioPlayer'
 import { installMockAudioConstructor } from '../mocks/audio'
 
@@ -41,7 +41,7 @@ describe('useAudioPlayer — seek', () => {
   function flushRAF() {
     const cbs = [...rafCallbacks]
     rafCallbacks.length = 0
-    cbs.forEach(cb => cb())
+    cbs.forEach((cb) => cb())
   }
 
   const defaultOpts = {
@@ -53,20 +53,26 @@ describe('useAudioPlayer — seek', () => {
   function startPlaying() {
     const hook = renderHook(() => useAudioPlayer(defaultOpts))
     // Play a track
-    act(() => { hook.result.current.playTrack('song.mp3') })
+    act(() => {
+      hook.result.current.playTrack('song.mp3')
+    })
     const audio = audioMocks.lastInstance
     // Simulate metadata loaded — set duration
     audio._setDuration(200)
     audio.currentTime = 0
     // Flush initial rAF to pick up duration
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     return { hook, audio }
   }
 
   it('seekTo sets audio currentTime and updates progress', () => {
     const { hook, audio } = startPlaying()
 
-    act(() => { hook.result.current.seekTo(0.5) })
+    act(() => {
+      hook.result.current.seekTo(0.5)
+    })
 
     expect(audio.currentTime).toBe(100) // 0.5 * 200
     expect(hook.result.current.progress).toBe(0.5)
@@ -75,13 +81,17 @@ describe('useAudioPlayer — seek', () => {
 
   it('seekTo does nothing when duration is not yet available (NaN)', () => {
     const hook = renderHook(() => useAudioPlayer(defaultOpts))
-    act(() => { hook.result.current.playTrack('song.mp3') })
+    act(() => {
+      hook.result.current.playTrack('song.mp3')
+    })
     const audio = audioMocks.lastInstance
 
     // Duration is NaN (metadata not loaded)
     audio._setDuration(NaN)
 
-    act(() => { hook.result.current.seekTo(0.5) })
+    act(() => {
+      hook.result.current.seekTo(0.5)
+    })
 
     // Should not crash, currentTime stays at 0
     expect(audio.currentTime).toBe(0)
@@ -90,20 +100,28 @@ describe('useAudioPlayer — seek', () => {
 
   it('seekTo works after metadata loads even if initially NaN', () => {
     const hook = renderHook(() => useAudioPlayer(defaultOpts))
-    act(() => { hook.result.current.playTrack('song.mp3') })
+    act(() => {
+      hook.result.current.playTrack('song.mp3')
+    })
     const audio = audioMocks.lastInstance
 
     // Initially NaN
     audio._setDuration(NaN)
-    act(() => { hook.result.current.seekTo(0.5) })
+    act(() => {
+      hook.result.current.seekTo(0.5)
+    })
     expect(audio.currentTime).toBe(0)
 
     // Metadata loads
     audio._setDuration(200)
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
 
     // Now seek should work
-    act(() => { hook.result.current.seekTo(0.5) })
+    act(() => {
+      hook.result.current.seekTo(0.5)
+    })
     expect(audio.currentTime).toBe(100)
     expect(hook.result.current.progress).toBe(0.5)
   })
@@ -112,25 +130,35 @@ describe('useAudioPlayer — seek', () => {
     const { hook, audio } = startPlaying()
 
     // Start seeking
-    act(() => { hook.result.current.seekStart() })
+    act(() => {
+      hook.result.current.seekStart()
+    })
 
     // User seeks to 75%
-    act(() => { hook.result.current.seekTo(0.75) })
+    act(() => {
+      hook.result.current.seekTo(0.75)
+    })
     expect(hook.result.current.progress).toBe(0.75)
 
     // Simulate audio element still at old position (hasn't caught up)
     audio.currentTime = 10
 
     // rAF fires — should NOT overwrite the seek position
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     expect(hook.result.current.progress).toBe(0.75)
 
     // End seeking
-    act(() => { hook.result.current.seekEnd() })
+    act(() => {
+      hook.result.current.seekEnd()
+    })
 
     // Now rAF should read from audio element again
     audio.currentTime = 150 // audio caught up to seek
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     expect(hook.result.current.progress).toBe(0.75) // 150/200
   })
 
@@ -138,18 +166,28 @@ describe('useAudioPlayer — seek', () => {
     const { hook, audio } = startPlaying()
 
     // Seek
-    act(() => { hook.result.current.seekStart() })
-    act(() => { hook.result.current.seekTo(0.5) })
-    act(() => { hook.result.current.seekEnd() })
+    act(() => {
+      hook.result.current.seekStart()
+    })
+    act(() => {
+      hook.result.current.seekTo(0.5)
+    })
+    act(() => {
+      hook.result.current.seekEnd()
+    })
 
     // Audio element has moved to the seeked position
     audio.currentTime = 100
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     expect(hook.result.current.progress).toBe(0.5) // 100/200
 
     // Audio continues playing
     audio.currentTime = 120
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     expect(hook.result.current.progress).toBe(0.6) // 120/200
   })
 
@@ -168,16 +206,22 @@ describe('useAudioPlayer — seek', () => {
 
     // Audio element confirms the position
     audio.currentTime = 60
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
     expect(hook.result.current.progress).toBe(0.3)
   })
 
   it('seek to 0% works', () => {
     const { hook, audio } = startPlaying()
     audio.currentTime = 100
-    act(() => { flushRAF() })
+    act(() => {
+      flushRAF()
+    })
 
-    act(() => { hook.result.current.seekTo(0) })
+    act(() => {
+      hook.result.current.seekTo(0)
+    })
     expect(audio.currentTime).toBe(0)
     expect(hook.result.current.progress).toBe(0)
   })
@@ -185,7 +229,9 @@ describe('useAudioPlayer — seek', () => {
   it('seek to 100% works', () => {
     const { hook, audio } = startPlaying()
 
-    act(() => { hook.result.current.seekTo(1) })
+    act(() => {
+      hook.result.current.seekTo(1)
+    })
     expect(audio.currentTime).toBe(200)
     expect(hook.result.current.progress).toBe(1)
   })

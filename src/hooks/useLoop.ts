@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import type { LoopMode } from '../types'
 
 const LOOP_KEY = 'doty:loopMode'
@@ -25,14 +25,18 @@ export function useLoop(): UseLoopReturn {
 
   const setLoopMode = useCallback((mode: LoopMode) => {
     setLoopModeState(mode)
-    try { localStorage.setItem(LOOP_KEY, mode) } catch {}
+    try {
+      localStorage.setItem(LOOP_KEY, mode)
+    } catch {}
   }, [])
 
   const cycleLoopMode = useCallback(() => {
-    setLoopModeState(prev => {
+    setLoopModeState((prev) => {
       const idx = CYCLE_ORDER.indexOf(prev)
       const next = CYCLE_ORDER[(idx + 1) % CYCLE_ORDER.length]
-      try { localStorage.setItem(LOOP_KEY, next) } catch {}
+      try {
+        localStorage.setItem(LOOP_KEY, next)
+      } catch {}
       return next
     })
   }, [])

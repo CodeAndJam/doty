@@ -1,6 +1,6 @@
-import { resolve } from 'path'
-import { defineConfig } from 'electron-vite'
+import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react'
+import { defineConfig } from 'electron-vite'
 
 export default defineConfig({
   main: {
@@ -15,27 +15,27 @@ export default defineConfig({
           'asr-worker': resolve(__dirname, 'electron/asr-worker.ts'),
           'qwen-worker': resolve(__dirname, 'electron/qwen-worker.ts'),
           'qwen-child': resolve(__dirname, 'electron/qwen-child.ts'),
-        }
-      }
-    }
+        },
+      },
+    },
   },
   preload: {
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'electron/preload.ts') }
-      }
-    }
+        input: { index: resolve(__dirname, 'electron/preload.ts') },
+      },
+    },
   },
   renderer: {
     root: '.',
     build: {
       rollupOptions: {
-        input: { index: resolve(__dirname, 'index.html') }
-      }
+        input: { index: resolve(__dirname, 'index.html') },
+      },
     },
     plugins: [react()],
     worker: {
-      format: 'iife'
-    }
-  }
+      format: 'iife',
+    },
+  },
 })

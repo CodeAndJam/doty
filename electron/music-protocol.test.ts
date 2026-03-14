@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
-import { audioMime, parseMusicUrl, handleMusicRequest } from './music-protocol'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { audioMime, handleMusicRequest, parseMusicUrl } from './music-protocol'
 
 describe('music-protocol', () => {
   // Create a temp directory with a small test file
@@ -61,18 +61,12 @@ describe('music-protocol', () => {
 
   describe('handleMusicRequest', () => {
     it('returns 404 for non-existent file', () => {
-      const resp = handleMusicRequest(
-        { url: 'music://play/nonexistent.mp3', rangeHeader: null },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: 'music://play/nonexistent.mp3', rangeHeader: null }, tmpDir)
       expect(resp.status).toBe(404)
     })
 
     it('returns 200 with full file for request without Range header', () => {
-      const resp = handleMusicRequest(
-        { url: `music://play/${testFile}`, rangeHeader: null },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: null }, tmpDir)
       expect(resp.status).toBe(200)
       expect(resp.headers.get('Content-Type')).toBe('audio/mpeg')
       expect(resp.headers.get('Content-Length')).toBe('1000')
@@ -80,10 +74,7 @@ describe('music-protocol', () => {
     })
 
     it('returns 206 with partial content for Range request', () => {
-      const resp = handleMusicRequest(
-        { url: `music://play/${testFile}`, rangeHeader: 'bytes=100-199' },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=100-199' }, tmpDir)
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Type')).toBe('audio/mpeg')
       expect(resp.headers.get('Content-Length')).toBe('100')
@@ -92,20 +83,14 @@ describe('music-protocol', () => {
     })
 
     it('handles open-ended Range (bytes=500-)', () => {
-      const resp = handleMusicRequest(
-        { url: `music://play/${testFile}`, rangeHeader: 'bytes=500-' },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=500-' }, tmpDir)
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('500')
       expect(resp.headers.get('Content-Range')).toBe('bytes 500-999/1000')
     })
 
     it('handles Range starting at 0', () => {
-      const resp = handleMusicRequest(
-        { url: `music://play/${testFile}`, rangeHeader: 'bytes=0-' },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=0-' }, tmpDir)
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('1000')
       expect(resp.headers.get('Content-Range')).toBe('bytes 0-999/1000')
@@ -117,10 +102,7 @@ describe('music-protocol', () => {
       const knownContent = Buffer.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
       fs.writeFileSync(path.join(tmpDir, knownFile), knownContent)
 
-      const resp = handleMusicRequest(
-        { url: `music://play/${knownFile}`, rangeHeader: 'bytes=10-14' },
-        tmpDir,
-      )
+      const resp = handleMusicRequest({ url: `music://play/${knownFile}`, rangeHeader: 'bytes=10-14' }, tmpDir)
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('5')
 

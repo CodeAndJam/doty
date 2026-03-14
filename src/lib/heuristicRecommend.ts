@@ -25,44 +25,104 @@ interface MoodProfile {
 const MOOD_PROFILES: MoodProfile[] = [
   {
     keywords: ['battle', 'combat', 'fight', 'war', 'clash', 'attack', 'assault', 'enemy', 'rivals', 'boss'],
-    bpmMin: 120, bpmMax: 200, energyMin: 0.6, energyMax: 1.0,
+    bpmMin: 120,
+    bpmMax: 200,
+    energyMin: 0.6,
+    energyMax: 1.0,
   },
   {
     keywords: ['chase', 'run', 'escape', 'flee', 'pursuit', 'urgent', 'danger'],
-    bpmMin: 130, bpmMax: 200, energyMin: 0.65, energyMax: 1.0,
+    bpmMin: 130,
+    bpmMax: 200,
+    energyMin: 0.65,
+    energyMax: 1.0,
   },
   {
-    keywords: ['campfire', 'camp', 'rest', 'tavern', 'inn', 'peaceful', 'calm', 'relax', 'downtime', 'bonfire', 'halfling', 'village'],
-    bpmMin: 60, bpmMax: 100, energyMin: 0.0, energyMax: 0.45, scale: 'major',
+    keywords: [
+      'campfire',
+      'camp',
+      'rest',
+      'tavern',
+      'inn',
+      'peaceful',
+      'calm',
+      'relax',
+      'downtime',
+      'bonfire',
+      'halfling',
+      'village',
+    ],
+    bpmMin: 60,
+    bpmMax: 100,
+    energyMin: 0.0,
+    energyMax: 0.45,
+    scale: 'major',
   },
   {
-    keywords: ['horror', 'dark', 'spooky', 'haunted', 'ghost', 'undead', 'cursed', 'cemetery', 'dungeon', 'corrupted', 'obscure'],
-    bpmMin: 50, bpmMax: 110, energyMin: 0.2, energyMax: 0.65, scale: 'minor',
+    keywords: [
+      'horror',
+      'dark',
+      'spooky',
+      'haunted',
+      'ghost',
+      'undead',
+      'cursed',
+      'cemetery',
+      'dungeon',
+      'corrupted',
+      'obscure',
+    ],
+    bpmMin: 50,
+    bpmMax: 110,
+    energyMin: 0.2,
+    energyMax: 0.65,
+    scale: 'minor',
   },
   {
     keywords: ['ocean', 'sea', 'sail', 'voyage', 'ship', 'pirate', 'water', 'storm', 'rowboat'],
-    bpmMin: 80, bpmMax: 130, energyMin: 0.3, energyMax: 0.75,
+    bpmMin: 80,
+    bpmMax: 130,
+    energyMin: 0.3,
+    energyMax: 0.75,
   },
   {
     keywords: ['victory', 'triumph', 'celebration', 'heroic', 'epic', 'glorious'],
-    bpmMin: 100, bpmMax: 160, energyMin: 0.6, energyMax: 1.0, scale: 'major',
+    bpmMin: 100,
+    bpmMax: 160,
+    energyMin: 0.6,
+    energyMax: 1.0,
+    scale: 'major',
   },
   {
     keywords: ['travel', 'journey', 'road', 'adventure', 'explore', 'caravan', 'walk', 'mountain', 'snow'],
-    bpmMin: 80, bpmMax: 120, energyMin: 0.3, energyMax: 0.65,
+    bpmMin: 80,
+    bpmMax: 120,
+    energyMin: 0.3,
+    energyMax: 0.65,
   },
   {
     keywords: ['mystery', 'intrigue', 'stealth', 'shadow', 'secret', 'underground', 'cave', 'cavern'],
-    bpmMin: 60, bpmMax: 110, energyMin: 0.2, energyMax: 0.55, scale: 'minor',
+    bpmMin: 60,
+    bpmMax: 110,
+    energyMin: 0.2,
+    energyMax: 0.55,
+    scale: 'minor',
   },
   {
     keywords: ['desert', 'sand', 'dry', 'heat', 'ancient', 'temple', 'ruin'],
-    bpmMin: 70, bpmMax: 110, energyMin: 0.25, energyMax: 0.6,
+    bpmMin: 70,
+    bpmMax: 110,
+    energyMin: 0.25,
+    energyMax: 0.6,
   },
 ]
 
 function tokenize(text: string): string[] {
-  return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
 }
 
 function clamp01(v: number): number {
@@ -88,8 +148,11 @@ function detectMood(tokens: string[]): MoodProfile | null {
   let best: MoodProfile | null = null
   let bestScore = 0
   for (const profile of MOOD_PROFILES) {
-    const score = profile.keywords.filter(k => tokens.includes(k)).length
-    if (score > bestScore) { bestScore = score; best = profile }
+    const score = profile.keywords.filter((k) => tokens.includes(k)).length
+    if (score > bestScore) {
+      bestScore = score
+      best = profile
+    }
   }
   return bestScore > 0 ? best : null
 }
@@ -97,8 +160,8 @@ function detectMood(tokens: string[]): MoodProfile | null {
 /** Score a filename against transcript tokens (word overlap) */
 function filenameScore(filename: string, tokens: string[]): number {
   const nameTokens = tokenize(filename.replace(/\.[^.]+$/, ''))
-  const matches = nameTokens.filter(t => tokens.includes(t)).length
-  return Math.min(1, matches / Math.max(1, nameTokens.length) * 2)
+  const matches = nameTokens.filter((t) => tokens.includes(t)).length
+  return Math.min(1, (matches / Math.max(1, nameTokens.length)) * 2)
 }
 
 export function heuristicRecommend(
@@ -115,11 +178,11 @@ export function heuristicRecommend(
 
   const scored = files.map((file) => {
     const meta = metadata[file]
-    const fnScore = filenameScore(file, tokens) * 2  // filename match weighted 2x
+    const fnScore = filenameScore(file, tokens) * 2 // filename match weighted 2x
 
     // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
     const fileTags = tagsMap[file] || []
-    const tagMatches = fileTags.filter(tag => tokens.some(t => tag.includes(t) || t.includes(tag))).length
+    const tagMatches = fileTags.filter((tag) => tokens.some((t) => tag.includes(t) || t.includes(tag))).length
     const tagScore = Math.min(1, tagMatches / Math.max(1, fileTags.length)) * 3
 
     let featureScore = 0
@@ -138,5 +201,5 @@ export function heuristicRecommend(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, count).map(s => s.file)
+  return scored.slice(0, count).map((s) => s.file)
 }

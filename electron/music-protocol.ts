@@ -4,14 +4,18 @@
  * Handles serving audio files with proper HTTP Range support so that
  * Chromium's <audio> element can seek (set currentTime) correctly.
  */
-import fs from 'fs'
-import { join } from 'path'
+import fs from 'node:fs'
+import { join } from 'node:path'
 
 /** MIME type lookup for audio files. */
 export function audioMime(ext: string): string {
   const map: Record<string, string> = {
-    '.mp3': 'audio/mpeg', '.flac': 'audio/flac', '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.aac': 'audio/aac',
+    '.mp3': 'audio/mpeg',
+    '.flac': 'audio/flac',
+    '.wav': 'audio/wav',
+    '.m4a': 'audio/mp4',
+    '.ogg': 'audio/ogg',
+    '.aac': 'audio/aac',
   }
   return map[ext.toLowerCase()] ?? 'application/octet-stream'
 }
@@ -31,17 +35,39 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
     start(controller) {
       nodeStream.on('data', (chunk: Buffer | string) => {
         if (!closed) {
-          try { controller.enqueue(chunk) } catch { closed = true; nodeStream.destroy() }
+          try {
+            controller.enqueue(chunk)
+          } catch {
+            closed = true
+            nodeStream.destroy()
+          }
         }
       })
       nodeStream.on('end', () => {
-        if (!closed) { closed = true; try { controller.close() } catch { /* already closed */ } }
+        if (!closed) {
+          closed = true
+          try {
+            controller.close()
+          } catch {
+            /* already closed */
+          }
+        }
       })
       nodeStream.on('error', (err) => {
-        if (!closed) { closed = true; try { controller.error(err) } catch { /* already errored */ } }
+        if (!closed) {
+          closed = true
+          try {
+            controller.error(err)
+          } catch {
+            /* already errored */
+          }
+        }
       })
     },
-    cancel() { closed = true; nodeStream.destroy() },
+    cancel() {
+      closed = true
+      nodeStream.destroy()
+    },
   })
 }
 
@@ -71,7 +97,7 @@ export function handleMusicRequest(request: MusicRequestInfo, musicFolder: strin
   if (request.rangeHeader) {
     const match = /bytes=(\d+)-(\d*)/.exec(request.rangeHeader)
     const start = match ? parseInt(match[1], 10) : 0
-    const end = match && match[2] ? parseInt(match[2], 10) : total - 1
+    const end = match?.[2] ? parseInt(match[2], 10) : total - 1
 
     // Validate range bounds
     if (start >= total || end >= total || start > end) {

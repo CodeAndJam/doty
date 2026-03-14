@@ -19,7 +19,24 @@ interface SfxMoodProfile {
 
 const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
   {
-    keywords: ['battle', 'combat', 'fight', 'war', 'clash', 'attack', 'assault', 'sword', 'weapon', 'hit', 'strike', 'slash', 'arrow', 'shield', 'armor', 'boss'],
+    keywords: [
+      'battle',
+      'combat',
+      'fight',
+      'war',
+      'clash',
+      'attack',
+      'assault',
+      'sword',
+      'weapon',
+      'hit',
+      'strike',
+      'slash',
+      'arrow',
+      'shield',
+      'armor',
+      'boss',
+    ],
     categories: ['combat'],
   },
   {
@@ -27,53 +44,172 @@ const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
     categories: ['fire'],
   },
   {
-    keywords: ['rain', 'storm', 'thunder', 'lightning', 'wind', 'snow', 'blizzard', 'weather', 'ocean', 'sea', 'river', 'water', 'wave', 'creek', 'forest', 'bird', 'nature', 'animal', 'wolf', 'howl'],
+    keywords: [
+      'rain',
+      'storm',
+      'thunder',
+      'lightning',
+      'wind',
+      'snow',
+      'blizzard',
+      'weather',
+      'ocean',
+      'sea',
+      'river',
+      'water',
+      'wave',
+      'creek',
+      'forest',
+      'bird',
+      'nature',
+      'animal',
+      'wolf',
+      'howl',
+    ],
     categories: ['nature'],
   },
   {
-    keywords: ['walk', 'run', 'step', 'footstep', 'march', 'horse', 'gallop', 'travel', 'journey', 'road', 'path', 'chase', 'flee', 'escape'],
+    keywords: [
+      'walk',
+      'run',
+      'step',
+      'footstep',
+      'march',
+      'horse',
+      'gallop',
+      'travel',
+      'journey',
+      'road',
+      'path',
+      'chase',
+      'flee',
+      'escape',
+    ],
     categories: ['footsteps'],
   },
   {
-    keywords: ['door', 'gate', 'lock', 'key', 'chest', 'open', 'close', 'creak', 'mechanism', 'lever', 'trap', 'chain', 'portcullis'],
+    keywords: [
+      'door',
+      'gate',
+      'lock',
+      'key',
+      'chest',
+      'open',
+      'close',
+      'creak',
+      'mechanism',
+      'lever',
+      'trap',
+      'chain',
+      'portcullis',
+    ],
     categories: ['doors'],
   },
   {
-    keywords: ['tavern', 'inn', 'crowd', 'cheer', 'drink', 'mug', 'laugh', 'music', 'bard', 'feast', 'celebration', 'village', 'market', 'town'],
+    keywords: [
+      'tavern',
+      'inn',
+      'crowd',
+      'cheer',
+      'drink',
+      'mug',
+      'laugh',
+      'music',
+      'bard',
+      'feast',
+      'celebration',
+      'village',
+      'market',
+      'town',
+    ],
     categories: ['tavern'],
   },
   {
-    keywords: ['horror', 'dark', 'spooky', 'haunted', 'ghost', 'undead', 'scream', 'whisper', 'creepy', 'cemetery', 'crypt', 'zombie', 'skeleton', 'vampire', 'shadow'],
+    keywords: [
+      'horror',
+      'dark',
+      'spooky',
+      'haunted',
+      'ghost',
+      'undead',
+      'scream',
+      'whisper',
+      'creepy',
+      'cemetery',
+      'crypt',
+      'zombie',
+      'skeleton',
+      'vampire',
+      'shadow',
+    ],
     categories: ['horror'],
   },
   {
-    keywords: ['magic', 'spell', 'cast', 'arcane', 'enchant', 'wizard', 'sorcerer', 'potion', 'heal', 'fireball', 'lightning bolt', 'teleport', 'summon', 'ritual', 'rune', 'crystal', 'divine', 'holy'],
+    keywords: [
+      'magic',
+      'spell',
+      'cast',
+      'arcane',
+      'enchant',
+      'wizard',
+      'sorcerer',
+      'potion',
+      'heal',
+      'fireball',
+      'lightning bolt',
+      'teleport',
+      'summon',
+      'ritual',
+      'rune',
+      'crystal',
+      'divine',
+      'holy',
+    ],
     categories: ['magic'],
   },
   {
-    keywords: ['cave', 'dungeon', 'underground', 'echo', 'drip', 'ambient', 'atmosphere', 'city', 'swamp', 'desert', 'mountain', 'temple', 'ruin', 'church', 'cathedral'],
+    keywords: [
+      'cave',
+      'dungeon',
+      'underground',
+      'echo',
+      'drip',
+      'ambient',
+      'atmosphere',
+      'city',
+      'swamp',
+      'desert',
+      'mountain',
+      'temple',
+      'ruin',
+      'church',
+      'cathedral',
+    ],
     categories: ['environment'],
   },
 ]
 
 function tokenize(text: string): string[] {
-  return text.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean)
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
 }
 
 /** Detect which mood profiles match the transcript */
 function detectMoods(tokens: string[]): SfxMoodProfile[] {
-  return SFX_MOOD_PROFILES
-    .map(p => ({ profile: p, score: p.keywords.filter(k => tokens.includes(k)).length }))
-    .filter(p => p.score > 0)
+  return SFX_MOOD_PROFILES.map((p) => ({ profile: p, score: p.keywords.filter((k) => tokens.includes(k)).length }))
+    .filter((p) => p.score > 0)
     .sort((a, b) => b.score - a.score)
-    .map(p => p.profile)
+    .map((p) => p.profile)
 }
 
 /** Score a label/description against transcript tokens */
 function textScore(text: string, tokens: string[]): number {
   const textTokens = tokenize(text)
-  const matches = textTokens.filter(t => tokens.includes(t)).length
-  return Math.min(1, matches / Math.max(1, textTokens.length) * 2)
+  const matches = textTokens.filter((t) => tokens.includes(t)).length
+  return Math.min(1, (matches / Math.max(1, textTokens.length)) * 2)
 }
 
 export function heuristicSfxRecommend(
@@ -88,7 +224,7 @@ export function heuristicSfxRecommend(
   if (tokens.length === 0) return []
 
   const moods = detectMoods(tokens)
-  const matchedCategories = new Set(moods.flatMap(m => m.categories))
+  const matchedCategories = new Set(moods.flatMap((m) => m.categories))
 
   const scored = sfxList.map((sfx) => {
     // Label match (weighted 2x)
@@ -102,9 +238,7 @@ export function heuristicSfxRecommend(
 
     // Tag score (weighted 3x — user intent is explicit)
     const sfxTags = tagsMap[sfx.filename] || []
-    const tagMatches = sfxTags.filter(tag =>
-      tokens.some(t => tag.includes(t) || t.includes(tag))
-    ).length
+    const tagMatches = sfxTags.filter((tag) => tokens.some((t) => tag.includes(t) || t.includes(tag))).length
     const tagScore = Math.min(1, tagMatches / Math.max(1, sfxTags.length)) * 3
 
     return { id: sfx.id, score: labelScore + descScore + catScore + tagScore }
@@ -114,7 +248,7 @@ export function heuristicSfxRecommend(
 
   // Only return SFX that actually scored above 0
   return scored
-    .filter(s => s.score > 0)
+    .filter((s) => s.score > 0)
     .slice(0, count)
-    .map(s => s.id)
+    .map((s) => s.id)
 }

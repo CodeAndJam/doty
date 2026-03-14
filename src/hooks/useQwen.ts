@@ -8,8 +8,8 @@ type LogCb = (message: string) => void
 
 export interface RerankerDownloadProgress {
   file: string
-  progress: number  // 0-100
-  status: string    // 'initiate' | 'download' | 'progress' | 'done'
+  progress: number // 0-100
+  status: string // 'initiate' | 'download' | 'progress' | 'done'
 }
 type DownloadCb = (p: RerankerDownloadProgress) => void
 
@@ -38,33 +38,37 @@ function getWorker(): Worker {
       console.log('[reranker-hook] status:', msg.status, msg.message ?? '')
       _currentStatus = msg.status
       if (msg.status === 'ready') _downloadDone = true
-      _statusListeners.forEach(cb => cb(msg.status))
+      _statusListeners.forEach((cb) => cb(msg.status))
       return
     }
     if (msg.type === 'log') {
       console.log('[reranker-worker]', msg.message)
-      _logListeners.forEach(cb => cb(msg.message))
+      _logListeners.forEach((cb) => cb(msg.message))
       return
     }
     if (msg.type === 'progress') {
       const p = msg as Record<string, unknown>
       const pct = typeof p.progress === 'number' ? ` ${(p.progress as number).toFixed(1)}%` : ''
       const file = (p.file ?? p.name ?? '') as string
-      _logListeners.forEach(cb => cb(`[${p.status}] ${file}${pct}`))
+      _logListeners.forEach((cb) => cb(`[${p.status}] ${file}${pct}`))
       // Track download activity for the download overlay
       if (p.status === 'download' || p.status === 'progress' || p.status === 'initiate') {
         _isDownloading = true
-        _downloadListeners.forEach(cb => cb({
-          file,
-          progress: typeof p.progress === 'number' ? p.progress as number : 0,
-          status: p.status as string,
-        }))
+        _downloadListeners.forEach((cb) =>
+          cb({
+            file,
+            progress: typeof p.progress === 'number' ? (p.progress as number) : 0,
+            status: p.status as string,
+          }),
+        )
       } else if (p.status === 'done') {
-        _downloadListeners.forEach(cb => cb({
-          file,
-          progress: 100,
-          status: 'done',
-        }))
+        _downloadListeners.forEach((cb) =>
+          cb({
+            file,
+            progress: 100,
+            status: 'done',
+          }),
+        )
       }
       return
     }
@@ -159,8 +163,8 @@ export function useQwen() {
     if (files.length === 0) return []
 
     // Fetch metadata and tags for all tracks
-    const metadata = await window.doty.getAllMetadata() as Record<string, TrackMeta>
-    const tagsMap = await window.doty.getTagsMap() as Record<string, string[]>
+    const metadata = (await window.doty.getAllMetadata()) as Record<string, TrackMeta>
+    const tagsMap = (await window.doty.getTagsMap()) as Record<string, string[]>
 
     // While model is loading or if it errors, use the heuristic ranker
     if (_currentStatus !== 'ready') {
@@ -182,7 +186,7 @@ export function useQwen() {
       const candidates = heuristicRecommend(recentTranscript, files, metadata, RERANK_CANDIDATES, tagsMap)
 
       // Step 2: Build (transcript, track_description) pairs for the reranker
-      const pairs = candidates.map(file => ({
+      const pairs = candidates.map((file) => ({
         text: recentTranscript,
         text_pair: describeTrack(file, metadata[file], tagsMap[file]),
       }))
@@ -194,7 +198,7 @@ export function useQwen() {
       const scored = candidates.map((file, i) => ({ file, score: scores[i] }))
       scored.sort((a, b) => b.score - a.score)
 
-      const results = scored.slice(0, count).map(s => s.file)
+      const results = scored.slice(0, count).map((s) => s.file)
       console.log('[reranker-hook] reranked results:', results)
       setLastRanker('reranker')
       return results
@@ -213,5 +217,7 @@ export function onQwenLog(cb: LogCb): () => void {
   _logListeners.add(cb)
   // Eagerly spin up the worker so logs start flowing
   getWorker()
-  return () => { _logListeners.delete(cb) }
+  return () => {
+    _logListeners.delete(cb)
+  }
 }
