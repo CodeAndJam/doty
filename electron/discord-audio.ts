@@ -53,6 +53,37 @@ export function createMusicResource(musicFolder: string, filename: string, volum
 }
 
 /**
+ * Create a raw PCM s16le stereo 48kHz readable stream from a file.
+ * Used by the mixer to get decodable audio data.
+ * @param filePath — absolute path to the audio file
+ * @param seekSeconds — start decoding at this offset (0 = beginning)
+ */
+export function createPcmStream(filePath: string, seekSeconds = 0): prism.FFmpeg {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`[discord-audio] File not found: ${filePath}`)
+  }
+
+  return new prism.FFmpeg({
+    args: [
+      ...(seekSeconds > 0 ? ['-ss', String(seekSeconds)] : []),
+      '-i', filePath,
+      '-analyzeduration', '0',
+      '-loglevel', '0',
+      '-f', 's16le',
+      '-ar', '48000',
+      '-ac', '2',
+    ],
+  })
+}
+
+/**
+ * Create a raw PCM stream for an SFX file (absolute path).
+ */
+export function createSfxPcmStream(absolutePath: string): prism.FFmpeg {
+  return createPcmStream(absolutePath, 0)
+}
+
+/**
  * Check if ffmpeg is available (needed for audio transcoding).
  */
 export function checkFfmpeg(): Promise<boolean> {

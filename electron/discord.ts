@@ -12,16 +12,20 @@ import {
 import {
   joinVoiceChannel,
   createAudioPlayer,
+  createAudioResource,
   AudioPlayerStatus,
   VoiceConnectionStatus,
+  StreamType,
   entersState,
   type VoiceConnection,
   type AudioPlayer,
   type AudioResource,
 } from '@discordjs/voice'
-import { createMusicResource } from './discord-audio'
+import { createPcmStream, createSfxPcmStream } from './discord-audio'
+import { PcmMixer } from './discord-mixer'
 import { store } from './store'
 import { safeStorage } from 'electron'
+import { join } from 'path'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +71,8 @@ let player: AudioPlayer | null = null
 let connection: VoiceConnection | null = null
 let currentTrack: string | null = null
 let currentResource: AudioResource | null = null
+let mixer: PcmMixer | null = null
+let sfxCounter = 0
 let discordVolume = 1.0
 let stateListeners: StateListener[] = []
 
@@ -335,6 +341,11 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 }
 
 export function leaveChannel(): void {
+  if (mixer) {
+    mixer.destroy()
+    mixer = null
+  }
+  currentResource = null
   if (player) {
     player.stop(true)
   }
@@ -353,26 +364,71 @@ export function leaveChannel(): void {
 // ── Audio streaming ───────────────────────────────────────────────────────────
 
 /**
- * Stream a track to the Discord voice channel.
- * Called by the renderer via IPC whenever a track starts playing locally.
+ * Ensure the mixer is running and connected to the player.
+ * Creates a new mixer + AudioResource if needed.
+ */
+function ensureMixer(): PcmMixer | null {
+  if (!player || !connection) return null
+
+  if (!mixer || mixer.destroyed) {
+    mixer = new PcmMixer()
+    const resource = createAudioResource(mixer, {
+      inputType: StreamType.Raw,
+      inlineVolume: true,
+    })
+    resource.volume?.setVolume(discordVolume)
+    currentResource = resource
+    player.play(resource)
+  }
+
+  return mixer
+}
+
+/**
+ * Stream a music track to the Discord voice channel.
+ * Sets the music layer of the mixer — SFX continue to overlay.
  * @param seekSeconds — start playback at this offset (0 = beginning)
  */
 export function streamTrack(filename: string, seekSeconds = 0): void {
   currentTrack = filename
 
-  // Only stream if we're in a voice channel
   if (!player || !connection) return
 
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return
 
   try {
-    const resource = createMusicResource(musicFolder, filename, discordVolume, seekSeconds)
-    currentResource = resource
-    player.play(resource)
+    const m = ensureMixer()
+    if (!m) return
+
+    const filePath = join(musicFolder, filename)
+    const pcm = createPcmStream(filePath, seekSeconds)
+    m.setMusic(pcm)
     console.log(`[discord] Streaming: ${filename}` + (seekSeconds > 0 ? ` (seek ${seekSeconds.toFixed(1)}s)` : ''))
   } catch (err) {
     console.error('[discord] Stream error:', err)
+  }
+}
+
+/**
+ * Stream an SFX to Discord, overlaid on top of any current music.
+ * @param absolutePath — absolute path to the SFX file
+ * @param volume — SFX volume 0..1 (defaults to current Discord volume)
+ */
+export function streamSfx(absolutePath: string, volume?: number): void {
+  if (!player || !connection) return
+
+  try {
+    const m = ensureMixer()
+    if (!m) return
+
+    const id = `sfx-${++sfxCounter}`
+    const pcm = createSfxPcmStream(absolutePath)
+    const vol = volume ?? discordVolume
+    m.addSfx(id, pcm, vol)
+    console.log(`[discord] SFX overlay: ${absolutePath.split('/').pop()} (vol=${vol.toFixed(2)})`)
+  } catch (err) {
+    console.error('[discord] SFX stream error:', err)
   }
 }
 
@@ -402,6 +458,10 @@ export function resumeStream(): void {
 export function stopStream(): void {
   currentTrack = null
   currentResource = null
+  if (mixer) {
+    mixer.destroy()
+    mixer = null
+  }
   if (player) {
     player.stop(true)
   }

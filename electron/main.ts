@@ -16,7 +16,7 @@ import { migrateFromJson } from './metadata-cache'
 import {
   connect as discordConnect, disconnect as discordDisconnect, destroyDiscord,
   getState as discordGetState, getGuilds, getVoiceChannels,
-  joinChannel, leaveChannel, streamTrack, stopStream,
+  joinChannel, leaveChannel, streamTrack, streamSfx, stopStream,
   pauseStream, resumeStream,
   setDiscordVolume, getDiscordVolume, onStateChange,
   loadToken, clearToken, saveToken,
@@ -638,6 +638,11 @@ ipcMain.handle('discord:leave-channel', () => {
 
 ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: number) => {
   streamTrack(filename, seekSeconds ?? 0)
+  return { ok: true }
+})
+
+ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number) => {
+  streamSfx(absolutePath, volume)
   return { ok: true }
 })
 

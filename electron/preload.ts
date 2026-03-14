@@ -102,6 +102,7 @@ contextBridge.exposeInMainWorld('doty', {
   discordJoinChannel: (guildId: string, channelId: string) => ipcRenderer.invoke('discord:join-channel', guildId, channelId),
   discordLeaveChannel: () => ipcRenderer.invoke('discord:leave-channel'),
   discordStreamTrack: (filename: string, seekSeconds?: number) => ipcRenderer.invoke('discord:stream-track', filename, seekSeconds),
+  discordStreamSfx: (absolutePath: string, volume?: number) => ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
   discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
   discordPauseStream: () => ipcRenderer.invoke('discord:pause-stream'),
   discordResumeStream: () => ipcRenderer.invoke('discord:resume-stream'),
