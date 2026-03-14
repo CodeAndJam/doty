@@ -2,9 +2,9 @@
  * PCM audio mixer — combines a base music stream with overlaid SFX streams.
  * All inputs and output are raw s16le stereo 48kHz PCM.
  *
- * Each source stream pushes data into a ring buffer via 'readable' events.
- * A fixed-interval loop reads from all buffers, mixes the samples, and
- * pushes the result into the Readable output that the AudioPlayer consumes.
+ * Each source stream pushes data into a buffer via 'data' events (flowing mode).
+ * A fixed-interval loop consumes frames from all buffers, mixes the samples,
+ * and pushes the result into the Readable output that the AudioPlayer consumes.
  */
 import { Readable } from 'stream'
 
@@ -21,20 +21,29 @@ interface MixerSource {
   ended: boolean
 }
 
-function drainIntoBuffer(src: MixerSource): void {
-  // Pull all available data from the stream into our buffer
-  let chunk: Buffer | null
-  while ((chunk = src.stream.read() as Buffer | null) !== null) {
+function createSource(id: string, stream: Readable, volume: number): MixerSource {
+  const src: MixerSource = { id, stream, buffer: Buffer.alloc(0), volume, ended: false }
+
+  stream.on('data', (chunk: Buffer) => {
     src.buffer = Buffer.concat([src.buffer, chunk])
-  }
+  })
+  stream.on('end', () => {
+    console.log(`[mixer] Source ${id} ended`)
+    src.ended = true
+  })
+  stream.on('error', (err) => {
+    console.error(`[mixer] Source ${id} error:`, err.message)
+    src.ended = true
+  })
+
+  return src
 }
 
 function consumeFrame(src: MixerSource): Buffer | null {
-  drainIntoBuffer(src)
   if (src.buffer.length < FRAME_BYTES) return null
   const frame = src.buffer.subarray(0, FRAME_BYTES)
   src.buffer = src.buffer.subarray(FRAME_BYTES)
-  return frame
+  return Buffer.from(frame) // copy so subarray doesn't hold reference
 }
 
 export class PcmMixer extends Readable {
@@ -59,46 +68,14 @@ export class PcmMixer extends Readable {
       return
     }
 
-    const src: MixerSource = {
-      id: 'music',
-      stream,
-      buffer: Buffer.alloc(0),
-      volume: 1.0,
-      ended: false,
-    }
-
-    stream.on('end', () => {
-      console.log('[mixer] Music stream ended')
-      src.ended = true
-    })
-    stream.on('error', (err) => {
-      console.error('[mixer] Music stream error:', err.message)
-      src.ended = true
-    })
-
-    this.musicSource = src
+    this.musicSource = createSource('music', stream, 1.0)
+    console.log('[mixer] Music source set')
     this.ensureMixing()
   }
 
   /** Add an SFX overlay stream with optional volume (0..1) */
   addSfx(id: string, stream: Readable, volume = 1.0): void {
-    const src: MixerSource = {
-      id,
-      stream,
-      buffer: Buffer.alloc(0),
-      volume,
-      ended: false,
-    }
-
-    stream.on('end', () => {
-      console.log(`[mixer] SFX ${id} stream ended`)
-      src.ended = true
-    })
-    stream.on('error', (err) => {
-      console.error(`[mixer] SFX ${id} error:`, err.message)
-      src.ended = true
-    })
-
+    const src = createSource(id, stream, volume)
     this.sfxSources.push(src)
     console.log(`[mixer] Added SFX ${id} (vol=${volume.toFixed(2)}), active SFX: ${this.sfxSources.length}`)
     this.ensureMixing()
@@ -135,14 +112,15 @@ export class PcmMixer extends Readable {
 
     // Read music frame
     let musicFrame: Buffer | null = null
-    if (this.musicSource && !this.musicSource.ended) {
+    if (this.musicSource) {
       musicFrame = consumeFrame(this.musicSource)
-    }
-    // Clean up ended music source if buffer is also drained
-    if (this.musicSource?.ended && this.musicSource.buffer.length < FRAME_BYTES) {
-      this.musicSource.stream.removeAllListeners()
-      this.musicSource.stream.destroy()
-      this.musicSource = null
+      // Clean up if ended and buffer drained
+      if (this.musicSource.ended && this.musicSource.buffer.length < FRAME_BYTES) {
+        this.musicSource.stream.removeAllListeners()
+        this.musicSource.stream.destroy()
+        this.musicSource = null
+        console.log('[mixer] Music source cleaned up')
+      }
     }
 
     // Clean up finished SFX (ended + buffer drained)
