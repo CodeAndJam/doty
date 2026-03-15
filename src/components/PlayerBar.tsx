@@ -14,6 +14,7 @@ import {
   VolumeLowIcon,
   VolumeMutedIcon,
 } from './Icons'
+import VolumePopover from './VolumePopover'
 
 /** Strip extension and path from a filename. */
 export function trackName(filename: string): string {
@@ -66,7 +67,6 @@ export default function PlayerBar({
 }: Props) {
   const barRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
-  const [showVolume, setShowVolume] = useState(false)
   const [showTrackInfo, setShowTrackInfo] = useState(false)
 
   const lastPointerXRef = useRef(0)
@@ -276,53 +276,13 @@ export default function PlayerBar({
         )}
 
         {/* Volume */}
-        <div
-          className="relative flex items-center shrink-0"
-          onMouseEnter={() => setShowVolume(true)}
-          onMouseLeave={() => setShowVolume(false)}
-        >
-          <button
-            onClick={onToggleMute}
-            title={muted ? 'Unmute' : 'Mute'}
-            className="w-6 h-6 flex items-center justify-center hover:opacity-80"
-          >
-            <VolumeIcon />
-          </button>
-          {showVolume && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-1" style={{ width: '40px' }}>
-              <div
-                className="px-2 py-3 flex flex-col items-center"
-                style={{
-                  background: 'rgba(15,13,9,0.95)',
-                  border: '1px solid rgba(200,146,42,0.3)',
-                  borderRadius: '4px',
-                  width: '32px',
-                  height: '100px',
-                  margin: '0 auto',
-                }}
-              >
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(volume * 100)}
-                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-                  className="volume-slider"
-                  style={{
-                    writingMode: 'vertical-lr',
-                    direction: 'rtl',
-                    width: '100%',
-                    height: '100%',
-                    appearance: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                  }}
-                  aria-label="Volume"
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        <VolumePopover
+          volume={volume}
+          onVolumeChange={onVolumeChange}
+          onToggleMute={onToggleMute}
+          muted={muted}
+          VolumeIcon={VolumeIcon}
+        />
 
         {/* Playing indicator */}
         {isPlaying && (

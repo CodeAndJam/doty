@@ -65,41 +65,75 @@ export default function MainLayout() {
     if (modelStatus === 'ready') setRerankerCached(true)
   }, [modelStatus])
 
+  // When music folder becomes available, trigger default recommendations
+  useEffect(() => {
+    if (musicFolder) {
+      runRecommendation()
+      runSfxRecommendation()
+    }
+  }, [musicFolder]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const showRerankerDownload = rerankerCached === false && modelStatus === 'loading'
 
-  async function runRecommendation() {
+  const runRecommendation = useCallback(async () => {
     const files = await window.doty.listMusic()
-    if (files.length === 0) return
-    // Use only the most recent transcript context for relevance
+    console.log('[recommend] runRecommendation called, files:', files.length)
+    if (files.length === 0) {
+      console.log('[recommend] no files, skipping')
+      return
+    }
     const recentTranscript = transcriptBufferRef.current.slice(-500).trim()
+    console.log(
+      '[recommend] transcript context:',
+      recentTranscript.length,
+      'chars, preview:',
+      recentTranscript.slice(0, 80),
+    )
     const results = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
+    console.log('[recommend] results:', results.length, results)
     setRecommendations(results)
-  }
+  }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     const sfxList = await window.doty.getSfxList()
-    if (sfxList.length === 0) return
+    console.log('[sfx-recommend] sfxList:', sfxList.length, 'items')
+    if (sfxList.length === 0) {
+      console.log('[sfx-recommend] no SFX available, skipping')
+      return
+    }
     const tagsMap = await window.doty.getTagsMap()
+    const playFrequencies = await window.doty.getPlayFrequencies('sfx')
     const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
-    if (!text) return
-    const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap)
+    console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
+    const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap, playFrequencies)
+    console.log('[sfx-recommend] results:', results.length, results)
     setSfxRecommendations(results)
   }, [])
 
-  async function runDmRecommendation(prompt: string) {
-    const files = await window.doty.listMusic()
-    if (files.length === 0) return
-    // DM input takes priority — put it first and repeat it for emphasis.
-    // Transcript provides secondary context (truncated to recent only).
-    const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
-    const parts = [prompt, prompt] // repeat DM intent for weight
-    if (recentTranscript) parts.push(recentTranscript)
-    const combined = parts.join('\n')
-    const results = await recommendRef.current(combined, files, recommendCountRef.current)
-    setRecommendations(results)
-    // Also trigger SFX recommendations with the same combined text
-    runSfxRecommendation(combined)
-  }
+  const runDmRecommendation = useCallback(
+    async (prompt: string) => {
+      console.log('[recommend] runDmRecommendation called, prompt:', JSON.stringify(prompt))
+      const files = await window.doty.listMusic()
+      console.log('[recommend] DM: files:', files.length)
+      if (files.length === 0) {
+        console.log('[recommend] DM: no files, skipping')
+        return
+      }
+      // DM input takes priority — put it first and repeat it for emphasis.
+      // Transcript provides secondary context (truncated to recent only).
+      const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
+      const parts = [prompt, prompt] // repeat DM intent for weight
+      if (recentTranscript) parts.push(recentTranscript)
+      const combined = parts.join('\n')
+      console.log('[recommend] DM: combined query:', combined.length, 'chars, count:', recommendCountRef.current)
+      const results = await recommendRef.current(combined, files, recommendCountRef.current)
+      console.log('[recommend] DM: results:', results.length, results)
+      setRecommendations(results)
+      // Also trigger SFX recommendations with the same combined text
+      runSfxRecommendation(combined)
+    },
+    [runSfxRecommendation],
+  )
 
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
@@ -141,9 +175,25 @@ export default function MainLayout() {
 
   function handleDmChange(text: string) {
     setDmPrompt(text)
+    console.log(
+      '[recommend] handleDmChange:',
+      JSON.stringify(text),
+      'clearing previous debounce:',
+      !!dmDebounceRef.current,
+    )
     if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
     if (text.trim()) {
-      dmDebounceRef.current = setTimeout(() => runDmRecommendation(text.trim()), 500)
+      console.log('[recommend] scheduling DM recommendation in 500ms')
+      dmDebounceRef.current = setTimeout(() => {
+        console.log('[recommend] debounce fired, calling runDmRecommendation')
+        runDmRecommendation(text.trim())
+      }, 500)
+    } else {
+      // When prompt is cleared, re-trigger default recommendations (history-based)
+      dmDebounceRef.current = setTimeout(() => {
+        runRecommendation()
+        runSfxRecommendation()
+      }, 300)
     }
   }
 
@@ -175,36 +225,47 @@ export default function MainLayout() {
       {/* Title bar drag region */}
       <div className="fixed top-0 left-0 right-0 h-8 z-50" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties} />
 
-      {/* Header */}
-      <header className="flex items-center justify-between px-6 pt-10 pb-4 shrink-0 relative">
-        {/* Left status */}
-        <div className="flex items-center gap-2">
-          <div
-            className={`w-1.5 h-1.5 rounded-full ${recording ? 'bg-red-500 animate-pulse' : 'bg-rune'}`}
-            style={{ boxShadow: recording ? '0 0 6px rgba(239,68,68,0.8)' : '0 0 6px rgba(74,138,106,0.8)' }}
-          />
-          <span
-            className="text-xs tracking-widest uppercase font-mono"
-            style={{ color: recording ? '#ef4444' : '#4a8a6a', fontSize: '16px' }}
+      {/* Header — compact, with transcription toggle merged into status */}
+      <header className="flex items-center justify-between px-6 pt-9 pb-2 shrink-0 relative">
+        {/* Left: status toggle + transcript visibility */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={toggleRecording}
+            className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+            style={{
+              border: `1px solid ${recording ? 'rgba(239,68,68,0.3)' : 'rgba(74,138,106,0.3)'}`,
+              background: recording ? 'rgba(239,68,68,0.06)' : 'transparent',
+            }}
+            title={recording ? 'Stop transcription' : 'Start transcription'}
           >
-            {recording ? 'Transcribing' : 'Standby'}
-          </span>
+            <div
+              className={`w-1.5 h-1.5 rounded-full ${recording ? 'bg-red-500 animate-pulse' : 'bg-rune'}`}
+              style={{ boxShadow: recording ? '0 0 6px rgba(239,68,68,0.8)' : '0 0 6px rgba(74,138,106,0.8)' }}
+            />
+            <span
+              className="text-xs tracking-widest uppercase font-mono"
+              style={{ color: recording ? '#ef4444' : '#4a8a6a', fontSize: '11px' }}
+            >
+              {recording ? 'Transcribing' : 'Standby'}
+            </span>
+          </button>
+          <button
+            onClick={() => setShowTranscript((v) => !v)}
+            className="p-1 opacity-40 hover:opacity-100 transition-opacity"
+            title={showTranscript ? 'Hide transcript' : 'Show transcript'}
+            style={{ color: '#6b4e15' }}
+          >
+            {showTranscript ? <EyeOffIcon /> : <EyeIcon />}
+          </button>
         </div>
 
         {/* Title */}
-        <div className="flex flex-col items-center">
-          <h1
-            className="text-base tracking-[0.3em] uppercase"
-            style={{ fontFamily: "'Cinzel', serif", color: '#c8922a', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
-          >
-            Doty
-          </h1>
-          <div className="flex items-center gap-1 mt-0.5">
-            <div className="h-px w-8" style={{ background: 'linear-gradient(to right, transparent, #2e2416)' }} />
-            <span style={{ color: '#2e2416', fontSize: '14px' }}>✦</span>
-            <div className="h-px w-8" style={{ background: 'linear-gradient(to left, transparent, #2e2416)' }} />
-          </div>
-        </div>
+        <h1
+          className="text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2"
+          style={{ fontFamily: "'Cinzel', serif", color: '#c8922a', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
+        >
+          Doty
+        </h1>
 
         {/* Settings button */}
         <button
@@ -219,96 +280,19 @@ export default function MainLayout() {
         </button>
       </header>
 
-      {/* Divider */}
-      <div className="mx-6 mb-4 shrink-0 flex items-center gap-2">
-        <div
-          className="flex-1 h-px"
-          style={{ background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
-        />
-        <span style={{ color: '#2e2416', fontSize: '14px' }}>⬡</span>
-        <div
-          className="flex-1 h-px"
-          style={{ background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
-        />
-      </div>
-
       {/* Main content */}
       <div className="flex flex-1 gap-4 px-6 pb-6 overflow-hidden">
-        {/* Left: Transcript + Record button */}
-        <div className={`flex flex-col shrink-0 gap-3 ${showTranscript ? 'w-72' : 'w-auto'}`}>
-          {/* Transcript toggle + panel */}
-          {showTranscript ? (
-            <>
-              <div className="flex items-center justify-between shrink-0">
-                <button
-                  onClick={() => setShowTranscript(false)}
-                  className="p-1 opacity-50 hover:opacity-100 transition-opacity"
-                  title="Hide transcript"
-                  style={{ color: '#6b4e15' }}
-                >
-                  <EyeOffIcon />
-                </button>
-              </div>
-              <Transcript lines={transcripts} recording={recording} />
-            </>
-          ) : (
-            <button
-              onClick={() => setShowTranscript(true)}
-              className="p-2 opacity-50 hover:opacity-100 transition-opacity self-start"
-              title="Show transcript"
-              style={{ color: '#6b4e15', border: '1px solid #2e2416' }}
-            >
-              <EyeIcon />
-            </button>
-          )}
-          <button
-            onClick={toggleRecording}
-            className="relative flex items-center justify-center gap-2.5 py-3 text-sm transition-all overflow-hidden"
-            style={{
-              background: recording
-                ? 'rgba(239,68,68,0.08)'
-                : 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.08))',
-              border: `1px solid ${recording ? 'rgba(239,68,68,0.4)' : 'rgba(200,146,42,0.3)'}`,
-              color: recording ? '#ef4444' : '#c8922a',
-              boxShadow: recording
-                ? '0 0 12px rgba(239,68,68,0.15), inset 0 1px 0 rgba(255,255,255,0.03)'
-                : '0 0 12px rgba(200,146,42,0.15), inset 0 1px 0 rgba(255,255,255,0.03)',
-              fontFamily: "'Cinzel', serif",
-              letterSpacing: '0.15em',
-              fontSize: '14px',
-            }}
-          >
-            {recording ? (
-              <>
-                <span className="w-2 h-2 bg-red-500 rounded-sm animate-pulse" />
-                Cease Transcription
-              </>
-            ) : (
-              <>
-                <span
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: '#c8922a', boxShadow: '0 0 6px rgba(200,146,42,0.8)' }}
-                />
-                Begin Transcription
-              </>
-            )}
-          </button>
-        </div>
-
-        {/* Right: Soundboard + DM prompt */}
-        <div className="flex-1 flex flex-col overflow-hidden gap-3">
-          <div className="flex-1 overflow-hidden">
-            <Soundboard
-              recommendations={recommendations}
-              sfxRecommendations={sfxRecommendations}
-              musicFolder={musicFolder}
-              speakerDeviceId={speakerDeviceId}
-              onNoFolder={() => setShowSettings(true)}
-            />
+        {/* Left: Transcript (hidden entirely when collapsed) */}
+        {showTranscript && (
+          <div className="flex flex-col shrink-0 gap-2 w-72">
+            <Transcript lines={transcripts} recording={recording} />
           </div>
+        )}
 
-          {/* DM chat input */}
-          <div className="shrink-0" style={{ borderTop: '1px solid #2e2416', paddingTop: '12px' }}>
+        {/* Right: DM prompt + Soundboard */}
+        <div className="flex-1 flex flex-col overflow-hidden gap-3">
+          {/* DM chat input — top of the view for quick access */}
+          <div className="shrink-0">
             <input
               type="text"
               data-testid="dm-input"
@@ -323,6 +307,16 @@ export default function MainLayout() {
                 border: '1px solid #2e2416',
                 padding: '8px 12px',
               }}
+            />
+          </div>
+
+          <div className="flex-1 overflow-hidden">
+            <Soundboard
+              recommendations={recommendations}
+              sfxRecommendations={sfxRecommendations}
+              musicFolder={musicFolder}
+              speakerDeviceId={speakerDeviceId}
+              onNoFolder={() => setShowSettings(true)}
             />
           </div>
         </div>
