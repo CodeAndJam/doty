@@ -160,14 +160,28 @@ export function useQwen() {
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<string[]> => {
-    console.log('[reranker-hook] recommend() called — transcript:', transcript.length, 'chars, files:', files.length, 'count:', count, 'status:', _currentStatus)
+    console.log(
+      '[reranker-hook] recommend() called — transcript:',
+      transcript.length,
+      'chars, files:',
+      files.length,
+      'count:',
+      count,
+      'status:',
+      _currentStatus,
+    )
     if (files.length === 0) return []
 
     // Fetch metadata, tags, and play history for all tracks
     const metadata = (await window.doty.getAllMetadata()) as Record<string, TrackMeta>
     const tagsMap = (await window.doty.getTagsMap()) as Record<string, string[]>
     const playFrequencies = await window.doty.getPlayFrequencies('music')
-    console.log('[reranker-hook] metadata keys:', Object.keys(metadata).length, 'tags keys:', Object.keys(tagsMap).length)
+    console.log(
+      '[reranker-hook] metadata keys:',
+      Object.keys(metadata).length,
+      'tags keys:',
+      Object.keys(tagsMap).length,
+    )
 
     // While model is loading or if it errors, use the heuristic ranker
     if (_currentStatus !== 'ready') {
@@ -188,7 +202,14 @@ export function useQwen() {
       }
 
       // Step 1: Pre-filter with heuristic to get top N candidates
-      const candidates = heuristicRecommend(recentTranscript, files, metadata, RERANK_CANDIDATES, tagsMap, playFrequencies)
+      const candidates = heuristicRecommend(
+        recentTranscript,
+        files,
+        metadata,
+        RERANK_CANDIDATES,
+        tagsMap,
+        playFrequencies,
+      )
       console.log('[reranker-hook] heuristic pre-filter candidates:', candidates.length)
 
       // Step 2: Build (transcript, track_description) pairs for the reranker
@@ -197,7 +218,12 @@ export function useQwen() {
         text_pair: describeTrack(file, metadata[file], tagsMap[file]),
       }))
 
-      console.log('[reranker-hook] reranking', pairs.length, 'candidates, sample pair:', pairs[0]?.text_pair?.slice(0, 80))
+      console.log(
+        '[reranker-hook] reranking',
+        pairs.length,
+        'candidates, sample pair:',
+        pairs[0]?.text_pair?.slice(0, 80),
+      )
       const scores = await workerRerank(pairs)
 
       // Step 3: Sort by reranker score and take top N

@@ -81,9 +81,11 @@ contextBridge.exposeInMainWorld('doty', {
   getTagsMap: () => ipcRenderer.invoke('tags:get-map'),
 
   // Play History
-  recordPlay: (itemId: string, itemType: 'music' | 'sfx') => ipcRenderer.invoke('history:record-play', itemId, itemType),
+  recordPlay: (itemId: string, itemType: 'music' | 'sfx') =>
+    ipcRenderer.invoke('history:record-play', itemId, itemType),
   getPlayFrequencies: (itemType: 'music' | 'sfx') => ipcRenderer.invoke('history:get-frequencies', itemType),
-  getTopPlayed: (itemType: 'music' | 'sfx', limit?: number) => ipcRenderer.invoke('history:get-top-played', itemType, limit),
+  getTopPlayed: (itemType: 'music' | 'sfx', limit?: number) =>
+    ipcRenderer.invoke('history:get-top-played', itemType, limit),
 
   // SFX
   getSfxList: () => ipcRenderer.invoke('sfx:list'),

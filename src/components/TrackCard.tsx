@@ -232,7 +232,12 @@ export default function TrackCard({
             <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
               <ChevronUp />
             </button>
-            <button onClick={onMoveDown} disabled={!canMoveDown} className="p-1" style={{ opacity: canMoveDown ? 1 : 0.3 }}>
+            <button
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              className="p-1"
+              style={{ opacity: canMoveDown ? 1 : 0.3 }}
+            >
               <ChevronDown />
             </button>
           </div>
@@ -267,7 +272,13 @@ export default function TrackCard({
             onClick={onPlayNext}
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Play next"
-            style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15', border: '1px solid rgba(200,146,42,0.2)', lineHeight: '14px' }}
+            style={{
+              fontSize: '9px',
+              fontFamily: 'monospace',
+              color: '#6b4e15',
+              border: '1px solid rgba(200,146,42,0.2)',
+              lineHeight: '14px',
+            }}
           >
             NEXT
           </button>
@@ -277,7 +288,13 @@ export default function TrackCard({
             onClick={onAddToQueue}
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Add to queue"
-            style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15', border: '1px solid rgba(200,146,42,0.2)', lineHeight: '14px' }}
+            style={{
+              fontSize: '9px',
+              fontFamily: 'monospace',
+              color: '#6b4e15',
+              border: '1px solid rgba(200,146,42,0.2)',
+              lineHeight: '14px',
+            }}
           >
             QUEUE
           </button>

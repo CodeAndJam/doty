@@ -5,7 +5,17 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
-import { closeDb, getAllTags, getDb, getPlayFrequencies, getTags, getTagsMap, getTopPlayed, recordPlay, setTags } from './database'
+import {
+  closeDb,
+  getAllTags,
+  getDb,
+  getPlayFrequencies,
+  getTags,
+  getTagsMap,
+  getTopPlayed,
+  recordPlay,
+  setTags,
+} from './database'
 import {
   clearToken,
   destroyDiscord,
