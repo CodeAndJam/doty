@@ -3,8 +3,19 @@ import ReactDOM from 'react-dom'
 import { formatTime } from '../lib/formatTime'
 import type { SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS, type SfxCategory } from '../types'
-import { InfoIcon, LoopSmallIcon, PinIcon, PlayIcon, StopIcon, TagIcon, VolumeHighIcon, VolumeLowIcon, VolumeMutedIcon } from './Icons'
+import {
+  InfoIcon,
+  LoopSmallIcon,
+  PinIcon,
+  PlayIcon,
+  StopIcon,
+  TagIcon,
+  VolumeHighIcon,
+  VolumeLowIcon,
+  VolumeMutedIcon,
+} from './Icons'
 import TagInput from './TagInput'
+import VolumePopover from './VolumePopover'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,13 +40,24 @@ function SfxMetadataTooltip({
   tags: string[]
   anchorRef: React.RefObject<HTMLDivElement | null>
 }) {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; bottom: number } | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [flipBelow, setFlipBelow] = useState(false)
 
   useEffect(() => {
     if (!anchorRef.current) return
     const rect = anchorRef.current.getBoundingClientRect()
-    setPos({ top: rect.top, left: rect.left, width: Math.max(rect.width, 220) })
+    setPos({ top: rect.top, left: rect.left, width: Math.max(rect.width, 220), bottom: rect.bottom })
   }, [anchorRef])
+
+  // After first render, check if tooltip overflows above viewport and flip below if needed
+  useEffect(() => {
+    if (!tooltipRef.current || !pos) return
+    const tooltipHeight = tooltipRef.current.getBoundingClientRect().height
+    if (pos.top - tooltipHeight - 8 < 8) {
+      setFlipBelow(true)
+    }
+  }, [pos])
 
   if (!pos) return null
 
@@ -43,16 +65,19 @@ function SfxMetadataTooltip({
 
   return ReactDOM.createPortal(
     <div
+      ref={tooltipRef}
       className="fixed px-3 py-2"
       style={{
-        zIndex: 9999,
-        top: Math.max(8, pos.top - 8),
+        zIndex: 99999,
+        top: flipBelow ? pos.bottom + 8 : Math.max(8, pos.top - 8),
         left: pos.left,
         width: pos.width,
-        transform: 'translateY(-100%)',
+        transform: flipBelow ? undefined : 'translateY(-100%)',
         background: '#0f0d09',
         border: '1px solid rgba(74,138,106,0.3)',
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
+        boxShadow: flipBelow
+          ? '0 4px 20px rgba(0,0,0,0.8), 0 -4px 20px rgba(0,0,0,0.6)'
+          : '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
       }}
     >
       <div className="grid grid-cols-1 gap-y-0">
@@ -111,7 +136,6 @@ export default function SfxCard({
 }: SfxCardProps) {
   const [expanded, setExpanded] = useState(false)
   const [editingTags, setEditingTags] = useState(false)
-  const [showVolume, setShowVolume] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
 
   const VolumeIcon = channelVolume === 0 ? VolumeMutedIcon : channelVolume < 0.5 ? VolumeLowIcon : VolumeHighIcon
@@ -129,6 +153,7 @@ export default function SfxCard({
           ? '0 0 12px rgba(74,138,106,0.15), inset 0 1px 0 rgba(74,138,106,0.06)'
           : 'inset 0 1px 0 rgba(255,255,255,0.02)',
         padding: '8px 10px',
+        overflow: editingTags ? 'visible' : 'hidden',
       }}
     >
       <div className="flex items-center gap-2">
@@ -147,21 +172,34 @@ export default function SfxCard({
           {isPlaying ? <StopIcon /> : <PlayIcon />}
         </button>
 
-        {/* Label */}
+        {/* Label — full width */}
         <span
-          className="flex-1 min-w-0 truncate"
+          className="flex-1 min-w-0"
           style={{
             fontFamily: "'Crimson Text', serif",
             fontSize: '14px',
             color: isPlaying ? '#a8d5b8' : '#8a7050',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
+          title={sfx.label}
         >
           {sfx.label}
         </span>
+      </div>
 
-        {/* Tag pills (read-only display) */}
+      {/* Hover overlay toolbar */}
+      <div
+        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{
+          background: 'linear-gradient(to right, transparent, #0a0907 20px)',
+          paddingLeft: '24px',
+        }}
+      >
+        {/* Tag pills */}
         {tags.length > 0 && !editingTags && (
-          <div className="flex items-center gap-0.5 shrink-0 max-w-[30%] overflow-hidden">
+          <div className="flex items-center gap-0.5 shrink-0 overflow-hidden">
             {tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
@@ -185,78 +223,32 @@ export default function SfxCard({
           </div>
         )}
 
-        {/* Loop toggle — visible when playing or on hover */}
         <button
           onClick={() => (isPlaying ? onToggleLoop() : onPlay(true))}
-          className={`w-6 h-6 flex items-center justify-center shrink-0 transition-opacity ${
-            isPlaying ? 'opacity-100' : 'opacity-0 group-hover:opacity-60'
-          }`}
+          className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
           title={isLooping ? 'Stop looping' : 'Loop'}
           style={{ color: isLooping ? '#4a8a6a' : '#3a2e1a' }}
         >
           <LoopSmallIcon />
         </button>
 
-        {/* Per-SFX volume — always visible, vertical slider on hover */}
-        <div
-          className="relative flex items-center shrink-0"
-          onMouseEnter={() => setShowVolume(true)}
-          onMouseLeave={() => setShowVolume(false)}
-        >
-          <button
-            type="button"
-            className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
-            title="Volume"
-          >
-            <VolumeIcon />
-          </button>
-          {showVolume && (
-            <div className="absolute bottom-full left-1/2 -translate-x-1/2 pb-1" style={{ width: '40px', zIndex: 50 }}>
-              <div
-                className="px-2 py-3 flex flex-col items-center"
-                style={{
-                  background: 'rgba(15,13,9,0.95)',
-                  border: '1px solid rgba(74,138,106,0.3)',
-                  borderRadius: '4px',
-                  width: '32px',
-                  height: '100px',
-                  margin: '0 auto',
-                }}
-              >
-                <input
-                  type="range"
-                  min={0}
-                  max={100}
-                  value={Math.round(channelVolume * 100)}
-                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
-                  className="volume-slider"
-                  style={{
-                    writingMode: 'vertical-lr',
-                    direction: 'rtl',
-                    width: '100%',
-                    height: '100%',
-                    appearance: 'none',
-                    background: 'transparent',
-                    cursor: 'pointer',
-                  }}
-                  aria-label={`${sfx.label} volume`}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+        <VolumePopover
+          volume={channelVolume}
+          onVolumeChange={onVolumeChange}
+          VolumeIcon={VolumeIcon}
+          accentColor="rgba(74,138,106,0.3)"
+          label={`${sfx.label} volume`}
+        />
 
-        {/* Tag edit toggle */}
         <button
           onClick={() => setEditingTags((e) => !e)}
-          className="w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity shrink-0"
+          className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shrink-0"
           title="Edit tags"
           style={{ color: editingTags ? '#4a8a6a' : '#3a2e1a' }}
         >
           <TagIcon />
         </button>
 
-        {/* Pin button */}
         <button
           onClick={onPin}
           className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shrink-0"
@@ -265,10 +257,9 @@ export default function SfxCard({
           <PinIcon filled={isPinned} />
         </button>
 
-        {/* Info tooltip toggle */}
         <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
           <button
-            className="w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+            className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Effect details"
             style={{ color: expanded ? '#4a8a6a' : '#3a2e1a' }}
           >
@@ -278,9 +269,9 @@ export default function SfxCard({
         </div>
       </div>
 
-      {/* Category badge */}
+      {/* Category badge — only visible when not hovered */}
       <span
-        className="absolute top-1 right-1.5"
+        className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
         style={{
           fontFamily: 'monospace',
           fontSize: '9px',

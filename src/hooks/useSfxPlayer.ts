@@ -64,6 +64,8 @@ let channelCounter = 0
 export function useSfxPlayer(): UseSfxPlayerReturn {
   const [channels, setChannels] = useState<SfxChannel[]>([])
   const [masterVolume, setMasterVolumeState] = useState(loadMasterVolume)
+  /** Reactive per-SFX volume overrides — drives re-renders when volume changes */
+  const [sfxVolumes, setSfxVolumes] = useState<Record<string, number>>({})
   const channelsRef = useRef(channels)
   channelsRef.current = channels
   const masterRef = useRef(masterVolume)
@@ -160,24 +162,22 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   }, [])
 
   const getSfxVolume = useCallback(
-    (sfxId: string): number => loadSfxVolume(sfxId) ?? masterRef.current,
-    [],
+    (sfxId: string): number => sfxVolumes[sfxId] ?? loadSfxVolume(sfxId) ?? masterRef.current,
+    [sfxVolumes],
   )
 
-  const setSfxVolume = useCallback(
-    (sfxId: string, volume: number) => {
-      const clamped = Math.max(0, Math.min(1, volume))
-      localStorage.setItem(SFX_VOL_PREFIX + sfxId, String(clamped))
-      // If this SFX is currently playing, update the active channel too
-      const ch = channelsRef.current.find((c) => c.sfxId === sfxId)
-      if (ch) {
-        ch.audio.volume = clamped
-        ch.volume = clamped
-        setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, volume: clamped } : c)))
-      }
-    },
-    [],
-  )
+  const setSfxVolume = useCallback((sfxId: string, volume: number) => {
+    const clamped = Math.max(0, Math.min(1, volume))
+    localStorage.setItem(SFX_VOL_PREFIX + sfxId, String(clamped))
+    setSfxVolumes((prev) => ({ ...prev, [sfxId]: clamped }))
+    // If this SFX is currently playing, update the active channel too
+    const ch = channelsRef.current.find((c) => c.sfxId === sfxId)
+    if (ch) {
+      ch.audio.volume = clamped * masterRef.current
+      ch.volume = clamped
+      setChannels((prev) => prev.map((c) => (c.id === ch.id ? { ...c, volume: clamped } : c)))
+    }
+  }, [])
 
   // Strip audio refs from public API
   const publicChannels = channels.map(({ audio: _, ...rest }) => rest)
