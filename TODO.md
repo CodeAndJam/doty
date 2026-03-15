@@ -2,7 +2,6 @@
 
 ## Pending
 
-- [ ] Add a LICENSE file (MIT or Apache-2.0)
 - [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
 - [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
 - [ ] Discord: add `asarUnpack` config for native modules (packaging)

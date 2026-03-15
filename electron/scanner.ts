@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
-import chokidar from 'chokidar'
+import { watch as chokidarWatch, type FSWatcher } from 'chokidar'
 import { analyzeFile } from './analyzer'
 import type { FullTrackMetadata } from './metadata-cache'
 import { clearCache, getCache, getCached, removeCached, setCached } from './metadata-cache'
@@ -11,7 +11,7 @@ const CONCURRENCY = 2
 type ProgressCallback = (done: number, total: number, current: string) => void
 type CompleteCallback = () => void
 
-let watcher: chokidar.FSWatcher | null = null
+let watcher: FSWatcher | null = null
 let queue: string[] = [] // absolute paths
 let active = 0
 let done = 0
@@ -110,29 +110,25 @@ export function startScanner(
     completeCb()
   }
 
-  // Watch for changes — use useFsEvents:false because chokidar v3's fsevents
-  // binding crashes with "Cannot read properties of undefined (reading 'SinceNow')"
-  // in Electron's sandboxed Node.js environment.
+  // Watch for changes — chokidar v4 uses native fs.watch (no fsevents dependency)
   try {
-    watcher = chokidar.watch(folder, {
+    watcher = chokidarWatch(folder, {
       ignoreInitial: true,
       persistent: true,
-      depth: 99,
-      useFsEvents: false, // force polling/kqueue instead of broken fsevents
     })
 
-    watcher.on('add', (absPath) => {
+    watcher.on('add', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) {
         total++
         enqueue(absPath)
       }
     })
 
-    watcher.on('change', (absPath) => {
+    watcher.on('change', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) enqueue(absPath)
     })
 
-    watcher.on('unlink', (absPath) => {
+    watcher.on('unlink', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) removeCached(relPath(absPath))
     })
   } catch (e) {
