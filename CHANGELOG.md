@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/CodeAndJam/doty/compare/v1.5.0...v1.6.0) (2026-03-14)
+
+
+### Features
+
+* **discord:** SFX streaming, auto-connect, and Biome code quality ([#35](https://github.com/CodeAndJam/doty/issues/35)) ([b39165d](https://github.com/CodeAndJam/doty/commit/b39165dc7b07def8e78df6d2d89432855a07c367))
+
 ## [1.5.0](https://github.com/CodeAndJam/doty/compare/v1.4.0...v1.5.0) (2026-03-13)
 
 
