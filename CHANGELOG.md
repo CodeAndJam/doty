@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/CodeAndJam/doty/compare/v1.6.0...v1.6.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* **soundboard:** fix DM input debounce, SFX recommendations, volume controls, and play history ([#39](https://github.com/CodeAndJam/doty/issues/39)) ([4cae7a9](https://github.com/CodeAndJam/doty/commit/4cae7a9235439b1e162204391715f8f2db806481))
+
 ## [1.6.0](https://github.com/CodeAndJam/doty/compare/v1.5.0...v1.6.0) (2026-03-14)
 
 
