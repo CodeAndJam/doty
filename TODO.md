@@ -5,7 +5,13 @@
 - [ ] `pnpm audit` vulns (20 total, none exploitable at runtime):
   - 12× high: `tar` via `@discordjs/opus > @discordjs/node-pre-gyp` — install-time only, waiting on `@discordjs/node-pre-gyp` to bump `tar`
   - 8× moderate: `undici` via `discord.js` and `jsdom` — waiting on upstream bumps
-- [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
+- [ ] #12 Autopilot mode — beta quality improvements:
+  - [ ] Add Portuguese keywords to mood profiles (music + SFX heuristics)
+  - [ ] Fix tokenizer to preserve accented characters (ã, ç, é, etc.)
+  - [ ] Recreate `DecisionLog.tsx` component (lost during branch switch)
+  - [ ] Add recent-track avoidance to autopilot (skip tracks played in last N minutes)
+  - [ ] Add heuristic confidence estimation so autopilot works before reranker loads
+  - [ ] Evaluate multilingual reranker (`mmarco-mMiniLMv2-L6-v2`) to replace English-only ms-marco
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
 ## Music Player — Implementation Order

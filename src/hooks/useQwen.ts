@@ -193,9 +193,9 @@ export function useQwen() {
     if (_currentStatus !== 'ready') {
       console.log('[reranker-hook] model not ready (status:', _currentStatus, ') — using heuristic ranker')
       setLastRanker('heuristic')
-      const results = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
-      console.log('[reranker-hook] heuristic results:', results)
-      return results
+      const result = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+      console.log('[reranker-hook] heuristic results:', result.files, 'confidence:', result.confidence)
+      return result.files
     }
 
     try {
@@ -204,22 +204,15 @@ export function useQwen() {
       if (!recentTranscript) {
         console.log('[reranker-hook] empty transcript after trim, falling back to heuristic')
         setLastRanker('heuristic')
-        return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+        return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies).files
       }
 
       // Step 1: Pre-filter with heuristic to get top N candidates
-      const candidates = heuristicRecommend(
-        recentTranscript,
-        files,
-        metadata,
-        RERANK_CANDIDATES,
-        tagsMap,
-        playFrequencies,
-      )
-      console.log('[reranker-hook] heuristic pre-filter candidates:', candidates.length)
+      const hResult = heuristicRecommend(recentTranscript, files, metadata, RERANK_CANDIDATES, tagsMap, playFrequencies)
+      console.log('[reranker-hook] heuristic pre-filter candidates:', hResult.files.length)
 
       // Step 2: Build (transcript, track_description) pairs for the reranker
-      const pairs = candidates.map((file) => ({
+      const pairs = hResult.files.map((file) => ({
         text: recentTranscript,
         text_pair: describeTrack(file, metadata[file], tagsMap[file]),
       }))
@@ -233,7 +226,7 @@ export function useQwen() {
       const scores = await workerRerank(pairs)
 
       // Step 3: Sort by reranker score and take top N
-      const scored = candidates.map((file, i) => ({ file, score: scores[i] }))
+      const scored = hResult.files.map((file, i) => ({ file, score: scores[i] }))
       scored.sort((a, b) => b.score - a.score)
 
       const results = scored.slice(0, count).map((s) => s.file)
@@ -243,7 +236,7 @@ export function useQwen() {
     } catch (e) {
       console.error('[reranker-hook] recommend error:', e)
       setLastRanker('heuristic')
-      return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+      return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies).files
     }
   }, [])
 

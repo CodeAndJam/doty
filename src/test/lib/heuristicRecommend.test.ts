@@ -178,50 +178,50 @@ const META: Record<string, TrackMeta> = {
 
 describe('heuristicRecommend', () => {
   it('returns 5 results', () => {
-    const results = heuristicRecommend('campfire rest', FILES, META)
-    expect(results).toHaveLength(5)
+    const { files } = heuristicRecommend('campfire rest', FILES, META)
+    expect(files).toHaveLength(5)
   })
 
   it('ranks campfire/tavern tracks first for calm transcript', () => {
-    const results = heuristicRecommend('sitting by the campfire resting at the tavern', FILES, META)
-    expect(results[0]).toMatch(/Campfire|Tavern|Bonfire/i)
+    const { files } = heuristicRecommend('sitting by the campfire resting at the tavern', FILES, META)
+    expect(files[0]).toMatch(/Campfire|Tavern|Bonfire/i)
   })
 
   it('ranks battle tracks first for combat transcript', () => {
-    const results = heuristicRecommend('the party enters combat battle against the enemy', FILES, META)
-    expect(results[0]).toMatch(/Battle|Rivals/i)
+    const { files } = heuristicRecommend('the party enters combat battle against the enemy', FILES, META)
+    expect(files[0]).toMatch(/Battle|Rivals/i)
   })
 
   it('ranks horror tracks first for spooky transcript', () => {
-    const results = heuristicRecommend('the haunted house is dark and spooky', FILES, META)
-    expect(results[0]).toMatch(/Horror|Spooky|Haunted/i)
+    const { files } = heuristicRecommend('the haunted house is dark and spooky', FILES, META)
+    expect(files[0]).toMatch(/Horror|Spooky|Haunted/i)
   })
 
   it('returns all files if fewer than 5', () => {
-    const results = heuristicRecommend('campfire', FILES.slice(0, 3), META)
-    expect(results).toHaveLength(3)
+    const { files } = heuristicRecommend('campfire', FILES.slice(0, 3), META)
+    expect(files).toHaveLength(3)
   })
 
   it('works without metadata (filename-only scoring)', () => {
-    const results = heuristicRecommend('ocean voyage sailing', FILES, {})
-    expect(results).toHaveLength(5)
-    expect(results[0]).toMatch(/Ocean|Voyage/i)
+    const { files } = heuristicRecommend('ocean voyage sailing', FILES, {})
+    expect(files).toHaveLength(5)
+    expect(files[0]).toMatch(/Ocean|Voyage/i)
   })
 
   it('returns empty array for empty files', () => {
-    expect(heuristicRecommend('campfire', [], META)).toEqual([])
+    expect(heuristicRecommend('campfire', [], META).files).toEqual([])
   })
 
   it('boosts tracks with matching tags over filename-only matches', () => {
     const tagsMap: Record<string, string[]> = {
       'Journey - Unsafe Roads.mp3': ['combat', 'intense'],
     }
-    const results = heuristicRecommend('combat', FILES, META, 5, tagsMap)
+    const { files } = heuristicRecommend('combat', FILES, META, 5, tagsMap)
     // Journey has a 'combat' tag — should rank higher than it would without tags
-    expect(results).toContain('Journey - Unsafe Roads.mp3')
+    expect(files).toContain('Journey - Unsafe Roads.mp3')
     // Decisive Battle has 'battle' in filename but no 'combat' tag
-    const journeyIdx = results.indexOf('Journey - Unsafe Roads.mp3')
-    const battleIdx = results.indexOf('Decisive Battle - Rivals.mp3')
+    const journeyIdx = files.indexOf('Journey - Unsafe Roads.mp3')
+    const battleIdx = files.indexOf('Decisive Battle - Rivals.mp3')
     expect(journeyIdx).toBeLessThan(battleIdx)
   })
 
@@ -231,17 +231,43 @@ describe('heuristicRecommend', () => {
       'Fantasy Tavern.mp3': ['boss', 'combat'],
     }
     // 'boss' in transcript should boost Fantasy Tavern (tagged 'boss') above Campfire
-    const results = heuristicRecommend('boss fight', FILES, META, 5, tagsMap)
-    expect(results[0]).toBe('Fantasy Tavern.mp3')
+    const { files } = heuristicRecommend('boss fight', FILES, META, 5, tagsMap)
+    expect(files[0]).toBe('Fantasy Tavern.mp3')
   })
 
   it('works with tagsMap but no metadata', () => {
     const tagsMap: Record<string, string[]> = {
       'Campfire.mp3': ['ocean', 'voyage'],
     }
-    const results = heuristicRecommend('ocean voyage', FILES, {}, 5, tagsMap)
+    const { files } = heuristicRecommend('ocean voyage', FILES, {}, 5, tagsMap)
     // Both Campfire (tagged) and Ocean Voyage (filename) should rank high
-    expect(results.slice(0, 2)).toContain('Campfire.mp3')
-    expect(results.slice(0, 2)).toContain('Ocean Voyage - Setting Sail Fantasy.mp3')
+    expect(files.slice(0, 2)).toContain('Campfire.mp3')
+    expect(files.slice(0, 2)).toContain('Ocean Voyage - Setting Sail Fantasy.mp3')
+  })
+
+  it('returns confidence > 0 when mood keywords match', () => {
+    const { confidence } = heuristicRecommend('the party enters combat battle against the enemy', FILES, META)
+    expect(confidence).toBeGreaterThan(0)
+  })
+
+  it('returns confidence 0 for empty transcript', () => {
+    const { confidence } = heuristicRecommend('', FILES, META)
+    expect(confidence).toBe(0)
+  })
+
+  it('matches Portuguese keywords for battle mood', () => {
+    const { files } = heuristicRecommend('o grupo entra em combate batalha contra o inimigo', FILES, META)
+    expect(files[0]).toMatch(/Battle|Rivals/i)
+  })
+
+  it('matches Portuguese keywords for calm mood', () => {
+    const { files } = heuristicRecommend('descansando na taverna perto da fogueira', FILES, META)
+    expect(files[0]).toMatch(/Campfire|Tavern|Bonfire/i)
+  })
+
+  it('preserves accented characters in tokenizer', () => {
+    const { files } = heuristicRecommend('celebração vitória épico', FILES, META)
+    // Should match victory mood profile
+    expect(files).toHaveLength(5)
   })
 })
