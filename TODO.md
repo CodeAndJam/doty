@@ -29,6 +29,9 @@
 
 ## Done
 
+- [x] Play history tracking + history-boosted recommendations (SQLite play_history table, default recs on empty prompt)
+- [x] Tooltip z-index fix: flip-below positioning when near column headers (TrackCard + SfxCard)
+- [x] Unified DM Soundboard: two-column layout (Music + SFX side by side), DM prompt at top, Browse SFX overlay
 - [x] STT quality round 2: VAD tuning, flush on silence, GTCRN denoiser, CT-Transformer punctuation
 - [x] Improve STT quality: Silero VAD, modelType, blankPenalty, hotwords support
 - [x] Replace `electron-rebuild` with `@electron/rebuild@4.0.3`

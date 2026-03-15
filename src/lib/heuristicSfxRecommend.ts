@@ -217,14 +217,22 @@ export function heuristicSfxRecommend(
   sfxList: SfxMeta[],
   count = 5,
   tagsMap: Record<string, string[]> = {},
+  playFrequencies: Record<string, number> = {},
 ): string[] {
   if (sfxList.length === 0) return []
 
   const tokens = tokenize(transcript)
-  if (tokens.length === 0) return []
+
+  // If no tokens (empty prompt/transcript), return most-played SFX or a random sample
+  if (tokens.length === 0) {
+    return defaultSfxRecommendations(sfxList, playFrequencies, count)
+  }
 
   const moods = detectMoods(tokens)
   const matchedCategories = new Set(moods.flatMap((m) => m.categories))
+
+  // Compute max play count for normalization
+  const maxPlays = Math.max(1, ...Object.values(playFrequencies))
 
   const scored = sfxList.map((sfx) => {
     // Label match (weighted 2x)
@@ -236,19 +244,81 @@ export function heuristicSfxRecommend(
     // Category match (weighted 2x) — binary: is this SFX's category in the detected moods?
     const catScore = matchedCategories.has(sfx.category) ? 2 : 0
 
+    // Filename/label category inference (weighted 1.5x) — check if the SFX label
+    // contains any keyword from the matched mood profiles, even if the directory
+    // structure doesn't match the expected category names
+    const labelTokens = tokenize(sfx.label)
+    const allMoodKeywords = moods.flatMap((m) => m.keywords)
+    const labelMoodMatch =
+      labelTokens.some((t) => allMoodKeywords.includes(t)) ||
+      allMoodKeywords.some((k) => labelTokens.some((t) => t.includes(k) || k.includes(t)))
+    const labelMoodScore = labelMoodMatch ? 1.5 : 0
+
     // Tag score (weighted 3x — user intent is explicit)
     const sfxTags = tagsMap[sfx.filename] || []
     const tagMatches = sfxTags.filter((tag) => tokens.some((t) => tag.includes(t) || t.includes(tag))).length
     const tagScore = Math.min(1, tagMatches / Math.max(1, sfxTags.length)) * 3
 
-    return { id: sfx.id, score: labelScore + descScore + catScore + tagScore }
+    // History boost: frequently played SFX get a small bonus (weighted 0.5x)
+    const plays = playFrequencies[sfx.id] || 0
+    const historyScore = (plays / maxPlays) * 0.5
+
+    return { id: sfx.id, score: labelScore + descScore + catScore + labelMoodScore + tagScore + historyScore }
   })
 
   scored.sort((a, b) => b.score - a.score)
 
-  // Only return SFX that actually scored above 0
-  return scored
+  // Return SFX that scored above 0; if none matched, fall back to defaults
+  const matched = scored
     .filter((s) => s.score > 0)
     .slice(0, count)
     .map((s) => s.id)
+
+  if (matched.length > 0) return matched
+
+  // Fallback: no keyword/category matches — return defaults so the column isn't empty
+  return defaultSfxRecommendations(sfxList, playFrequencies, count)
+}
+
+/**
+ * Default SFX recommendations when there's no transcript/prompt or no keyword matches.
+ * Returns most-played SFX items, or a diverse random sample if no history exists.
+ */
+function defaultSfxRecommendations(
+  sfxList: SfxMeta[],
+  playFrequencies: Record<string, number>,
+  count: number,
+): string[] {
+  const sfxIds = new Set(sfxList.map((s) => s.id))
+  const byFrequency = Object.entries(playFrequencies)
+    .filter(([id]) => sfxIds.has(id))
+    .sort(([, a], [, b]) => b - a)
+    .map(([id]) => id)
+
+  if (byFrequency.length > 0) {
+    return byFrequency.slice(0, count)
+  }
+
+  // No play history — return a category-diverse sample so the column isn't empty
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  // First pass: pick one from each category for diversity
+  for (const sfx of sfxList) {
+    if (!seen.has(sfx.category)) {
+      seen.add(sfx.category)
+      result.push(sfx.id)
+      if (result.length >= count) return result
+    }
+  }
+
+  // Second pass: fill remaining slots
+  for (const sfx of sfxList) {
+    if (!result.includes(sfx.id)) {
+      result.push(sfx.id)
+      if (result.length >= count) return result
+    }
+  }
+
+  return result
 }

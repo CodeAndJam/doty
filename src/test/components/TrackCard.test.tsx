@@ -6,7 +6,6 @@ const defaults = {
   filename: 'dark_forest/tavern_ambience.mp3',
   isPlaying: false,
   isPinned: false,
-  rank: 1,
   showReorder: false,
   canMoveUp: false,
   canMoveDown: false,
@@ -24,11 +23,6 @@ describe('TrackCard', () => {
   it('renders track name without path or extension', () => {
     renderCard()
     expect(screen.getByText('tavern_ambience')).toBeInTheDocument()
-  })
-
-  it('shows rank number', () => {
-    renderCard({ rank: 5 })
-    expect(screen.getByText('05')).toBeInTheDocument()
   })
 
   it('calls onPlay when play button is clicked', () => {
@@ -77,7 +71,7 @@ describe('TrackCard', () => {
     // The reorder buttons are the small chevron buttons
     const allButtons = screen.getAllByRole('button')
     // Find the two reorder buttons (they have p-1.5 class)
-    const reorderBtns = allButtons.filter((b) => b.classList.contains('p-1.5'))
+    const reorderBtns = allButtons.filter((b) => b.classList.contains('p-1'))
     expect(reorderBtns).toHaveLength(2)
     fireEvent.click(reorderBtns[0]) // up
     fireEvent.click(reorderBtns[1]) // down

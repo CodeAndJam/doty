@@ -160,30 +160,36 @@ export function useQwen() {
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<string[]> => {
+    console.log('[reranker-hook] recommend() called — transcript:', transcript.length, 'chars, files:', files.length, 'count:', count, 'status:', _currentStatus)
     if (files.length === 0) return []
 
-    // Fetch metadata and tags for all tracks
+    // Fetch metadata, tags, and play history for all tracks
     const metadata = (await window.doty.getAllMetadata()) as Record<string, TrackMeta>
     const tagsMap = (await window.doty.getTagsMap()) as Record<string, string[]>
+    const playFrequencies = await window.doty.getPlayFrequencies('music')
+    console.log('[reranker-hook] metadata keys:', Object.keys(metadata).length, 'tags keys:', Object.keys(tagsMap).length)
 
     // While model is loading or if it errors, use the heuristic ranker
     if (_currentStatus !== 'ready') {
       console.log('[reranker-hook] model not ready (status:', _currentStatus, ') — using heuristic ranker')
       setLastRanker('heuristic')
-      return heuristicRecommend(transcript, files, metadata, count, tagsMap)
+      const results = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+      console.log('[reranker-hook] heuristic results:', results)
+      return results
     }
 
     try {
       // Use the most recent portion of the input for relevance
       const recentTranscript = transcript.slice(-800).trim()
       if (!recentTranscript) {
+        console.log('[reranker-hook] empty transcript after trim, falling back to heuristic')
         setLastRanker('heuristic')
-        return heuristicRecommend(transcript, files, metadata, count, tagsMap)
+        return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
       }
 
       // Step 1: Pre-filter with heuristic to get top N candidates
-      // This avoids running the reranker on all 80+ tracks
-      const candidates = heuristicRecommend(recentTranscript, files, metadata, RERANK_CANDIDATES, tagsMap)
+      const candidates = heuristicRecommend(recentTranscript, files, metadata, RERANK_CANDIDATES, tagsMap, playFrequencies)
+      console.log('[reranker-hook] heuristic pre-filter candidates:', candidates.length)
 
       // Step 2: Build (transcript, track_description) pairs for the reranker
       const pairs = candidates.map((file) => ({
@@ -191,7 +197,7 @@ export function useQwen() {
         text_pair: describeTrack(file, metadata[file], tagsMap[file]),
       }))
 
-      console.log('[reranker-hook] reranking', pairs.length, 'candidates')
+      console.log('[reranker-hook] reranking', pairs.length, 'candidates, sample pair:', pairs[0]?.text_pair?.slice(0, 80))
       const scores = await workerRerank(pairs)
 
       // Step 3: Sort by reranker score and take top N
@@ -205,7 +211,7 @@ export function useQwen() {
     } catch (e) {
       console.error('[reranker-hook] recommend error:', e)
       setLastRanker('heuristic')
-      return heuristicRecommend(transcript, files, metadata, count, tagsMap)
+      return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
     }
   }, [])
 

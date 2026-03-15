@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useQueue } from '../hooks/useQueue'
-import type { TrackMeta } from '../types'
+import { useSfxPlayer } from '../hooks/useSfxPlayer'
+import type { SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
-import { BrowseIcon, MusicNoteIcon, PinIcon, SfxIcon } from './Icons'
+import { BrowseIcon, ChevronDown, ChevronUp, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import QueuePanel from './QueuePanel'
-import SfxPanel from './SfxPanel'
+import SfxBrowsePanel from './SfxBrowsePanel'
+import SfxCard from './SfxCard'
 import TrackCard from './TrackCard'
 
 const PINS_KEY = 'doty:pinnedTracks'
-const TAB_KEY = 'doty:soundboardTab'
-
-type SoundboardTab = 'music' | 'sfx'
+const SFX_PINS_KEY = 'doty:pinnedSfx'
 
 function loadPins(): string[] {
   try {
@@ -24,8 +24,15 @@ function loadPins(): string[] {
 function savePins(pins: string[]) {
   localStorage.setItem(PINS_KEY, JSON.stringify(pins))
 }
-function loadTab(): SoundboardTab {
-  return (localStorage.getItem(TAB_KEY) as SoundboardTab) || 'music'
+function loadSfxPins(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(SFX_PINS_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+function saveSfxPins(pins: string[]) {
+  localStorage.setItem(SFX_PINS_KEY, JSON.stringify(pins))
 }
 
 interface Props {
@@ -43,19 +50,27 @@ export default function Soundboard({
   speakerDeviceId,
   onNoFolder,
 }: Props) {
+  // ── Music state ──────────────────────────────────────────────────────
   const [pinned, setPinned] = useState<string[]>(loadPins)
   const [browsing, setBrowsing] = useState(false)
   const [showQueue, setShowQueue] = useState(false)
+  const [showMusic, setShowMusic] = useState(true)
   const [metaMap, setMetaMap] = useState<Record<string, TrackMeta>>({})
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
-  const [allFiles, setAllFiles] = useState<string[]>([])
-  const [activeTab, setActiveTab] = useState<SoundboardTab>(loadTab)
   const queue = useQueue()
 
-  // Ref-based onTrackEnd so the callback always sees current state
-  const trackEndRef = useRef<() => void>(() => {})
+  // ── SFX state ────────────────────────────────────────────────────────
+  const [allSfx, setAllSfx] = useState<SfxMeta[]>([])
+  const [sfxPinned, setSfxPinned] = useState<string[]>(loadSfxPins)
+  const [sfxTagsMap, setSfxTagsMap] = useState<Record<string, string[]>>({})
+  const [sfxAllTags, setSfxAllTags] = useState<string[]>([])
+  const [browsingSfx, setBrowsingSfx] = useState(false)
+  const [showSfx, setShowSfx] = useState(true)
+  const sfxPlayer = useSfxPlayer()
 
+  // ── Audio player ─────────────────────────────────────────────────────
+  const trackEndRef = useRef<() => void>(() => {})
   const handleTrackEnd = useCallback(() => {
     trackEndRef.current()
   }, [])
@@ -88,7 +103,6 @@ export default function Soundboard({
       }
       const isLast = queue.currentIndex >= queue.tracks.length - 1
       if (loopMode === 'single') {
-        // audio.loop = true handles this, but just in case:
         if (queue.currentTrack) playTrack(queue.currentTrack, true)
       } else if (loopMode === 'queue' || !isLast) {
         const track = queue.next(loopMode === 'queue')
@@ -100,14 +114,14 @@ export default function Soundboard({
     }
   }, [queue, loopMode, playTrack, stopPlayback])
 
-  // Watch queue.currentTrack — when it changes (from next/prev/jump/enqueue), play it
+  // Watch queue.currentTrack
   const lastQueueTrackRef = useRef<string | null>(null)
   const lastQueueIndexRef = useRef<number>(-1)
   useEffect(() => {
     const cur = queue.currentTrack
     const idx = queue.currentIndex
     if (cur && (cur !== lastQueueTrackRef.current || idx !== lastQueueIndexRef.current)) {
-      playTrack(cur, true) // forceRestart: skip toggle, always start fresh
+      playTrack(cur, true)
       lastQueueTrackRef.current = cur
       lastQueueIndexRef.current = idx
     } else if (!cur) {
@@ -116,13 +130,11 @@ export default function Soundboard({
     }
   }, [queue.currentTrack, queue.currentIndex, playTrack]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fetch metadata and file list on mount (and when music folder changes)
+  // ── Data loading ─────────────────────────────────────────────────────
+
+  // Fetch music metadata
   useEffect(() => {
     if (!musicFolder) return
-    window.doty
-      .listMusic()
-      .then(setAllFiles)
-      .catch(() => {})
     window.doty
       .getAllMetadata()
       .then(setMetaMap)
@@ -141,10 +153,6 @@ export default function Soundboard({
   useEffect(() => {
     const unsub = window.doty.onScanComplete(() => {
       window.doty
-        .listMusic()
-        .then(setAllFiles)
-        .catch(() => {})
-      window.doty
         .getAllMetadata()
         .then(setMetaMap)
         .catch(() => {})
@@ -152,23 +160,52 @@ export default function Soundboard({
     return unsub
   }, [])
 
-  // Persist tab selection
+  // Load SFX list on mount
   useEffect(() => {
-    localStorage.setItem(TAB_KEY, activeTab)
-  }, [activeTab])
+    window.doty
+      .getSfxList()
+      .then(setAllSfx)
+      .catch(() => setAllSfx([]))
+  }, [])
+
+  // Load SFX tags on mount
+  useEffect(() => {
+    window.doty
+      .getTagsMap()
+      .then(setSfxTagsMap)
+      .catch(() => {})
+    window.doty
+      .getAllTags()
+      .then(setSfxAllTags)
+      .catch(() => {})
+  }, [])
 
   // Persist pins
   useEffect(() => {
     savePins(pinned)
   }, [pinned])
+  useEffect(() => {
+    saveSfxPins(sfxPinned)
+  }, [sfxPinned])
 
-  // Keyboard shortcuts: N = next, P = prev
+  // ── Keyboard shortcuts: N = next, P = prev ───────────────────────────
+  function handleSkipNext() {
+    if (queue.tracks.length === 0) return
+    const track = queue.next(loopMode === 'queue')
+    if (track) playTrack(track, true)
+  }
+
+  function handleSkipPrev() {
+    if (queue.tracks.length === 0) return
+    const track = queue.prev(loopMode === 'queue')
+    if (track) playTrack(track, true)
+  }
+
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return
       if (queue.tracks.length === 0) return
-
       if (e.key === 'n' || e.key === 'N') {
         e.preventDefault()
         handleSkipNext()
@@ -180,6 +217,13 @@ export default function Soundboard({
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [queue.tracks.length, handleSkipNext, handleSkipPrev]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Music handlers ───────────────────────────────────────────────────
+
+  function handlePlayTrack(filename: string, forceRestart?: boolean) {
+    playTrack(filename, forceRestart)
+    window.doty.recordPlay(filename, 'music').catch(() => {})
+  }
 
   function togglePin(filename: string) {
     setPinned((prev) => (prev.includes(filename) ? prev.filter((f) => f !== filename) : [...prev, filename]))
@@ -210,64 +254,103 @@ export default function Soundboard({
       .catch(() => {})
   }
 
-  function handleSkipNext() {
-    if (queue.tracks.length === 0) return
-    const track = queue.next(loopMode === 'queue')
-    if (track) playTrack(track, true)
-  }
-
-  function handleSkipPrev() {
-    if (queue.tracks.length === 0) return
-    const track = queue.prev(loopMode === 'queue')
-    if (track) playTrack(track, true)
-  }
-
   function handleQueuePlay(index: number) {
     queue.setCurrentIndex(index)
     const track = queue.tracks[index]
-    if (track) playTrack(track, true)
+    if (track) handlePlayTrack(track, true)
   }
 
-  // Recommendations minus pinned
-  const suggestions = recommendations.filter((f) => !pinned.includes(f))
+  // ── SFX handlers ─────────────────────────────────────────────────────
 
-  // All remaining tracks: not pinned, not in recommendations
-  const pinnedSet = new Set(pinned)
-  const sugSet = new Set(suggestions)
-  const rest = allFiles.filter((f) => !pinnedSet.has(f) && !sugSet.has(f))
+  function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
+    sfxPlayer.play(sfxId, label, filename, loop)
+    window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
+  }
+
+  function toggleSfxPin(sfxId: string) {
+    setSfxPinned((prev) => (prev.includes(sfxId) ? prev.filter((f) => f !== sfxId) : [...prev, sfxId]))
+  }
+
+  function handleSfxTagsChange(filename: string, tags: string[]) {
+    window.doty
+      .setTags(filename, tags)
+      .then(() => {
+        setSfxTagsMap((prev) => ({ ...prev, [filename]: tags }))
+        window.doty
+          .getAllTags()
+          .then(setSfxAllTags)
+          .catch(() => {})
+      })
+      .catch(() => {})
+  }
+
+  // ── Derived data ─────────────────────────────────────────────────────
+
+  // Music: recommendations minus pinned
+  const suggestions = recommendations.filter((f) => !pinned.includes(f))
+  const hasTracks = pinned.length > 0 || suggestions.length > 0
+
+  // SFX: pinned SFX objects
+  const sfxPinnedSet = new Set(sfxPinned)
+  const pinnedSfxItems = useMemo(
+    () => sfxPinned.map((id) => allSfx.find((s) => s.id === id)).filter((s): s is SfxMeta => !!s),
+    [sfxPinned, allSfx],
+  )
+
+  // SFX: recommended minus pinned
+  const sfxSuggestions = useMemo(() => {
+    const recSet = new Set(sfxRecommendations)
+    return allSfx
+      .filter((s) => recSet.has(s.id) && !sfxPinnedSet.has(s.id))
+      .sort((a, b) => sfxRecommendations.indexOf(a.id) - sfxRecommendations.indexOf(b.id))
+  }, [allSfx, sfxRecommendations, sfxPinnedSet])
+
+  // SFX: active channel map
+  const activeChannelMap = useMemo(() => {
+    const map = new Map<string, (typeof sfxPlayer.channels)[0]>()
+    for (const ch of sfxPlayer.channels) map.set(ch.sfxId, ch)
+    return map
+  }, [sfxPlayer.channels])
+
+  const hasActiveSfx = sfxPlayer.channels.length > 0
+  const hasSfx = pinnedSfxItems.length > 0 || sfxSuggestions.length > 0
 
   const queuePosition: [number, number] | null =
     queue.tracks.length > 0 ? [queue.currentIndex, queue.tracks.length] : null
 
-  const hasTracks = pinned.length > 0 || suggestions.length > 0 || rest.length > 0
+  // ── SFX card renderer ────────────────────────────────────────────────
 
-  const emptyState = (msg: string, sub?: string) => (
-    <div
-      className="flex-1 flex flex-col items-center justify-center relative"
-      style={{
-        background: 'linear-gradient(160deg, #0f0d09, #080705)',
-        border: '1px solid #2e2416',
-      }}
-    >
-      <div
-        className="absolute top-0 left-0 w-3 h-3"
-        style={{ borderTop: '1px solid rgba(200,146,42,0.3)', borderLeft: '1px solid rgba(200,146,42,0.3)' }}
-      />
-      <div
-        className="absolute bottom-0 right-0 w-3 h-3"
-        style={{ borderBottom: '1px solid rgba(200,146,42,0.3)', borderRight: '1px solid rgba(200,146,42,0.3)' }}
-      />
-      <svg className="w-10 h-10 mb-4 opacity-10" viewBox="0 0 24 24" fill="#c8922a">
-        <path d="M12 15.5A3.5 3.5 0 018.5 12 3.5 3.5 0 0112 8.5a3.5 3.5 0 013.5 3.5 3.5 3.5 0 01-3.5 3.5m7.43-2.92c.04-.34.07-.68.07-1.08s-.03-.74-.07-1.08l2.32-1.82c.21-.16.27-.46.13-.7l-2.2-3.82c-.13-.24-.42-.32-.66-.24l-2.74 1.1c-.57-.44-1.18-.8-1.86-1.08L14.5 2.42c-.04-.26-.27-.42-.5-.42h-4c-.23 0-.46.16-.5.42L9.13 5.36C8.45 5.64 7.84 6 7.27 6.44L4.53 5.34c-.24-.08-.53 0-.66.24L1.67 9.4c-.14.24-.08.54.13.7l2.32 1.82c-.04.34-.07.69-.07 1.08s.03.74.07 1.08L1.8 15.9c-.21.16-.27.46-.13.7l2.2 3.82c.13.24.42.32.66.24l2.74-1.1c.57.44 1.18.8 1.86 1.08l.37 2.94c.04.26.27.42.5.42h4c.23 0 .46-.16.5-.42l.37-2.94c.68-.28 1.29-.64 1.86-1.08l2.74 1.1c.24.08.53 0 .66-.24l2.2-3.82c.14-.24.08-.54-.13-.7l-2.32-1.82z" />
-      </svg>
-      <p
-        style={{
-          fontFamily: "'Cinzel', serif",
-          fontSize: '14px',
-          color: '#6b4e15',
-          letterSpacing: '0.15em',
-          textAlign: 'center',
+  function renderSfxCard(sfx: SfxMeta) {
+    const ch = activeChannelMap.get(sfx.id)
+    return (
+      <SfxCard
+        key={sfx.id}
+        sfx={sfx}
+        channelId={ch?.id ?? null}
+        isPlaying={!!ch?.playing}
+        isLooping={ch?.looping ?? false}
+        isPinned={sfxPinnedSet.has(sfx.id)}
+        channelVolume={ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)}
+        tags={sfxTagsMap[sfx.filename] || []}
+        allTags={sfxAllTags}
+        onPlay={(loop) => handlePlaySfx(sfx.id, sfx.label, sfx.filename, loop)}
+        onStop={() => ch && sfxPlayer.stop(ch.id)}
+        onToggleLoop={() => ch && sfxPlayer.toggleLoop(ch.id)}
+        onVolumeChange={(v) => {
+          sfxPlayer.setSfxVolume(sfx.id, v)
         }}
+        onPin={() => toggleSfxPin(sfx.id)}
+        onTagsChange={(tags) => handleSfxTagsChange(sfx.filename, tags)}
+      />
+    )
+  }
+
+  // ── Empty state helper ───────────────────────────────────────────────
+
+  const emptyState = (msg: string, sub?: string, color = '#6b4e15') => (
+    <div className="flex-1 flex flex-col items-center justify-center relative" style={{ minHeight: '120px' }}>
+      <p
+        style={{ fontFamily: "'Cinzel', serif", fontSize: '13px', color, letterSpacing: '0.15em', textAlign: 'center' }}
       >
         {msg}
       </p>
@@ -275,8 +358,8 @@ export default function Soundboard({
         <button
           onClick={onNoFolder}
           style={{
-            marginTop: '10px',
-            fontSize: '14px',
+            marginTop: '8px',
+            fontSize: '13px',
             color: '#c8922a',
             fontFamily: "'Cinzel', serif",
             letterSpacing: '0.1em',
@@ -289,207 +372,336 @@ export default function Soundboard({
     </div>
   )
 
+  // ── Render ───────────────────────────────────────────────────────────
+
   return (
     <div className="h-full flex flex-col relative">
-      {/* Header with tab toggle */}
-      <div className="flex items-center justify-between mb-3 shrink-0">
-        {/* Tab toggle */}
-        <div className="flex items-center gap-1">
-          <button
-            onClick={() => setActiveTab('music')}
-            className="flex items-center gap-1.5 px-2.5 py-1 transition-all"
-            style={{
-              fontFamily: "'Cinzel', serif",
-              fontSize: '13px',
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              color: activeTab === 'music' ? '#c8922a' : '#3a2e1a',
-              border: `1px solid ${activeTab === 'music' ? 'rgba(200,146,42,0.4)' : 'transparent'}`,
-              background: activeTab === 'music' ? 'rgba(200,146,42,0.06)' : 'transparent',
-            }}
-          >
-            <MusicNoteIcon />
-            Music
-          </button>
-          <button
-            onClick={() => setActiveTab('sfx')}
-            className="flex items-center gap-1.5 px-2.5 py-1 transition-all"
-            style={{
-              fontFamily: "'Cinzel', serif",
-              fontSize: '13px',
-              letterSpacing: '0.2em',
-              textTransform: 'uppercase',
-              color: activeTab === 'sfx' ? '#4a8a6a' : '#3a2e1a',
-              border: `1px solid ${activeTab === 'sfx' ? 'rgba(74,138,106,0.4)' : 'transparent'}`,
-              background: activeTab === 'sfx' ? 'rgba(74,138,106,0.06)' : 'transparent',
-            }}
-          >
-            <SfxIcon />
-            SFX
-          </button>
+      {/* Two-column layout */}
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+        {/* ── Left column: Music ──────────────────────────────────────── */}
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'shrink-0'}`}>
+          {/* Music column header */}
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <button className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
+              <MusicNoteIcon />
+              <span
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '13px',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#c8922a',
+                }}
+              >
+                Music
+              </span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
+            </button>
+            {showMusic && (
+              <div className="flex items-center gap-2">
+                {hasTracks && (
+                  <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                    {pinned.length > 0 ? `${pinned.length} pinned` : ''}
+                    {pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}
+                    {suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
+                  </span>
+                )}
+                {musicFolder && (
+                  <button
+                    onClick={() => setBrowsing(true)}
+                    className="p-1 hover:opacity-80 transition-opacity"
+                    title="Browse all tracks"
+                    style={{ border: '1px solid #2e2416' }}
+                  >
+                    <BrowseIcon />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Music content — scrollable, hidden when collapsed */}
+          {showMusic &&
+            (!musicFolder ? (
+              emptyState('No archive selected', 'Open Configuration')
+            ) : !hasTracks ? (
+              emptyState('No tracks found')
+            ) : (
+              <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
+                {/* Pinned section */}
+                {pinned.length > 0 && (
+                  <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                    <PinIcon filled />
+                    <span
+                      style={{
+                        fontFamily: "'Cinzel', serif",
+                        fontSize: '11px',
+                        letterSpacing: '0.2em',
+                        color: '#6b4e15',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Pinned
+                    </span>
+                    <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
+                  </div>
+                )}
+                {pinned.map((f, i) => (
+                  <TrackCard
+                    key={`pin-${f}`}
+                    filename={f}
+                    isPlaying={playing === f}
+                    isPinned
+                    showReorder
+                    canMoveUp={i > 0}
+                    canMoveDown={i < pinned.length - 1}
+                    meta={metaMap[f]}
+                    tags={tagsMap[f] || []}
+                    allTags={allTags}
+                    onPlay={() => handlePlayTrack(f)}
+                    onPin={() => togglePin(f)}
+                    onMoveUp={() => movePin(f, -1)}
+                    onMoveDown={() => movePin(f, 1)}
+                    onTagsChange={(tags) => handleTagsChange(f, tags)}
+                    onPlayNext={() => queue.playNext(f)}
+                    onAddToQueue={() => queue.enqueue(f)}
+                  />
+                ))}
+
+                {/* Suggestions section */}
+                {suggestions.length > 0 && (
+                  <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                    <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
+                    <span
+                      style={{
+                        fontFamily: "'Cinzel', serif",
+                        fontSize: '11px',
+                        letterSpacing: '0.2em',
+                        color: '#3a2e1a',
+                        textTransform: 'uppercase',
+                      }}
+                    >
+                      Suggestions
+                    </span>
+                    <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                  </div>
+                )}
+                {suggestions.map((f) => (
+                  <TrackCard
+                    key={`sug-${f}`}
+                    filename={f}
+                    isPlaying={playing === f}
+                    isPinned={false}
+                    showReorder={false}
+                    canMoveUp={false}
+                    canMoveDown={false}
+                    meta={metaMap[f]}
+                    tags={tagsMap[f] || []}
+                    allTags={allTags}
+                    onPlay={() => handlePlayTrack(f)}
+                    onPin={() => togglePin(f)}
+                    onMoveUp={() => {}}
+                    onMoveDown={() => {}}
+                    onTagsChange={(tags) => handleTagsChange(f, tags)}
+                    onPlayNext={() => queue.playNext(f)}
+                    onAddToQueue={() => queue.enqueue(f)}
+                  />
+                ))}
+              </div>
+            ))}
         </div>
 
-        <div className="flex items-center gap-3">
-          {activeTab === 'music' && hasTracks && (
-            <span style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-              {allFiles.length} tracks{pinned.length > 0 ? ` / ${pinned.length} pinned` : ''}
-              {suggestions.length > 0 ? ` / ${suggestions.length} attuned` : ''}
-            </span>
-          )}
-          {activeTab === 'music' && musicFolder && (
-            <button
-              onClick={() => setBrowsing(true)}
-              className="p-1.5 hover:opacity-80 transition-opacity"
-              title="Browse all tracks"
-              style={{ border: '1px solid #2e2416' }}
-            >
-              <BrowseIcon />
+        {/* ── Right column: SFX ───────────────────────────────────────── */}
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'shrink-0'}`}>
+          {/* SFX column header */}
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <button className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
+              <SfxIcon />
+              <span
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '13px',
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  color: '#4a8a6a',
+                }}
+              >
+                SFX
+              </span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showSfx ? <ChevronDown /> : <ChevronUp />}</span>
             </button>
+            {showSfx && (
+              <div className="flex items-center gap-2">
+                {allSfx.length > 0 && (
+                  <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                    {sfxPinned.length > 0 ? `${sfxPinned.length} pinned` : ''}
+                    {sfxPinned.length > 0 && hasActiveSfx ? ' / ' : ''}
+                    {hasActiveSfx ? `${sfxPlayer.channels.length} active` : ''}
+                  </span>
+                )}
+                {hasActiveSfx && (
+                  <button
+                    onClick={sfxPlayer.stopAll}
+                    className="p-1 hover:opacity-80 transition-opacity"
+                    title="Stop all effects"
+                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#4a8a6a' }}
+                  >
+                    <StopIcon />
+                  </button>
+                )}
+                {allSfx.length > 0 && (
+                  <button
+                    onClick={() => setBrowsingSfx(true)}
+                    className="p-1 hover:opacity-80 transition-opacity"
+                    title="Browse all effects"
+                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#4a8a6a' }}
+                  >
+                    <BrowseIcon />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {showSfx && (
+            <>
+              {/* Active channels strip */}
+              {hasActiveSfx && (
+                <div className="mb-2 shrink-0">
+                  <div className="flex items-center gap-1 overflow-x-auto pb-1">
+                    {sfxPlayer.channels.map((ch) => (
+                      <div
+                        key={ch.id}
+                        className="flex items-center gap-1.5 px-2 py-1 shrink-0"
+                        style={{
+                          background: 'rgba(74,138,106,0.08)',
+                          border: '1px solid rgba(74,138,106,0.25)',
+                          fontSize: '11px',
+                          fontFamily: "'Crimson Text', serif",
+                          color: '#a8d5b8',
+                        }}
+                      >
+                        {ch.looping && <span style={{ fontSize: '8px', color: '#4a8a6a' }}>&#x21BB;</span>}
+                        <span className="truncate" style={{ maxWidth: '80px' }}>
+                          {ch.label}
+                        </span>
+                        <button
+                          onClick={() => sfxPlayer.stop(ch.id)}
+                          className="w-3 h-3 flex items-center justify-center hover:opacity-80"
+                          style={{ color: '#4a8a6a' }}
+                        >
+                          <svg
+                            className="w-2.5 h-2.5"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            viewBox="0 0 24 24"
+                          >
+                            <path d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Master volume */}
+              <div className="flex items-center gap-2 mb-2 shrink-0">
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    color: '#3a2e1a',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  SFX Vol
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={Math.round(sfxPlayer.masterVolume * 100)}
+                  onChange={(e) => sfxPlayer.setMasterVolume(Number(e.target.value) / 100)}
+                  className="flex-1"
+                  style={{ accentColor: '#4a8a6a', height: '2px' }}
+                  aria-label="SFX master volume"
+                />
+                <span
+                  style={{
+                    fontSize: '10px',
+                    fontFamily: 'monospace',
+                    color: '#3a2e1a',
+                    minWidth: '28px',
+                    textAlign: 'right',
+                  }}
+                >
+                  {Math.round(sfxPlayer.masterVolume * 100)}%
+                </span>
+              </div>
+
+              {/* SFX content — scrollable */}
+              {allSfx.length === 0 ? (
+                emptyState('No sound effects available', undefined, '#4a8a6a')
+              ) : !hasSfx ? (
+                emptyState('No pinned or suggested effects', undefined, '#4a8a6a')
+              ) : (
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  {/* Pinned SFX */}
+                  {pinnedSfxItems.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 shrink-0 mb-1" style={{ height: '20px' }}>
+                        <PinIcon filled />
+                        <span
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontSize: '11px',
+                            letterSpacing: '0.2em',
+                            color: '#4a8a6a',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Pinned
+                        </span>
+                        <div className="flex-1 h-px" style={{ background: 'rgba(74,138,106,0.15)' }} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 mb-2">{pinnedSfxItems.map(renderSfxCard)}</div>
+                    </>
+                  )}
+
+                  {/* Suggested SFX */}
+                  {sfxSuggestions.length > 0 && (
+                    <>
+                      <div className="flex items-center gap-2 shrink-0 mb-1" style={{ height: '20px' }}>
+                        <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
+                        <span
+                          style={{
+                            fontFamily: "'Cinzel', serif",
+                            fontSize: '11px',
+                            letterSpacing: '0.2em',
+                            color: '#3a2e1a',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Suggested
+                        </span>
+                        <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                      </div>
+                      <div className="grid grid-cols-2 gap-1">{sfxSuggestions.map(renderSfxCard)}</div>
+                    </>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Music tab content */}
-      {activeTab === 'music' &&
-        (!musicFolder ? (
-          emptyState('No archive selected', 'Open Configuration')
-        ) : !hasTracks ? (
-          emptyState('No tracks found in archive')
-        ) : (
-          <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
-            {/* Pinned section label */}
-            {pinned.length > 0 && (
-              <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                <PinIcon filled />
-                <span
-                  style={{
-                    fontFamily: "'Cinzel', serif",
-                    fontSize: '11px',
-                    letterSpacing: '0.2em',
-                    color: '#6b4e15',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Pinned
-                </span>
-                <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
-              </div>
-            )}
-            {pinned.map((f, i) => (
-              <TrackCard
-                key={`pin-${f}`}
-                filename={f}
-                isPlaying={playing === f}
-                isPinned
-                rank={i + 1}
-                showReorder
-                canMoveUp={i > 0}
-                canMoveDown={i < pinned.length - 1}
-                meta={metaMap[f]}
-                tags={tagsMap[f] || []}
-                allTags={allTags}
-                onPlay={() => playTrack(f)}
-                onPin={() => togglePin(f)}
-                onMoveUp={() => movePin(f, -1)}
-                onMoveDown={() => movePin(f, 1)}
-                onTagsChange={(tags) => handleTagsChange(f, tags)}
-                onPlayNext={() => queue.playNext(f)}
-                onAddToQueue={() => queue.enqueue(f)}
-              />
-            ))}
+      {/* ── Overlays ──────────────────────────────────────────────────── */}
 
-            {/* Suggestions section label */}
-            {suggestions.length > 0 && (
-              <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
-                <span
-                  style={{
-                    fontFamily: "'Cinzel', serif",
-                    fontSize: '11px',
-                    letterSpacing: '0.2em',
-                    color: '#3a2e1a',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Suggestions
-                </span>
-                <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
-              </div>
-            )}
-            {suggestions.map((f, i) => (
-              <TrackCard
-                key={`sug-${f}`}
-                filename={f}
-                isPlaying={playing === f}
-                isPinned={false}
-                rank={pinned.length + i + 1}
-                showReorder={false}
-                canMoveUp={false}
-                canMoveDown={false}
-                meta={metaMap[f]}
-                tags={tagsMap[f] || []}
-                allTags={allTags}
-                onPlay={() => playTrack(f)}
-                onPin={() => togglePin(f)}
-                onMoveUp={() => {}}
-                onMoveDown={() => {}}
-                onTagsChange={(tags) => handleTagsChange(f, tags)}
-                onPlayNext={() => queue.playNext(f)}
-                onAddToQueue={() => queue.enqueue(f)}
-              />
-            ))}
-
-            {/* All remaining tracks */}
-            {rest.length > 0 && (
-              <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x266B;</span>
-                <span
-                  style={{
-                    fontFamily: "'Cinzel', serif",
-                    fontSize: '11px',
-                    letterSpacing: '0.2em',
-                    color: '#3a2e1a',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  All Tracks
-                </span>
-                <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
-              </div>
-            )}
-            {rest.map((f, i) => (
-              <TrackCard
-                key={`all-${f}`}
-                filename={f}
-                isPlaying={playing === f}
-                isPinned={false}
-                rank={pinned.length + suggestions.length + i + 1}
-                showReorder={false}
-                canMoveUp={false}
-                canMoveDown={false}
-                meta={metaMap[f]}
-                tags={tagsMap[f] || []}
-                allTags={allTags}
-                onPlay={() => playTrack(f)}
-                onPin={() => togglePin(f)}
-                onMoveUp={() => {}}
-                onMoveDown={() => {}}
-                onTagsChange={(tags) => handleTagsChange(f, tags)}
-                onPlayNext={() => queue.playNext(f)}
-                onAddToQueue={() => queue.enqueue(f)}
-              />
-            ))}
-          </div>
-        ))}
-
-      {/* SFX tab content */}
-      {activeTab === 'sfx' && (
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <SfxPanel sfxRecommendations={sfxRecommendations} />
-        </div>
-      )}
-
-      {/* Browse all tracks panel */}
+      {/* Browse all music tracks */}
       {browsing && musicFolder && (
         <BrowsePanel
           pinned={pinned}
@@ -499,6 +711,16 @@ export default function Soundboard({
           onPlay={playTrack}
           onPin={togglePin}
           onClose={() => setBrowsing(false)}
+        />
+      )}
+
+      {/* Browse all SFX */}
+      {browsingSfx && (
+        <SfxBrowsePanel
+          sfxRecommendations={sfxRecommendations}
+          sfxPinned={sfxPinned}
+          onTogglePin={toggleSfxPin}
+          onClose={() => setBrowsingSfx(false)}
         />
       )}
 
