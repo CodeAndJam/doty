@@ -170,11 +170,21 @@ export function heuristicRecommend(
   metadata: Record<string, TrackMeta>,
   count = 5,
   tagsMap: Record<string, string[]> = {},
+  playFrequencies: Record<string, number> = {},
 ): string[] {
   if (files.length === 0) return []
 
   const tokens = tokenize(transcript)
+
+  // If no tokens (empty prompt/transcript), return most-played tracks or random selection
+  if (tokens.length === 0) {
+    return defaultRecommendations(files, playFrequencies, count)
+  }
+
   const mood = detectMood(tokens)
+
+  // Compute max play count for normalization
+  const maxPlays = Math.max(1, ...Object.values(playFrequencies))
 
   const scored = files.map((file) => {
     const meta = metadata[file]
@@ -197,9 +207,47 @@ export function heuristicRecommend(
       featureScore = rangeScore(meta.energy, 0.3, 0.6) * 0.5
     }
 
-    return { file, score: fnScore + tagScore + featureScore }
+    // History boost: frequently played tracks get a small bonus (weighted 0.5x)
+    const plays = playFrequencies[file] || 0
+    const historyScore = (plays / maxPlays) * 0.5
+
+    return { file, score: fnScore + tagScore + featureScore + historyScore }
   })
 
   scored.sort((a, b) => b.score - a.score)
   return scored.slice(0, count).map((s) => s.file)
+}
+
+/**
+ * Default recommendations when there's no transcript/prompt.
+ * Returns most-played tracks, padded with random picks if history is sparse.
+ */
+function defaultRecommendations(
+  files: string[],
+  playFrequencies: Record<string, number>,
+  count: number,
+): string[] {
+  // Sort by play count descending
+  const byFrequency = files
+    .filter((f) => (playFrequencies[f] || 0) > 0)
+    .sort((a, b) => (playFrequencies[b] || 0) - (playFrequencies[a] || 0))
+
+  const results = byFrequency.slice(0, count)
+
+  // If we don't have enough history, pad with random tracks
+  if (results.length < count) {
+    const remaining = files.filter((f) => !results.includes(f))
+    // Deterministic shuffle using simple seed from file count
+    const shuffled = remaining.sort(() => 0.5 - seededRandom(remaining.length))
+    results.push(...shuffled.slice(0, count - results.length))
+  }
+
+  return results.slice(0, count)
+}
+
+/** Simple seeded pseudo-random for deterministic shuffle within a session */
+let _seed = Date.now() % 10000
+function seededRandom(_hint: number): number {
+  _seed = (_seed * 9301 + 49297) % 233280
+  return _seed / 233280
 }

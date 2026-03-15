@@ -50,6 +50,17 @@ export function getDb(): Database.Database {
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_tags_tag ON track_tags(tag)`)
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS play_history (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      item_id    TEXT NOT NULL,
+      item_type  TEXT NOT NULL CHECK(item_type IN ('music', 'sfx')),
+      played_at  TEXT DEFAULT (datetime('now'))
+    )
+  `)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_item ON play_history(item_id, item_type)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at)`)
+
   return db
 }
 
@@ -94,6 +105,41 @@ export function getTagsMap(): Record<string, string[]> {
     map[row.filename].push(row.tag)
   }
   return map
+}
+
+// ── Play history queries ──────────────────────────────────────────────────────
+
+export function recordPlay(itemId: string, itemType: 'music' | 'sfx'): void {
+  const db = getDb()
+  db.prepare('INSERT INTO play_history (item_id, item_type) VALUES (?, ?)').run(itemId, itemType)
+}
+
+/**
+ * Get play frequency counts for a given item type.
+ * Returns a map of item_id -> play count, ordered by most played.
+ */
+export function getPlayFrequencies(itemType: 'music' | 'sfx'): Record<string, number> {
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT item_id, COUNT(*) as cnt FROM play_history WHERE item_type = ? GROUP BY item_id ORDER BY cnt DESC')
+    .all(itemType) as { item_id: string; cnt: number }[]
+  const map: Record<string, number> = {}
+  for (const row of rows) {
+    map[row.item_id] = row.cnt
+  }
+  return map
+}
+
+/**
+ * Get the top N most played items of a given type.
+ * Returns item IDs ordered by play count descending.
+ */
+export function getTopPlayed(itemType: 'music' | 'sfx', limit = 10): string[] {
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT item_id FROM play_history WHERE item_type = ? GROUP BY item_id ORDER BY COUNT(*) DESC LIMIT ?')
+    .all(itemType, limit) as { item_id: string }[]
+  return rows.map((r) => r.item_id)
 }
 
 export function closeDb(): void {
