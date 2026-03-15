@@ -9,8 +9,6 @@
 - [ ] Show on tooltip the directory
 - [ ] Discord: add `asarUnpack` config for native modules (packaging)
 - [ ] Discord: integration tests for connect/disconnect/stream lifecycle
-- [ ] #11 SFX: implement SFX scanner to populate `sfx:list` from sfxFolder
-- [ ] #11 SFX: wire up SFX recommendation engine (reranker or keyword-based)
 - [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 - [ ] Address Biome lint warnings: 60× `useButtonType`, 9× `useIterableCallbackReturn`, 4× `useExhaustiveDependencies`, 3× `useKeyWithClickEvents`
@@ -29,6 +27,15 @@
 
 ## Done
 
+- [x] Pre-commit hook: Husky + lint-staged for Biome lint + tsc typecheck on every commit
+- [x] Fix Biome formatting errors across codebase (4 files)
+- [x] Fix DM input debounce: useCallback for runRecommendation/runDmRecommendation
+- [x] Fix SFX recommendations: label-based mood matching, category-diverse fallback defaults
+- [x] Fix SFX volume slider: reactive sfxVolumes state, per-SFX persistence, master vol multiplier
+- [x] Shared VolumePopover component (PlayerBar + SfxCard) via portal rendering
+- [x] E2E tests for DM input pipeline (3 tests)
+- [x] #11 SFX: SFX scanner populates `sfx:list` from sfxFolder
+- [x] #11 SFX: heuristic SFX recommendation engine (keyword + category + tag scoring)
 - [x] Play history tracking + history-boosted recommendations (SQLite play_history table, default recs on empty prompt)
 - [x] Tooltip z-index fix: flip-below positioning when near column headers (TrackCard + SfxCard)
 - [x] Unified DM Soundboard: two-column layout (Music + SFX side by side), DM prompt at top, Browse SFX overlay
