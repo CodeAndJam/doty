@@ -8,6 +8,10 @@
 export interface AutopilotConfig {
   /** Whether autopilot is enabled (default: false) */
   enabled: boolean
+  /** Whether music auto-transitions are enabled (default: true) */
+  musicEnabled: boolean
+  /** Whether SFX auto-triggers are enabled (default: true) */
+  sfxEnabled: boolean
   /** Confidence threshold 0.0-1.0 (default: 0.95) */
   confidenceThreshold: number
   /** Crossfade duration in seconds (default: 3) */
@@ -26,6 +30,8 @@ export interface AutopilotConfig {
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
   enabled: false,
+  musicEnabled: true,
+  sfxEnabled: true,
   confidenceThreshold: 0.95,
   crossfadeDuration: 3,
   musicCooldownSeconds: 60,

@@ -109,7 +109,7 @@ export function useAutopilot(
   const onRecommendation = useCallback(
     (topTrack: string, confidence: number) => {
       const cfg = configRef.current
-      if (!cfg.enabled) return
+      if (!cfg.enabled || !cfg.musicEnabled) return
       if (state === 'transitioning') return
 
       const now = Date.now()
@@ -176,7 +176,7 @@ export function useAutopilot(
   const onSfxRecommendation = useCallback(
     (sfxIds: string[]) => {
       const cfg = configRef.current
-      if (!cfg.enabled) return
+      if (!cfg.enabled || !cfg.sfxEnabled) return
       if (sfxIds.length === 0) return
 
       const now = Date.now()

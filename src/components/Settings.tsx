@@ -70,6 +70,8 @@ export default function Settings({
   const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [autopilotThreshold, setAutopilotThreshold] = useState(0.95)
   const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
+  const [autopilotMusic, setAutopilotMusic] = useState(true)
+  const [autopilotSfx, setAutopilotSfx] = useState(true)
   const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -103,6 +105,8 @@ export default function Settings({
       setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
       setAutopilotCrossfade(cfg.crossfadeDuration)
+      setAutopilotMusic(cfg.musicEnabled)
+      setAutopilotSfx(cfg.sfxEnabled)
     })
 
     const unsubProgress = window.doty.onScanProgress((p) => {
@@ -812,6 +816,40 @@ export default function Settings({
 
             {autopilotEnabled && (
               <div className="space-y-3">
+                {/* Individual channel toggles */}
+                <div className="flex gap-4">
+                  <label
+                    className="flex items-center gap-2 cursor-pointer"
+                    style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotMusic ? '#c8922a' : '#3a2e1a' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={autopilotMusic}
+                      onChange={(e) => {
+                        setAutopilotMusic(e.target.checked)
+                        window.doty.setAutopilotConfig({ musicEnabled: e.target.checked })
+                      }}
+                      style={{ accentColor: '#c8922a' }}
+                    />
+                    Music
+                  </label>
+                  <label
+                    className="flex items-center gap-2 cursor-pointer"
+                    style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotSfx ? '#4a8a6a' : '#3a2e1a' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={autopilotSfx}
+                      onChange={(e) => {
+                        setAutopilotSfx(e.target.checked)
+                        window.doty.setAutopilotConfig({ sfxEnabled: e.target.checked })
+                      }}
+                      style={{ accentColor: '#4a8a6a' }}
+                    />
+                    SFX
+                  </label>
+                </div>
+
                 {/* Confidence threshold */}
                 <div>
                   <div className="flex justify-between mb-1">

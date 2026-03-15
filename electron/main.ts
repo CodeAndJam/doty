@@ -810,6 +810,8 @@ ipcMain.handle('settings:set-sfx-recommendation-count', (_e, count: number) => {
 
 ipcMain.handle('autopilot:get-config', () => ({
   enabled: store.get('autopilotEnabled', false),
+  musicEnabled: store.get('autopilotMusicEnabled', true),
+  sfxEnabled: store.get('autopilotSfxEnabled', true),
   confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.95),
   crossfadeDuration: store.get('autopilotCrossfadeDuration', 3),
   musicCooldownSeconds: store.get('autopilotMusicCooldown', 60),
@@ -821,6 +823,8 @@ ipcMain.handle('autopilot:get-config', () => ({
 
 ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => {
   if (typeof config.enabled === 'boolean') store.set('autopilotEnabled', config.enabled)
+  if (typeof config.musicEnabled === 'boolean') store.set('autopilotMusicEnabled', config.musicEnabled)
+  if (typeof config.sfxEnabled === 'boolean') store.set('autopilotSfxEnabled', config.sfxEnabled)
   if (typeof config.confidenceThreshold === 'number')
     store.set('autopilotConfidenceThreshold', config.confidenceThreshold)
   if (typeof config.crossfadeDuration === 'number') store.set('autopilotCrossfadeDuration', config.crossfadeDuration)

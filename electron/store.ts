@@ -17,6 +17,8 @@ interface StoreData {
   discordLastChannelId?: string // last joined channel
   // Autopilot (#12)
   autopilotEnabled?: boolean
+  autopilotMusicEnabled?: boolean
+  autopilotSfxEnabled?: boolean
   autopilotConfidenceThreshold?: number // 0.0-1.0
   autopilotCrossfadeDuration?: number // seconds
   autopilotMusicCooldown?: number // seconds
