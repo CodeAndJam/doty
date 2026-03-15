@@ -222,11 +222,7 @@ export function heuristicRecommend(
  * Default recommendations when there's no transcript/prompt.
  * Returns most-played tracks, padded with random picks if history is sparse.
  */
-function defaultRecommendations(
-  files: string[],
-  playFrequencies: Record<string, number>,
-  count: number,
-): string[] {
+function defaultRecommendations(files: string[], playFrequencies: Record<string, number>, count: number): string[] {
   // Sort by play count descending
   const byFrequency = files
     .filter((f) => (playFrequencies[f] || 0) > 0)
