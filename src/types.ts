@@ -204,6 +204,10 @@ export interface DotyAPI {
   setSfxRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onSfxRecommendations: (cb: (ids: string[]) => void) => () => void
 
+  // Autopilot (#12)
+  getAutopilotConfig: () => Promise<import('./lib/autopilot').AutopilotConfig>
+  setAutopilotConfig: (config: Partial<import('./lib/autopilot').AutopilotConfig>) => Promise<{ ok: boolean }>
+
   // Discord
   discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>
   discordDisconnect: () => Promise<{ ok: boolean }>

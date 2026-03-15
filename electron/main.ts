@@ -805,3 +805,31 @@ ipcMain.handle('settings:set-sfx-recommendation-count', (_e, count: number) => {
   store.set('sfxRecommendationCount', Math.max(1, Math.min(10, Math.round(count))))
   return { ok: true }
 })
+
+// ── IPC: Autopilot (#12) ──────────────────────────────────────────────────────
+
+ipcMain.handle('autopilot:get-config', () => ({
+  enabled: store.get('autopilotEnabled', false),
+  confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.95),
+  crossfadeDuration: store.get('autopilotCrossfadeDuration', 3),
+  musicCooldownSeconds: store.get('autopilotMusicCooldown', 60),
+  minPlaySeconds: store.get('autopilotMinPlaySeconds', 30),
+  sfxPerEffectCooldownSeconds: store.get('autopilotSfxPerEffectCooldown', 30),
+  sfxGlobalCooldownSeconds: store.get('autopilotSfxGlobalCooldown', 10),
+  sfxAutoVolume: store.get('autopilotSfxAutoVolume', 0.7),
+}))
+
+ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => {
+  if (typeof config.enabled === 'boolean') store.set('autopilotEnabled', config.enabled)
+  if (typeof config.confidenceThreshold === 'number')
+    store.set('autopilotConfidenceThreshold', config.confidenceThreshold)
+  if (typeof config.crossfadeDuration === 'number') store.set('autopilotCrossfadeDuration', config.crossfadeDuration)
+  if (typeof config.musicCooldownSeconds === 'number') store.set('autopilotMusicCooldown', config.musicCooldownSeconds)
+  if (typeof config.minPlaySeconds === 'number') store.set('autopilotMinPlaySeconds', config.minPlaySeconds)
+  if (typeof config.sfxPerEffectCooldownSeconds === 'number')
+    store.set('autopilotSfxPerEffectCooldown', config.sfxPerEffectCooldownSeconds)
+  if (typeof config.sfxGlobalCooldownSeconds === 'number')
+    store.set('autopilotSfxGlobalCooldown', config.sfxGlobalCooldownSeconds)
+  if (typeof config.sfxAutoVolume === 'number') store.set('autopilotSfxAutoVolume', config.sfxAutoVolume)
+  return { ok: true }
+})

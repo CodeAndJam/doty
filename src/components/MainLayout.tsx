@@ -81,9 +81,9 @@ export default function MainLayout() {
       'chars, preview:',
       recentTranscript.slice(0, 80),
     )
-    const results = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
-    console.log('[recommend] results:', results.length, results)
-    setRecommendations(results)
+    const result = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
+    console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
+    setRecommendations(result.files)
   }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -118,9 +118,9 @@ export default function MainLayout() {
       if (recentTranscript) parts.push(recentTranscript)
       const combined = parts.join('\n')
       console.log('[recommend] DM: combined query:', combined.length, 'chars, count:', recommendCountRef.current)
-      const results = await recommendRef.current(combined, files, recommendCountRef.current)
-      console.log('[recommend] DM: results:', results.length, results)
-      setRecommendations(results)
+      const result = await recommendRef.current(combined, files, recommendCountRef.current)
+      console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
+      setRecommendations(result.files)
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
     },

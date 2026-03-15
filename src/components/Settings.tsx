@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { onQwenLog } from '../hooks/useQwen'
+import { confidenceLabel } from '../lib/autopilot'
 import type { ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
 
@@ -66,6 +67,9 @@ export default function Settings({
   const [hotwordsFile, setHotwordsFile] = useState('')
   const [sfxFolder, setSfxFolder] = useState('')
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
+  const [autopilotThreshold, setAutopilotThreshold] = useState(0.95)
+  const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
   const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -95,6 +99,11 @@ export default function Settings({
     window.doty.getHotwordsFile().then(setHotwordsFile)
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
+    window.doty.getAutopilotConfig().then((cfg) => {
+      setAutopilotEnabled(cfg.enabled)
+      setAutopilotThreshold(cfg.confidenceThreshold)
+      setAutopilotCrossfade(cfg.crossfadeDuration)
+    })
 
     const unsubProgress = window.doty.onScanProgress((p) => {
       setScanProgress(p)
@@ -757,17 +766,103 @@ export default function Settings({
           <Label>Coming Soon</Label>
 
           {/* Autopilot (#12) */}
-          <div
-            className="flex items-center gap-3 mb-2"
-            style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}
-          >
-            <div style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }} />
-            <div className="flex-1 min-w-0">
-              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Autopilot Mode</p>
-              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-                Auto-play music based on scene context
-              </p>
+          <div className="mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                  Autopilot Mode
+                </p>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    color: '#c8922a',
+                    border: '1px solid rgba(200,146,42,0.3)',
+                    padding: '1px 5px',
+                    fontFamily: 'monospace',
+                  }}
+                >
+                  BETA
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !autopilotEnabled
+                  setAutopilotEnabled(next)
+                  window.doty.setAutopilotConfig({ enabled: next })
+                }}
+                className="w-10 h-5 rounded-full transition-colors relative"
+                style={{
+                  background: autopilotEnabled ? 'rgba(200,146,42,0.4)' : 'rgba(46,36,22,0.6)',
+                  border: `1px solid ${autopilotEnabled ? 'rgba(200,146,42,0.6)' : '#2e2416'}`,
+                }}
+              >
+                <div
+                  className="absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all"
+                  style={{
+                    background: autopilotEnabled ? '#c8922a' : '#3a2e1a',
+                    left: autopilotEnabled ? '21px' : '3px',
+                  }}
+                />
+              </button>
             </div>
+            <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace', marginBottom: '8px' }}>
+              Auto-play music and SFX when the AI is highly confident
+            </p>
+
+            {autopilotEnabled && (
+              <div className="space-y-3">
+                {/* Confidence threshold */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                      Confidence threshold
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                      {Math.round(autopilotThreshold * 100)}% — {confidenceLabel(autopilotThreshold)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={80}
+                    max={99}
+                    value={Math.round(autopilotThreshold * 100)}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) / 100
+                      setAutopilotThreshold(v)
+                      window.doty.setAutopilotConfig({ confidenceThreshold: v })
+                    }}
+                    className="w-full"
+                    style={{ accentColor: '#c8922a', height: '2px' }}
+                  />
+                </div>
+
+                {/* Crossfade duration */}
+                <div>
+                  <div className="flex justify-between mb-1">
+                    <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                      Crossfade duration
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                      {autopilotCrossfade}s
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1}
+                    max={10}
+                    value={autopilotCrossfade}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      setAutopilotCrossfade(v)
+                      window.doty.setAutopilotConfig({ crossfadeDuration: v })
+                    }}
+                    className="w-full"
+                    style={{ accentColor: '#c8922a', height: '2px' }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Remote Control (#22) */}
