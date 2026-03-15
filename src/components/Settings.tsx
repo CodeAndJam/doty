@@ -818,36 +818,44 @@ export default function Settings({
               <div className="space-y-3">
                 {/* Individual channel toggles */}
                 <div className="flex gap-4">
-                  <label
-                    className="flex items-center gap-2 cursor-pointer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !autopilotMusic
+                      setAutopilotMusic(next)
+                      window.doty.setAutopilotConfig({ musicEnabled: next })
+                    }}
+                    className="flex items-center gap-2"
                     style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotMusic ? '#c8922a' : '#3a2e1a' }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={autopilotMusic}
-                      onChange={(e) => {
-                        setAutopilotMusic(e.target.checked)
-                        window.doty.setAutopilotConfig({ musicEnabled: e.target.checked })
+                    <div
+                      className="w-3 h-3 border"
+                      style={{
+                        borderColor: autopilotMusic ? '#c8922a' : '#3a2e1a',
+                        background: autopilotMusic ? '#c8922a' : 'transparent',
                       }}
-                      style={{ accentColor: '#c8922a' }}
                     />
                     Music
-                  </label>
-                  <label
-                    className="flex items-center gap-2 cursor-pointer"
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = !autopilotSfx
+                      setAutopilotSfx(next)
+                      window.doty.setAutopilotConfig({ sfxEnabled: next })
+                    }}
+                    className="flex items-center gap-2"
                     style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotSfx ? '#4a8a6a' : '#3a2e1a' }}
                   >
-                    <input
-                      type="checkbox"
-                      checked={autopilotSfx}
-                      onChange={(e) => {
-                        setAutopilotSfx(e.target.checked)
-                        window.doty.setAutopilotConfig({ sfxEnabled: e.target.checked })
+                    <div
+                      className="w-3 h-3 border"
+                      style={{
+                        borderColor: autopilotSfx ? '#4a8a6a' : '#3a2e1a',
+                        background: autopilotSfx ? '#4a8a6a' : 'transparent',
                       }}
-                      style={{ accentColor: '#4a8a6a' }}
                     />
                     SFX
-                  </label>
+                  </button>
                 </div>
 
                 {/* Confidence threshold */}
