@@ -2,7 +2,9 @@
 
 ## Pending
 
-- [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
+- [ ] `pnpm audit` vulns (20 total, none exploitable at runtime):
+  - 12× high: `tar` via `@discordjs/opus > @discordjs/node-pre-gyp` — install-time only, waiting on `@discordjs/node-pre-gyp` to bump `tar`
+  - 8× moderate: `undici` via `discord.js` and `jsdom` — waiting on upstream bumps
 - [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
