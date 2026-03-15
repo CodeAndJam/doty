@@ -41,7 +41,9 @@ describe('useAudioPlayer — seek', () => {
   function flushRAF() {
     const cbs = [...rafCallbacks]
     rafCallbacks.length = 0
-    cbs.forEach((cb) => cb())
+    cbs.forEach((cb) => {
+      cb()
+    })
   }
 
   const defaultOpts = {

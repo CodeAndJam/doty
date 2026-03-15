@@ -105,7 +105,9 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
     console.log('[integration] multi-pair scores:', scores)
 
     expect(scores).toHaveLength(3)
-    scores.forEach((s) => expect(typeof s).toBe('number'))
+    scores.forEach((s) => {
+      expect(typeof s).toBe('number')
+    })
 
     // Horror/haunted tracks should score higher than relaxation for "dark spooky dungeon"
     const [horrorScore, relaxScore] = scores

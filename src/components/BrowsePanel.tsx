@@ -76,6 +76,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
         />
         <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filtered.length}</span>
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onClose()
@@ -98,6 +99,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             const active = activeTagFilters.includes(tag)
             return (
               <button
+                type="button"
                 key={tag}
                 onClick={() => toggleTagFilter(tag)}
                 className="px-1.5 py-0 shrink-0"
@@ -117,6 +119,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
           })}
           {activeTagFilters.length > 0 && (
             <button
+              type="button"
               onClick={() => setActiveTagFilters([])}
               className="px-1 opacity-50 hover:opacity-100"
               style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b4e15' }}
@@ -143,6 +146,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
               }}
             >
               <button
+                type="button"
                 onClick={() => onPlay(f)}
                 className="w-5 h-5 flex items-center justify-center shrink-0"
                 style={{
@@ -189,6 +193,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 </div>
               )}
               <button
+                type="button"
                 onClick={() => onPin(f)}
                 className="p-0.5 opacity-50 hover:opacity-100 transition-opacity"
                 title={isPinned ? 'Unpin' : 'Pin'}

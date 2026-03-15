@@ -38,37 +38,43 @@ function getWorker(): Worker {
       console.log('[reranker-hook] status:', msg.status, msg.message ?? '')
       _currentStatus = msg.status
       if (msg.status === 'ready') _downloadDone = true
-      _statusListeners.forEach((cb) => cb(msg.status))
+      _statusListeners.forEach((cb) => {
+        cb(msg.status)
+      })
       return
     }
     if (msg.type === 'log') {
       console.log('[reranker-worker]', msg.message)
-      _logListeners.forEach((cb) => cb(msg.message))
+      _logListeners.forEach((cb) => {
+        cb(msg.message)
+      })
       return
     }
     if (msg.type === 'progress') {
       const p = msg as Record<string, unknown>
       const pct = typeof p.progress === 'number' ? ` ${(p.progress as number).toFixed(1)}%` : ''
       const file = (p.file ?? p.name ?? '') as string
-      _logListeners.forEach((cb) => cb(`[${p.status}] ${file}${pct}`))
+      _logListeners.forEach((cb) => {
+        cb(`[${p.status}] ${file}${pct}`)
+      })
       // Track download activity for the download overlay
       if (p.status === 'download' || p.status === 'progress' || p.status === 'initiate') {
         _isDownloading = true
-        _downloadListeners.forEach((cb) =>
+        _downloadListeners.forEach((cb) => {
           cb({
             file,
             progress: typeof p.progress === 'number' ? (p.progress as number) : 0,
             status: p.status as string,
-          }),
-        )
+          })
+        })
       } else if (p.status === 'done') {
-        _downloadListeners.forEach((cb) =>
+        _downloadListeners.forEach((cb) => {
           cb({
             file,
             progress: 100,
             status: 'done',
-          }),
-        )
+          })
+        })
       }
       return
     }

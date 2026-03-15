@@ -52,6 +52,7 @@ export default function ModelDownload({ onComplete }: Props) {
 
         {!started && !progress && (
           <button
+            type="button"
             onClick={startDownload}
             className="w-full py-3 bg-accent hover:bg-accent/80 rounded-xl text-sm font-medium transition-colors"
           >

@@ -216,6 +216,7 @@ export default function Soundboard({
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
+    // biome-ignore lint/correctness/useExhaustiveDependencies: handleSkipNext/handleSkipPrev use refs internally
   }, [queue.tracks.length, handleSkipNext, handleSkipPrev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Music handlers ───────────────────────────────────────────────────
@@ -356,6 +357,7 @@ export default function Soundboard({
       </p>
       {sub && (
         <button
+          type="button"
           onClick={onNoFolder}
           style={{
             marginTop: '8px',
@@ -382,7 +384,7 @@ export default function Soundboard({
         <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'shrink-0'}`}>
           {/* Music column header */}
           <div className="flex items-center justify-between mb-2 shrink-0">
-            <button className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
+            <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
               <MusicNoteIcon />
               <span
                 style={{
@@ -408,6 +410,7 @@ export default function Soundboard({
                 )}
                 {musicFolder && (
                   <button
+                    type="button"
                     onClick={() => setBrowsing(true)}
                     className="p-1 hover:opacity-80 transition-opacity"
                     title="Browse all tracks"
@@ -515,7 +518,7 @@ export default function Soundboard({
         <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'shrink-0'}`}>
           {/* SFX column header */}
           <div className="flex items-center justify-between mb-2 shrink-0">
-            <button className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
+            <button type="button" className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
               <SfxIcon />
               <span
                 style={{
@@ -541,6 +544,7 @@ export default function Soundboard({
                 )}
                 {hasActiveSfx && (
                   <button
+                    type="button"
                     onClick={sfxPlayer.stopAll}
                     className="p-1 hover:opacity-80 transition-opacity"
                     title="Stop all effects"
@@ -551,6 +555,7 @@ export default function Soundboard({
                 )}
                 {allSfx.length > 0 && (
                   <button
+                    type="button"
                     onClick={() => setBrowsingSfx(true)}
                     className="p-1 hover:opacity-80 transition-opacity"
                     title="Browse all effects"
@@ -586,6 +591,7 @@ export default function Soundboard({
                           {ch.label}
                         </span>
                         <button
+                          type="button"
                           onClick={() => sfxPlayer.stop(ch.id)}
                           className="w-3 h-3 flex items-center justify-center hover:opacity-80"
                           style={{ color: '#4a8a6a' }}

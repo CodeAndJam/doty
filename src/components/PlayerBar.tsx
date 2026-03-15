@@ -163,6 +163,7 @@ export default function PlayerBar({
         {/* Skip prev */}
         {onSkipPrev && (
           <button
+            type="button"
             onClick={onSkipPrev}
             title="Previous track (P)"
             className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
@@ -174,6 +175,7 @@ export default function PlayerBar({
 
         {/* Play/Pause */}
         <button
+          type="button"
           onClick={onToggle}
           className="w-7 h-7 flex items-center justify-center shrink-0"
           style={{
@@ -187,6 +189,7 @@ export default function PlayerBar({
         {/* Skip next */}
         {onSkipNext && (
           <button
+            type="button"
             onClick={onSkipNext}
             title="Next track (N)"
             className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
@@ -204,6 +207,7 @@ export default function PlayerBar({
             onMouseLeave={() => setShowTrackInfo(false)}
           >
             <button
+              type="button"
               className="w-6 h-6 flex items-center justify-center hover:opacity-80"
               style={{ color: '#c8922a' }}
               aria-label="Track info"
@@ -255,6 +259,7 @@ export default function PlayerBar({
 
         {/* Loop toggle */}
         <button
+          type="button"
           onClick={onCycleLoop}
           title={loopTitle}
           className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
@@ -266,6 +271,7 @@ export default function PlayerBar({
         {/* Queue toggle */}
         {onToggleQueue && (
           <button
+            type="button"
             onClick={onToggleQueue}
             title="Queue"
             className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"

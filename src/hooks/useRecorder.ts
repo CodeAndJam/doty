@@ -58,7 +58,9 @@ export function useRecorder(deviceId?: string) {
     workletRef.current?.disconnect()
     sourceRef.current?.disconnect()
     contextRef.current?.close()
-    streamRef.current?.getTracks().forEach((t) => t.stop())
+    streamRef.current?.getTracks().forEach((t) => {
+      t.stop()
+    })
     workletRef.current = null
     sourceRef.current = null
     contextRef.current = null

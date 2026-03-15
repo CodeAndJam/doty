@@ -32,6 +32,8 @@ describe('Transcript', () => {
   it('renders multiple lines correctly', () => {
     const lines = ['Line 1', 'Line 2', 'Line 3']
     render(<Transcript lines={lines} recording={false} />)
-    lines.forEach((line) => expect(screen.getByText(line)).toBeInTheDocument())
+    lines.forEach((line) => {
+      expect(screen.getByText(line)).toBeInTheDocument()
+    })
   })
 })

@@ -199,6 +199,7 @@ export default function DiscordPanel() {
           </div>
           {!isConnected ? (
             <button
+              type="button"
               onClick={hasToken && !showTokenInput ? handleConnect : () => setShowTokenInput(true)}
               disabled={connecting}
               style={{
@@ -217,6 +218,7 @@ export default function DiscordPanel() {
             </button>
           ) : (
             <button
+              type="button"
               onClick={handleDisconnect}
               style={{
                 ...btnStyle,
@@ -255,6 +257,7 @@ export default function DiscordPanel() {
                 }}
               />
               <button
+                type="button"
                 onClick={handleConnect}
                 disabled={!tokenInput.trim() || connecting}
                 style={{ ...btnStyle, opacity: !tokenInput.trim() || connecting ? 0.5 : 1 }}
@@ -273,6 +276,7 @@ export default function DiscordPanel() {
         {/* Clear token */}
         {hasToken && !isConnected && !showTokenInput && (
           <button
+            type="button"
             onClick={handleClearToken}
             style={{
               background: 'none',
@@ -335,6 +339,7 @@ export default function DiscordPanel() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={handleLeave}
                 style={{
                   ...btnStyle,
@@ -395,6 +400,7 @@ export default function DiscordPanel() {
                       ))}
                     </select>
                     <button
+                      type="button"
                       onClick={handleJoin}
                       disabled={!selectedChannel}
                       style={{ ...btnStyle, opacity: selectedChannel ? 1 : 0.5 }}

@@ -125,6 +125,7 @@ export default function Settings({
       unsubProgress()
       unsubComplete()
     }
+    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect, refreshTrackCount is stable
   }, [refreshTrackCount])
 
   // Escape key to close
@@ -218,11 +219,17 @@ export default function Settings({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center"
       onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose()
+      }}
+      role="presentation"
       style={{ background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(4px)' }}
     >
       <div
         className="relative w-full max-w-md overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => e.stopPropagation()}
+        role="dialog"
         style={{
           background: 'linear-gradient(160deg, #0f0d09, #080705)',
           border: '1px solid #2e2416',
@@ -263,6 +270,7 @@ export default function Settings({
             Configuration
           </h2>
           <button
+            type="button"
             onClick={onClose}
             style={{
               color: '#3a2e1a',
@@ -328,6 +336,7 @@ export default function Settings({
               {folder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No archive selected</span>}
             </div>
             <button
+              type="button"
               onClick={pickFolder}
               style={btnStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
@@ -349,6 +358,7 @@ export default function Settings({
             <div className="flex items-center justify-between mb-2">
               <Label>Arcane Analysis</Label>
               <button
+                type="button"
                 onClick={rescan}
                 disabled={!!scanProgress}
                 style={{
@@ -415,6 +425,7 @@ export default function Settings({
               {transcriptFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No vault selected</span>}
             </div>
             <button
+              type="button"
               onClick={pickTranscriptFolder}
               style={btnStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
@@ -441,6 +452,7 @@ export default function Settings({
               {hotwordsFile || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No lexicon selected</span>}
             </div>
             <button
+              type="button"
               onClick={async () => {
                 const picked = await window.doty.pickHotwordsFile()
                 if (picked) setHotwordsFile(picked)
@@ -454,6 +466,7 @@ export default function Settings({
           </div>
           {!hotwordsFile && (
             <button
+              type="button"
               onClick={async () => {
                 const result = await window.doty.createDefaultHotwords()
                 if (result.ok && result.path) setHotwordsFile(result.path)
@@ -471,6 +484,7 @@ export default function Settings({
                 Beam search enabled with lexicon boosting
               </p>
               <button
+                type="button"
                 onClick={() => {
                   window.doty.setHotwordsFile('')
                   setHotwordsFile('')
@@ -529,6 +543,7 @@ export default function Settings({
               {sfxFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No SFX archive selected</span>}
             </div>
             <button
+              type="button"
               onClick={async () => {
                 const picked = await window.doty.pickSfxFolder()
                 if (picked) setSfxFolder(picked)
@@ -662,6 +677,7 @@ export default function Settings({
                 <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~80 MB</span>
               )}
               <button
+                type="button"
                 onClick={() => setShowQwenLogs((prev) => !prev)}
                 style={{
                   background: 'none',

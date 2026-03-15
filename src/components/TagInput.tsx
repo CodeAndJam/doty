@@ -72,6 +72,10 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           border: '1px solid #2e2416',
         }}
         onClick={() => inputRef.current?.focus()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.focus()
+        }}
+        role="presentation"
       >
         {tags.map((tag) => (
           <span
@@ -88,6 +92,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           >
             {tag}
             <button
+              type="button"
               onClick={(e) => {
                 e.stopPropagation()
                 removeTag(tag)
@@ -138,6 +143,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           >
             {suggestions.map((s) => (
               <button
+                type="button"
                 key={s}
                 className="block w-full text-left px-2 py-1 hover:bg-[rgba(200,146,42,0.1)]"
                 style={{

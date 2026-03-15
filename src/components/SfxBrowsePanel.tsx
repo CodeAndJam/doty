@@ -157,6 +157,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
         <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filteredSfx.length}</span>
         {hasActiveSfx && (
           <button
+            type="button"
             onClick={sfxPlayer.stopAll}
             className="p-1 hover:opacity-80 transition-opacity"
             title="Stop all effects"
@@ -166,6 +167,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
           </button>
         )}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onClose()
@@ -198,6 +200,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
                   {ch.label}
                 </span>
                 <button
+                  type="button"
                   onClick={() => sfxPlayer.stop(ch.id)}
                   className="w-3 h-3 flex items-center justify-center hover:opacity-80"
                   style={{ color: '#4a8a6a' }}
@@ -251,6 +254,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
         style={{ borderBottom: '1px solid rgba(46,36,22,0.3)' }}
       >
         <button
+          type="button"
           onClick={() => setSelectedCategory('all')}
           className="px-2 py-0.5 shrink-0 transition-all"
           style={{
@@ -266,6 +270,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
           All
         </button>
         <button
+          type="button"
           onClick={() => setSelectedCategory('recommended')}
           className="px-2 py-0.5 shrink-0 transition-all"
           style={{
@@ -282,6 +287,7 @@ export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onToggle
         </button>
         {categories.map((cat) => (
           <button
+            type="button"
             key={cat}
             onClick={() => setSelectedCategory(cat)}
             className="px-2 py-0.5 shrink-0 transition-all"

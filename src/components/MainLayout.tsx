@@ -65,14 +65,6 @@ export default function MainLayout() {
     if (modelStatus === 'ready') setRerankerCached(true)
   }, [modelStatus])
 
-  // When music folder becomes available, trigger default recommendations
-  useEffect(() => {
-    if (musicFolder) {
-      runRecommendation()
-      runSfxRecommendation()
-    }
-  }, [musicFolder]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const showRerankerDownload = rerankerCached === false && modelStatus === 'loading'
 
   const runRecommendation = useCallback(async () => {
@@ -134,6 +126,14 @@ export default function MainLayout() {
     },
     [runSfxRecommendation],
   )
+
+  // When music folder becomes available, trigger default recommendations
+  useEffect(() => {
+    if (musicFolder) {
+      runRecommendation()
+      runSfxRecommendation()
+    }
+  }, [musicFolder, runRecommendation, runSfxRecommendation])
 
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
@@ -230,6 +230,7 @@ export default function MainLayout() {
         {/* Left: status toggle + transcript visibility */}
         <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={toggleRecording}
             className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
             style={{
@@ -250,6 +251,7 @@ export default function MainLayout() {
             </span>
           </button>
           <button
+            type="button"
             onClick={() => setShowTranscript((v) => !v)}
             className="p-1 opacity-40 hover:opacity-100 transition-opacity"
             title={showTranscript ? 'Hide transcript' : 'Show transcript'}
@@ -269,6 +271,7 @@ export default function MainLayout() {
 
         {/* Settings button */}
         <button
+          type="button"
           onClick={() => setShowSettings(true)}
           className="relative p-1.5 transition-all group"
           style={{ color: '#6b4e15' }}

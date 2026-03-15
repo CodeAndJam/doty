@@ -49,6 +49,7 @@ function SortableQueueItem({
     <div ref={setNodeRef} style={style} className="flex items-center gap-2 px-3 py-1.5 group">
       {/* Drag handle */}
       <button
+        type="button"
         {...attributes}
         {...listeners}
         className="w-5 h-5 flex items-center justify-center shrink-0 cursor-grab opacity-30 group-hover:opacity-70 transition-opacity"
@@ -72,6 +73,7 @@ function SortableQueueItem({
 
       {/* Play/pause button */}
       <button
+        type="button"
         onClick={onPlay}
         className="w-6 h-6 flex items-center justify-center shrink-0"
         style={{ color: isCurrent ? '#c8922a' : '#6b4e15' }}
@@ -94,6 +96,7 @@ function SortableQueueItem({
 
       {/* Remove */}
       <button
+        type="button"
         onClick={onRemove}
         className="w-5 h-5 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         title="Remove from queue"
@@ -169,6 +172,7 @@ export default function QueuePanel({
         <div className="flex items-center gap-2">
           {tracks.length > 0 && (
             <button
+              type="button"
               onClick={onClear}
               className="px-2 py-0.5 hover:opacity-80 transition-opacity"
               style={{
@@ -181,7 +185,7 @@ export default function QueuePanel({
               Clear
             </button>
           )}
-          <button onClick={onClose} className="p-1 hover:opacity-80 transition-opacity">
+          <button type="button" onClick={onClose} className="p-1 hover:opacity-80 transition-opacity">
             <CloseIcon />
           </button>
         </div>

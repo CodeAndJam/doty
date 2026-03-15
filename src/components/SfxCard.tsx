@@ -159,6 +159,7 @@ export default function SfxCard({
       <div className="flex items-center gap-2">
         {/* Play / Stop button */}
         <button
+          type="button"
           onClick={() => (isPlaying ? onStop() : onPlay())}
           className="w-7 h-7 flex items-center justify-center shrink-0"
           style={{
@@ -224,6 +225,7 @@ export default function SfxCard({
         )}
 
         <button
+          type="button"
           onClick={() => (isPlaying ? onToggleLoop() : onPlay(true))}
           className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
           title={isLooping ? 'Stop looping' : 'Loop'}
@@ -241,6 +243,7 @@ export default function SfxCard({
         />
 
         <button
+          type="button"
           onClick={() => setEditingTags((e) => !e)}
           className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shrink-0"
           title="Edit tags"
@@ -250,6 +253,7 @@ export default function SfxCard({
         </button>
 
         <button
+          type="button"
           onClick={onPin}
           className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shrink-0"
           title={isPinned ? 'Unpin' : 'Pin'}
@@ -259,6 +263,7 @@ export default function SfxCard({
 
         <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
           <button
+            type="button"
             className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Effect details"
             style={{ color: expanded ? '#4a8a6a' : '#3a2e1a' }}

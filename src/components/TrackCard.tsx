@@ -166,6 +166,7 @@ export default function TrackCard({
     >
       <div className="flex items-center gap-3 px-3 h-full">
         <button
+          type="button"
           onClick={onPlay}
           className="w-9 h-9 flex items-center justify-center shrink-0"
           style={{
@@ -229,10 +230,17 @@ export default function TrackCard({
 
         {showReorder && (
           <div className="flex flex-col gap-0.5">
-            <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              className="p-1"
+              style={{ opacity: canMoveUp ? 1 : 0.3 }}
+            >
               <ChevronUp />
             </button>
             <button
+              type="button"
               onClick={onMoveDown}
               disabled={!canMoveDown}
               className="p-1"
@@ -246,6 +254,7 @@ export default function TrackCard({
         {meta && (
           <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
             <button
+              type="button"
               className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
               title="Track details"
               style={{ color: expanded ? '#c8922a' : undefined }}
@@ -258,6 +267,7 @@ export default function TrackCard({
 
         {onTagsChange && (
           <button
+            type="button"
             onClick={() => setEditingTags((e) => !e)}
             className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Edit tags"
@@ -269,6 +279,7 @@ export default function TrackCard({
 
         {onPlayNext && (
           <button
+            type="button"
             onClick={onPlayNext}
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Play next"
@@ -285,6 +296,7 @@ export default function TrackCard({
         )}
         {onAddToQueue && (
           <button
+            type="button"
             onClick={onAddToQueue}
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Add to queue"
@@ -301,6 +313,7 @@ export default function TrackCard({
         )}
 
         <button
+          type="button"
           onClick={onPin}
           className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
           title={isPinned ? 'Unpin' : 'Pin'}
