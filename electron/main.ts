@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
-import { closeDb, getAllTags, getDb, getTags, getTagsMap, setTags } from './database'
+import { closeDb, getAllTags, getDb, getPlayFrequencies, getTags, getTagsMap, getTopPlayed, recordPlay, setTags } from './database'
 import {
   clearToken,
   destroyDiscord,
@@ -513,6 +513,21 @@ ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
 ipcMain.handle('tags:get-all', () => getAllTags())
 
 ipcMain.handle('tags:get-map', () => getTagsMap())
+
+// ── IPC: Play History ─────────────────────────────────────────────────────────
+
+ipcMain.handle('history:record-play', (_e, itemId: string, itemType: 'music' | 'sfx') => {
+  recordPlay(itemId, itemType)
+  return { ok: true }
+})
+
+ipcMain.handle('history:get-frequencies', (_e, itemType: 'music' | 'sfx') => {
+  return getPlayFrequencies(itemType)
+})
+
+ipcMain.handle('history:get-top-played', (_e, itemType: 'music' | 'sfx', limit?: number) => {
+  return getTopPlayed(itemType, limit)
+})
 
 // ── IPC: Transcripts ──────────────────────────────────────────────────────────
 

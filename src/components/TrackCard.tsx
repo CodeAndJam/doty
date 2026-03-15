@@ -35,28 +35,43 @@ function MetadataTooltip({
   filename: string
   anchorRef: React.RefObject<HTMLDivElement | null>
 }) {
-  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [pos, setPos] = useState<{ top: number; left: number; width: number; bottom: number } | null>(null)
+  const tooltipRef = useRef<HTMLDivElement>(null)
+  const [flipBelow, setFlipBelow] = useState(false)
 
   useEffect(() => {
     if (!anchorRef.current) return
     const rect = anchorRef.current.getBoundingClientRect()
-    setPos({ top: rect.top, left: rect.left, width: rect.width })
+    setPos({ top: rect.top, left: rect.left, width: rect.width, bottom: rect.bottom })
   }, [anchorRef])
+
+  // After first render, check if tooltip overflows above viewport and flip below if needed
+  useEffect(() => {
+    if (!tooltipRef.current || !pos) return
+    const tooltipHeight = tooltipRef.current.getBoundingClientRect().height
+    // If tooltip would go above the viewport (or within 8px of top), flip below the card
+    if (pos.top - tooltipHeight - 8 < 8) {
+      setFlipBelow(true)
+    }
+  }, [pos])
 
   if (!pos) return null
 
   return ReactDOM.createPortal(
     <div
+      ref={tooltipRef}
       className="fixed px-3 py-2"
       style={{
-        zIndex: 9999,
-        top: Math.max(8, pos.top - 8),
+        zIndex: 99999,
+        top: flipBelow ? pos.bottom + 8 : Math.max(8, pos.top - 8),
         left: pos.left,
         width: pos.width,
-        transform: 'translateY(-100%)',
+        transform: flipBelow ? undefined : 'translateY(-100%)',
         background: '#0f0d09',
         border: '1px solid rgba(200,146,42,0.3)',
-        boxShadow: '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
+        boxShadow: flipBelow
+          ? '0 4px 20px rgba(0,0,0,0.8), 0 -4px 20px rgba(0,0,0,0.6)'
+          : '0 -4px 20px rgba(0,0,0,0.8), 0 4px 20px rgba(0,0,0,0.6)',
       }}
     >
       <div className="grid grid-cols-2 gap-x-4 gap-y-0">
@@ -92,7 +107,6 @@ interface TrackCardProps {
   filename: string
   isPlaying: boolean
   isPinned: boolean
-  rank: number
   showReorder: boolean
   canMoveUp: boolean
   canMoveDown: boolean
@@ -112,7 +126,6 @@ export default function TrackCard({
   filename,
   isPlaying,
   isPinned,
-  rank,
   showReorder,
   canMoveUp,
   canMoveDown,
@@ -140,7 +153,7 @@ export default function TrackCard({
       style={{
         minHeight: '36px',
         maxHeight: editingTags ? 'none' : '64px',
-        overflow: editingTags ? 'visible' : undefined,
+        overflow: editingTags ? 'visible' : 'hidden',
         zIndex: editingTags ? 20 : undefined,
         background: isPlaying
           ? 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.06))'
@@ -165,19 +178,32 @@ export default function TrackCard({
         </button>
 
         <span
-          className="flex-1 min-w-0 truncate"
+          className="flex-1 min-w-0"
           style={{
             fontFamily: "'Crimson Text', serif",
             fontSize: '17px',
             color: isPlaying ? '#e8d5a3' : '#8a7050',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
+          title={name}
         >
           {name}
         </span>
+      </div>
 
-        {/* Tag pills (read-only display) */}
+      {/* Hover overlay toolbar — appears on top of the right side */}
+      <div
+        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{
+          background: 'linear-gradient(to right, transparent, #0a0907 24px)',
+          paddingLeft: '28px',
+        }}
+      >
+        {/* Tag pills */}
         {tags.length > 0 && !editingTags && (
-          <div className="flex items-center gap-1 shrink-0 max-w-[40%] overflow-hidden">
+          <div className="flex items-center gap-1 shrink-0 overflow-hidden">
             {tags.slice(0, 3).map((tag) => (
               <span
                 key={tag}
@@ -202,16 +228,11 @@ export default function TrackCard({
         )}
 
         {showReorder && (
-          <div className="flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1.5" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
+          <div className="flex flex-col gap-0.5">
+            <button onClick={onMoveUp} disabled={!canMoveUp} className="p-1" style={{ opacity: canMoveUp ? 1 : 0.3 }}>
               <ChevronUp />
             </button>
-            <button
-              onClick={onMoveDown}
-              disabled={!canMoveDown}
-              className="p-1.5"
-              style={{ opacity: canMoveDown ? 1 : 0.3 }}
-            >
+            <button onClick={onMoveDown} disabled={!canMoveDown} className="p-1" style={{ opacity: canMoveDown ? 1 : 0.3 }}>
               <ChevronDown />
             </button>
           </div>
@@ -220,7 +241,7 @@ export default function TrackCard({
         {meta && (
           <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
             <button
-              className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
+              className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
               title="Track details"
               style={{ color: expanded ? '#c8922a' : undefined }}
             >
@@ -230,11 +251,10 @@ export default function TrackCard({
           </div>
         )}
 
-        {/* Tag edit toggle */}
         {onTagsChange && (
           <button
             onClick={() => setEditingTags((e) => !e)}
-            className="w-8 h-8 flex items-center justify-center opacity-40 hover:opacity-100 transition-opacity"
+            className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Edit tags"
             style={{ color: editingTags ? '#c8922a' : undefined, fontSize: '14px' }}
           >
@@ -242,63 +262,34 @@ export default function TrackCard({
           </button>
         )}
 
-        {/* Queue actions */}
-        {(onPlayNext || onAddToQueue) && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            {onPlayNext && (
-              <button
-                onClick={onPlayNext}
-                className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
-                title="Play next"
-                style={{
-                  fontSize: '9px',
-                  fontFamily: 'monospace',
-                  color: '#6b4e15',
-                  border: '1px solid rgba(200,146,42,0.2)',
-                  lineHeight: '14px',
-                }}
-              >
-                NEXT
-              </button>
-            )}
-            {onAddToQueue && (
-              <button
-                onClick={onAddToQueue}
-                className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
-                title="Add to queue"
-                style={{
-                  fontSize: '9px',
-                  fontFamily: 'monospace',
-                  color: '#6b4e15',
-                  border: '1px solid rgba(200,146,42,0.2)',
-                  lineHeight: '14px',
-                }}
-              >
-                QUEUE
-              </button>
-            )}
-          </div>
+        {onPlayNext && (
+          <button
+            onClick={onPlayNext}
+            className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+            title="Play next"
+            style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15', border: '1px solid rgba(200,146,42,0.2)', lineHeight: '14px' }}
+          >
+            NEXT
+          </button>
+        )}
+        {onAddToQueue && (
+          <button
+            onClick={onAddToQueue}
+            className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
+            title="Add to queue"
+            style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15', border: '1px solid rgba(200,146,42,0.2)', lineHeight: '14px' }}
+          >
+            QUEUE
+          </button>
         )}
 
         <button
           onClick={onPin}
-          className="w-8 h-8 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+          className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
           title={isPinned ? 'Unpin' : 'Pin'}
         >
           <PinIcon filled={isPinned} />
         </button>
-
-        <span
-          className="absolute top-1.5 right-1.5"
-          style={{
-            fontFamily: 'monospace',
-            fontSize: '11px',
-            color: isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416',
-            pointerEvents: 'none',
-          }}
-        >
-          {String(rank).padStart(2, '0')}
-        </span>
       </div>
 
       {/* Inline tag editor */}

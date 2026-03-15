@@ -190,6 +190,11 @@ export interface DotyAPI {
   getAllTags: () => Promise<string[]>
   getTagsMap: () => Promise<Record<string, string[]>>
 
+  // Play History
+  recordPlay: (itemId: string, itemType: 'music' | 'sfx') => Promise<{ ok: boolean }>
+  getPlayFrequencies: (itemType: 'music' | 'sfx') => Promise<Record<string, number>>
+  getTopPlayed: (itemType: 'music' | 'sfx', limit?: number) => Promise<string[]>
+
   // SFX
   getSfxList: () => Promise<SfxMeta[]>
   getSfxFolder: () => Promise<string>
