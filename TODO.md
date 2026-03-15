@@ -4,14 +4,11 @@
 
 - [ ] Add a LICENSE file (MIT or Apache-2.0)
 - [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
-- [ ] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
 - [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
-- [ ] Show on tooltip the directory
 - [ ] Discord: add `asarUnpack` config for native modules (packaging)
 - [ ] Discord: integration tests for connect/disconnect/stream lifecycle
 - [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
-- [ ] Address Biome lint warnings: 60× `useButtonType`, 9× `useIterableCallbackReturn`, 4× `useExhaustiveDependencies`, 3× `useKeyWithClickEvents`
 
 ## Music Player — Implementation Order
 
@@ -27,6 +24,9 @@
 
 ## Done
 
+- [x] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
+- [x] Show directory in SFX tooltip (matching TrackCard behavior)
+- [x] Resolve all Biome lint warnings: useButtonType, useIterableCallbackReturn, useExhaustiveDependencies, useKeyWithClickEvents
 - [x] Pre-commit hook: Husky + lint-staged for Biome lint + tsc typecheck on every commit
 - [x] Fix Biome formatting errors across codebase (4 files)
 - [x] Fix DM input debounce: useCallback for runRecommendation/runDmRecommendation
