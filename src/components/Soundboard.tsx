@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
+import { useAutopilot } from '../hooks/useAutopilot'
 import { useQueue } from '../hooks/useQueue'
+import type { RankerType } from '../hooks/useQwen'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
-import type { SfxMeta, TrackMeta } from '../types'
+import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
+import DecisionLog from './DecisionLog'
 import { BrowseIcon, ChevronDown, ChevronUp, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import QueuePanel from './QueuePanel'
@@ -38,16 +41,24 @@ function saveSfxPins(pins: string[]) {
 interface Props {
   recommendations: string[]
   sfxRecommendations: string[]
+  lastConfidence: number
+  lastRanker: RankerType
+  lastTranscriptSnippet: string
   musicFolder: string
   speakerDeviceId?: string
+  settingsOpen: boolean
   onNoFolder: () => void
 }
 
 export default function Soundboard({
   recommendations,
   sfxRecommendations,
+  lastConfidence,
+  lastRanker,
+  lastTranscriptSnippet,
   musicFolder,
   speakerDeviceId,
+  settingsOpen,
   onNoFolder,
 }: Props) {
   // ── Music state ──────────────────────────────────────────────────────
@@ -68,6 +79,26 @@ export default function Soundboard({
   const [browsingSfx, setBrowsingSfx] = useState(false)
   const [showSfx, setShowSfx] = useState(true)
   const sfxPlayer = useSfxPlayer()
+
+  // ── Decision log (beta) ──────────────────────────────────────────────
+  const [showDecisionLog, setShowDecisionLog] = useState(false)
+  const decisionLogRef = useRef<DecisionLogEntry[]>([])
+  const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
+  const prevAutopilotLenRef = useRef(0)
+
+  // Accumulate decision log entries from recommendation results
+  useEffect(() => {
+    if (recommendations.length === 0 && lastConfidence === 0) return
+    const entry: DecisionLogEntry = {
+      timestamp: Date.now(),
+      ranker: lastRanker,
+      confidence: lastConfidence,
+      topTrack: recommendations[0] ?? null,
+      transcriptSnippet: lastTranscriptSnippet,
+    }
+    decisionLogRef.current = [entry, ...decisionLogRef.current].slice(0, 50)
+    setDecisionLog([...decisionLogRef.current])
+  }, [recommendations, lastConfidence, lastRanker, lastTranscriptSnippet])
 
   // ── Audio player ─────────────────────────────────────────────────────
   const trackEndRef = useRef<() => void>(() => {})
@@ -224,6 +255,7 @@ export default function Soundboard({
   function handlePlayTrack(filename: string, forceRestart?: boolean) {
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
+    autopilot.onManualAction()
   }
 
   function togglePin(filename: string) {
@@ -266,6 +298,7 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
+    autopilot.onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -284,6 +317,89 @@ export default function Soundboard({
       })
       .catch(() => {})
   }
+
+  // ── Autopilot ─────────────────────────────────────────────────────────
+
+  // Track when the current track started playing (for autopilot min-play check)
+  const trackStartTimeRef = useRef<number | null>(null)
+  const [trackStartTime, setTrackStartTime] = useState<number | null>(null)
+  useEffect(() => {
+    if (playing) {
+      const now = Date.now()
+      trackStartTimeRef.current = now
+      setTrackStartTime(now)
+    } else {
+      trackStartTimeRef.current = null
+      setTrackStartTime(null)
+    }
+  }, [playing])
+
+  const autopilot = useAutopilot(
+    playing,
+    trackStartTime,
+    pinned,
+    (track) => {
+      console.log('[autopilot] auto-playing:', track)
+      playTrack(track, true)
+      window.doty.recordPlay(track, 'music').catch(() => {})
+    },
+    (sfxId, volume) => {
+      console.log('[autopilot] auto-triggering SFX:', sfxId, 'volume:', volume)
+      const sfx = allSfx.find((s) => s.id === sfxId)
+      if (sfx) {
+        sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
+        sfxPlayer.setSfxVolume(sfxId, volume)
+        window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
+      }
+    },
+    sfxPlayer.channels.length > 0,
+  )
+
+  // Reload autopilot config when Settings modal closes
+  const prevSettingsOpenRef = useRef(settingsOpen)
+  useEffect(() => {
+    if (prevSettingsOpenRef.current && !settingsOpen) {
+      autopilot.reloadConfig()
+    }
+    prevSettingsOpenRef.current = settingsOpen
+  }, [settingsOpen, autopilot.reloadConfig])
+
+  // Feed confidence to autopilot when recommendations change
+  useEffect(() => {
+    if (recommendations.length > 0 && lastConfidence > 0) {
+      autopilot.onRecommendation(recommendations[0], lastConfidence)
+    }
+  }, [recommendations, lastConfidence, autopilot.onRecommendation])
+
+  // Feed SFX recommendations to autopilot
+  useEffect(() => {
+    if (sfxRecommendations.length > 0) {
+      autopilot.onSfxRecommendation(sfxRecommendations)
+    }
+  }, [sfxRecommendations, autopilot.onSfxRecommendation])
+
+  // Merge autopilot decision log entries into the visible log
+  useEffect(() => {
+    const apLog = autopilot.decisionLog
+    if (apLog.length <= prevAutopilotLenRef.current) {
+      prevAutopilotLenRef.current = apLog.length
+      return
+    }
+    // New entries are at the front of the array
+    const newCount = apLog.length - prevAutopilotLenRef.current
+    prevAutopilotLenRef.current = apLog.length
+    const newEntries: DecisionLogEntry[] = apLog.slice(0, newCount).map((e) => ({
+      timestamp: e.time,
+      ranker: null,
+      confidence: e.confidence,
+      topTrack: e.candidate || null,
+      transcriptSnippet: '',
+      action: e.action,
+      reason: e.reason,
+    }))
+    decisionLogRef.current = [...newEntries, ...decisionLogRef.current].slice(0, 50)
+    setDecisionLog([...decisionLogRef.current])
+  }, [autopilot.decisionLog])
 
   // ── Derived data ─────────────────────────────────────────────────────
 
@@ -397,6 +513,20 @@ export default function Soundboard({
               >
                 Music
               </span>
+              {autopilot.enabled && autopilot.config.musicEnabled && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
+                    border: `1px solid ${autopilot.state === 'idle' ? 'rgba(107,78,21,0.4)' : 'rgba(200,146,42,0.5)'}`,
+                    padding: '1px 4px',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  AUTO
+                </span>
+              )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
             </button>
             {showMusic && (
@@ -424,6 +554,39 @@ export default function Soundboard({
           </div>
 
           {/* Music content — scrollable, hidden when collapsed */}
+          {autopilot.pendingTransition && showMusic && (
+            <div
+              className="mb-2 shrink-0 flex items-center justify-between px-3 py-2"
+              style={{
+                background: 'rgba(200,146,42,0.08)',
+                border: '1px solid rgba(200,146,42,0.3)',
+                fontSize: '12px',
+                fontFamily: "'Crimson Text', serif",
+              }}
+            >
+              <span style={{ color: '#c8b07a' }}>
+                Switching to{' '}
+                <span style={{ color: '#c8922a' }}>
+                  {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
+                </span>{' '}
+                in {autopilot.pendingTransition.countdown}s…
+              </span>
+              <button
+                type="button"
+                onClick={autopilot.cancelTransition}
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: '#c8922a',
+                  border: '1px solid rgba(200,146,42,0.3)',
+                  padding: '2px 8px',
+                  background: 'rgba(200,146,42,0.1)',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {showMusic &&
             (!musicFolder ? (
               emptyState('No archive selected', 'Open Configuration')
@@ -486,7 +649,41 @@ export default function Soundboard({
                     >
                       Suggestions
                     </span>
+                    {/* Ranker + confidence badge */}
+                    {lastRanker && (
+                      <span
+                        style={{
+                          fontSize: '9px',
+                          fontFamily: 'monospace',
+                          padding: '0 4px',
+                          border: `1px solid ${lastRanker === 'reranker' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
+                          color: lastRanker === 'reranker' ? '#c8922a' : '#6b4e15',
+                          letterSpacing: '0.05em',
+                        }}
+                        title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
+                      >
+                        {lastRanker === 'reranker' ? 'ML' : 'heuristic'}
+                        {lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                      </span>
+                    )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                    {/* Decision log toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setShowDecisionLog((v) => !v)}
+                      className="opacity-40 hover:opacity-100 transition-opacity"
+                      title="Toggle decision log (beta)"
+                      style={{
+                        fontSize: '9px',
+                        fontFamily: 'monospace',
+                        color: showDecisionLog ? '#c8922a' : '#6b4e15',
+                        border: `1px solid ${showDecisionLog ? 'rgba(200,146,42,0.4)' : 'rgba(107,78,21,0.2)'}`,
+                        padding: '0 4px',
+                        lineHeight: '16px',
+                      }}
+                    >
+                      LOG
+                    </button>
                   </div>
                 )}
                 {suggestions.map((f) => (
@@ -510,6 +707,13 @@ export default function Soundboard({
                     onAddToQueue={() => queue.enqueue(f)}
                   />
                 ))}
+
+                {/* Decision log panel (beta) */}
+                {showDecisionLog && (
+                  <div className="shrink-0 mt-1">
+                    <DecisionLog entries={decisionLog} onClose={() => setShowDecisionLog(false)} />
+                  </div>
+                )}
               </div>
             ))}
         </div>
@@ -531,6 +735,21 @@ export default function Soundboard({
               >
                 SFX
               </span>
+              {autopilot.enabled && autopilot.config.sfxEnabled && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    color: autopilot.lastAutoSfx ? '#4a8a6a' : '#2a5a3a',
+                    border: `1px solid ${autopilot.lastAutoSfx ? 'rgba(74,138,106,0.5)' : 'rgba(74,138,106,0.3)'}`,
+                    padding: '1px 4px',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.1em',
+                    transition: 'all 0.3s ease',
+                  }}
+                >
+                  AUTO
+                </span>
+              )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showSfx ? <ChevronDown /> : <ChevronUp />}</span>
             </button>
             {showSfx && (
@@ -704,10 +923,6 @@ export default function Soundboard({
           )}
         </div>
       </div>
-
-      {/* ── Overlays ──────────────────────────────────────────────────── */}
-
-      {/* Browse all music tracks */}
       {browsing && musicFolder && (
         <BrowsePanel
           pinned={pinned}
@@ -720,7 +935,6 @@ export default function Soundboard({
         />
       )}
 
-      {/* Browse all SFX */}
       {browsingSfx && (
         <SfxBrowsePanel
           sfxRecommendations={sfxRecommendations}
@@ -730,7 +944,6 @@ export default function Soundboard({
         />
       )}
 
-      {/* Queue panel */}
       {showQueue && (
         <QueuePanel
           tracks={queue.tracks}
@@ -745,7 +958,6 @@ export default function Soundboard({
         />
       )}
 
-      {/* Persistent player bar */}
       {playing && (
         <PlayerBar
           filename={playing}

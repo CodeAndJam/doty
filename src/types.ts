@@ -115,6 +115,19 @@ export interface SfxPlaybackChannel {
   volume: number
 }
 
+// ── Decision log (beta) ─────────────────────────────────────────────
+
+export interface DecisionLogEntry {
+  timestamp: number
+  ranker: 'reranker' | 'heuristic' | null
+  confidence: number
+  topTrack: string | null
+  transcriptSnippet: string
+  /** Optional autopilot action/reason (when entry comes from autopilot) */
+  action?: string
+  reason?: string
+}
+
 // ── API types ───────────────────────────────────────────────────────
 
 // ── Discord types ───────────────────────────────────────────────────
@@ -203,6 +216,10 @@ export interface DotyAPI {
   getSfxRecommendationCount: () => Promise<number>
   setSfxRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onSfxRecommendations: (cb: (ids: string[]) => void) => () => void
+
+  // Autopilot (#12)
+  getAutopilotConfig: () => Promise<import('./lib/autopilot').AutopilotConfig>
+  setAutopilotConfig: (config: Partial<import('./lib/autopilot').AutopilotConfig>) => Promise<{ ok: boolean }>
 
   // Discord
   discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>

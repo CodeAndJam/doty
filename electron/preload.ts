@@ -94,6 +94,11 @@ contextBridge.exposeInMainWorld('doty', {
   setSfxFolder: (path: string) => ipcRenderer.invoke('sfx:set-folder', path),
   getSfxRecommendationCount: () => ipcRenderer.invoke('settings:get-sfx-recommendation-count'),
   setSfxRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-sfx-recommendation-count', count),
+
+  // Autopilot (#12)
+  getAutopilotConfig: () => ipcRenderer.invoke('autopilot:get-config'),
+  setAutopilotConfig: (config: Record<string, unknown>) => ipcRenderer.invoke('autopilot:set-config', config),
+
   onSfxRecommendations: (cb: (ids: string[]) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, ids: string[]) => cb(ids)
     ipcRenderer.on('sfx:recommendations', handler)

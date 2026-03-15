@@ -28,6 +28,7 @@
 
 ## Done
 
+- [x] Recommendation transparency: ranker type + confidence badge on Suggestions header, collapsible Decision Log panel for beta testing
 - [x] Discord: asarUnpack config for @discordjs/opus, sodium-native, opusscript, prism-media
 - [x] Upgrade chokidar v3 to v4 (drops fsevents dependency, uses native fs.watch)
 - [x] Discord: 17 integration tests for connect/disconnect/stream lifecycle

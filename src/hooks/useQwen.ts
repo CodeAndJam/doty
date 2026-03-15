@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { topConfidence } from '../lib/autopilot'
 import { heuristicRecommend } from '../lib/heuristicRecommend'
 import type { TrackMeta } from '../types'
 
@@ -140,6 +141,14 @@ const RERANK_CANDIDATES = 20
 
 export type RankerType = 'reranker' | 'heuristic' | null
 
+/** Result from recommend() including confidence for autopilot */
+export interface RecommendResult {
+  files: string[]
+  /** Top-1 confidence (softmax probability), 0-1. Only set when reranker is used. */
+  confidence: number
+  ranker: RankerType
+}
+
 export function useQwen() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
   const [downloading, setDownloading] = useState(_isDownloading && !_downloadDone)
@@ -165,7 +174,7 @@ export function useQwen() {
     }
   }, [])
 
-  const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<string[]> => {
+  const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {
     console.log(
       '[reranker-hook] recommend() called — transcript:',
       transcript.length,
@@ -176,7 +185,7 @@ export function useQwen() {
       'status:',
       _currentStatus,
     )
-    if (files.length === 0) return []
+    if (files.length === 0) return { files: [], confidence: 0, ranker: null }
 
     // Fetch metadata, tags, and play history for all tracks
     const metadata = (await window.doty.getAllMetadata()) as Record<string, TrackMeta>
@@ -195,7 +204,7 @@ export function useQwen() {
       setLastRanker('heuristic')
       const result = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
       console.log('[reranker-hook] heuristic results:', result.files, 'confidence:', result.confidence)
-      return result.files
+      return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
     }
 
     try {
@@ -204,7 +213,8 @@ export function useQwen() {
       if (!recentTranscript) {
         console.log('[reranker-hook] empty transcript after trim, falling back to heuristic')
         setLastRanker('heuristic')
-        return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies).files
+        const result = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+        return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
       }
 
       // Step 1: Pre-filter with heuristic to get top N candidates
@@ -225,18 +235,23 @@ export function useQwen() {
       )
       const scores = await workerRerank(pairs)
 
-      // Step 3: Sort by reranker score and take top N
+      // Step 3: Compute confidence via softmax over reranker logits
+      const { confidence } = topConfidence(scores)
+      console.log('[reranker-hook] top-1 confidence:', (confidence * 100).toFixed(1) + '%')
+
+      // Step 4: Sort by reranker score and take top N
       const scored = hResult.files.map((file, i) => ({ file, score: scores[i] }))
       scored.sort((a, b) => b.score - a.score)
 
       const results = scored.slice(0, count).map((s) => s.file)
       console.log('[reranker-hook] reranked results:', results)
       setLastRanker('reranker')
-      return results
+      return { files: results, confidence, ranker: 'reranker' }
     } catch (e) {
       console.error('[reranker-hook] recommend error:', e)
       setLastRanker('heuristic')
-      return heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies).files
+      const result = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
+      return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
     }
   }, [])
 

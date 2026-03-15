@@ -15,6 +15,17 @@ interface StoreData {
   discordAutoConnect?: boolean // auto-connect to last channel on startup
   discordLastGuildId?: string // last joined guild
   discordLastChannelId?: string // last joined channel
+  // Autopilot (#12)
+  autopilotEnabled?: boolean
+  autopilotMusicEnabled?: boolean
+  autopilotSfxEnabled?: boolean
+  autopilotConfidenceThreshold?: number // 0.0-1.0
+  autopilotCrossfadeDuration?: number // seconds
+  autopilotMusicCooldown?: number // seconds
+  autopilotMinPlaySeconds?: number // seconds
+  autopilotSfxPerEffectCooldown?: number // seconds
+  autopilotSfxGlobalCooldown?: number // seconds
+  autopilotSfxAutoVolume?: number // 0.0-1.0
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')
