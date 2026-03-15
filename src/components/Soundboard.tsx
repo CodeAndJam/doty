@@ -306,11 +306,26 @@ export default function Soundboard({
     }
   }, [playing])
 
-  const autopilot = useAutopilot(playing, trackStartTime, pinned, (track) => {
-    console.log('[autopilot] auto-playing:', track)
-    playTrack(track, true)
-    window.doty.recordPlay(track, 'music').catch(() => {})
-  })
+  const autopilot = useAutopilot(
+    playing,
+    trackStartTime,
+    pinned,
+    (track) => {
+      console.log('[autopilot] auto-playing:', track)
+      playTrack(track, true)
+      window.doty.recordPlay(track, 'music').catch(() => {})
+    },
+    (sfxId, volume) => {
+      console.log('[autopilot] auto-triggering SFX:', sfxId, 'volume:', volume)
+      const sfx = allSfx.find((s) => s.id === sfxId)
+      if (sfx) {
+        sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
+        sfxPlayer.setSfxVolume(sfxId, volume)
+        window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
+      }
+    },
+    sfxPlayer.channels.length > 0,
+  )
 
   // Feed confidence to autopilot when recommendations change
   useEffect(() => {
@@ -318,6 +333,13 @@ export default function Soundboard({
       autopilot.onRecommendation(recommendations[0], lastConfidence)
     }
   }, [recommendations, lastConfidence, autopilot.onRecommendation])
+
+  // Feed SFX recommendations to autopilot
+  useEffect(() => {
+    if (sfxRecommendations.length > 0) {
+      autopilot.onSfxRecommendation(sfxRecommendations)
+    }
+  }, [sfxRecommendations, autopilot.onSfxRecommendation])
 
   // ── Derived data ─────────────────────────────────────────────────────
 
@@ -612,6 +634,21 @@ export default function Soundboard({
               >
                 SFX
               </span>
+              {autopilot.enabled && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    color: autopilot.lastAutoSfx ? '#4a8a6a' : '#2a5a3a',
+                    border: `1px solid ${autopilot.lastAutoSfx ? 'rgba(74,138,106,0.5)' : 'rgba(74,138,106,0.3)'}`,
+                    padding: '1px 4px',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.1em',
+                    transition: 'all 0.3s ease',
+                  }}
+                >
+                  AUTO
+                </span>
+              )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showSfx ? <ChevronDown /> : <ChevronUp />}</span>
             </button>
             {showSfx && (

@@ -18,6 +18,13 @@ export interface PendingTransition {
   countdown: number
 }
 
+export interface AutoSfxEvent {
+  /** SFX ID that was auto-triggered */
+  sfxId: string
+  /** Timestamp when triggered */
+  timestamp: number
+}
+
 export interface UseAutopilotReturn {
   /** Current autopilot state */
   state: AutopilotState
@@ -27,10 +34,14 @@ export interface UseAutopilotReturn {
   enabled: boolean
   /** Pending music transition (if any) — shows countdown UI */
   pendingTransition: PendingTransition | null
+  /** Last auto-triggered SFX (for flash UI) */
+  lastAutoSfx: AutoSfxEvent | null
   /** Cancel a pending transition */
   cancelTransition: () => void
   /** Notify autopilot of a new recommendation result */
   onRecommendation: (topTrack: string, confidence: number) => void
+  /** Notify autopilot of SFX recommendations */
+  onSfxRecommendation: (sfxIds: string[]) => void
   /** Notify autopilot that the DM manually interacted (pauses autopilot briefly) */
   onManualAction: () => void
   /** Update config */
@@ -42,15 +53,22 @@ export function useAutopilot(
   currentTrackStartTime: number | null,
   pinnedTracks: string[],
   onAutoPlay: (track: string) => void,
+  onAutoSfx: (sfxId: string, volume: number) => void,
+  isSfxPlaying: boolean,
 ): UseAutopilotReturn {
   const [config, setConfigState] = useState<AutopilotConfig>(DEFAULT_AUTOPILOT_CONFIG)
   const [state, setState] = useState<AutopilotState>('idle')
   const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null)
+  const [lastAutoSfx, setLastAutoSfx] = useState<AutoSfxEvent | null>(null)
 
   // Cooldown tracking
   const lastMusicTransitionRef = useRef<number>(0)
   const manualOverrideUntilRef = useRef<number>(0)
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  // SFX cooldown tracking
+  const lastSfxGlobalRef = useRef<number>(0)
+  const sfxPerEffectCooldownMap = useRef<Map<string, number>>(new Map())
 
   const configRef = useRef(config)
   configRef.current = config
@@ -153,6 +171,48 @@ export function useAutopilot(
     [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay],
   )
 
+  // ── SFX auto-trigger ────────────────────────────────────────────────
+
+  const onSfxRecommendation = useCallback(
+    (sfxIds: string[]) => {
+      const cfg = configRef.current
+      if (!cfg.enabled) return
+      if (sfxIds.length === 0) return
+
+      const now = Date.now()
+
+      // Respect manual override pause
+      if (now < manualOverrideUntilRef.current) return
+
+      // Don't auto-trigger if DM is manually playing an SFX
+      if (isSfxPlaying) return
+
+      // Global SFX cooldown
+      if (now - lastSfxGlobalRef.current < cfg.sfxGlobalCooldownSeconds * 1000) return
+
+      // Find the first SFX that isn't on per-effect cooldown
+      const candidate = sfxIds.find((id) => {
+        const lastPlayed = sfxPerEffectCooldownMap.current.get(id) ?? 0
+        return now - lastPlayed >= cfg.sfxPerEffectCooldownSeconds * 1000
+      })
+
+      if (!candidate) return
+
+      // Auto-trigger the SFX
+      console.log('[autopilot] auto-triggering SFX:', candidate)
+      lastSfxGlobalRef.current = now
+      sfxPerEffectCooldownMap.current.set(candidate, now)
+      setLastAutoSfx({ sfxId: candidate, timestamp: now })
+      onAutoSfx(candidate, cfg.sfxAutoVolume)
+
+      // Clear the flash indicator after 2 seconds
+      setTimeout(() => {
+        setLastAutoSfx((prev) => (prev?.timestamp === now ? null : prev))
+      }, 2000)
+    },
+    [isSfxPlaying, onAutoSfx],
+  )
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -167,8 +227,10 @@ export function useAutopilot(
     config,
     enabled: config.enabled,
     pendingTransition,
+    lastAutoSfx,
     cancelTransition,
     onRecommendation,
+    onSfxRecommendation,
     onManualAction,
     setConfig,
   }
