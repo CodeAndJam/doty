@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.7.0](https://github.com/CodeAndJam/doty/compare/v1.6.1...v1.7.0) (2026-03-15)
+
+
+### Features
+
+* **discord:** asarUnpack for native modules, chokidar v4 upgrade, and integration tests ([2dca2ab](https://github.com/CodeAndJam/doty/commit/2dca2ab41f99ad9449691b22f967d211ec4fbd82))
+
+
+### Bug Fixes
+
+* **lint:** resolve all Biome warnings — useButtonType, useIterableCallbackReturn, useExhaustiveDependencies, useKeyWithClickEvents ([c733ff5](https://github.com/CodeAndJam/doty/commit/c733ff5c554fc8904529ba37c32b68041125253e))
+* revert "type": "module" — breaks electron-vite preload output (.mjs vs .js) ([e1b73d5](https://github.com/CodeAndJam/doty/commit/e1b73d59b2211f77b59015f80ca2a0b3a29a14d5))
+
 ## [1.6.1](https://github.com/CodeAndJam/doty/compare/v1.6.0...v1.6.1) (2026-03-15)
 
 
