@@ -25,6 +25,25 @@ export interface AutoSfxEvent {
   timestamp: number
 }
 
+export type DecisionAction = 'skip' | 'pending' | 'play' | 'sfx_play' | 'cancel'
+
+export interface DecisionLogEntry {
+  /** Timestamp */
+  time: number
+  /** What type: music or sfx */
+  channel: 'music' | 'sfx'
+  /** What happened */
+  action: DecisionAction
+  /** The candidate track/sfx */
+  candidate: string
+  /** Confidence score (0-1) */
+  confidence: number
+  /** Human-readable reason */
+  reason: string
+}
+
+const MAX_LOG_ENTRIES = 50
+
 export interface UseAutopilotReturn {
   /** Current autopilot state */
   state: AutopilotState
@@ -36,6 +55,12 @@ export interface UseAutopilotReturn {
   pendingTransition: PendingTransition | null
   /** Last auto-triggered SFX (for flash UI) */
   lastAutoSfx: AutoSfxEvent | null
+  /** Current top-1 confidence from last evaluation */
+  lastConfidence: number
+  /** Last evaluated candidate track */
+  lastCandidate: string | null
+  /** Decision log for transparency */
+  decisionLog: DecisionLogEntry[]
   /** Cancel a pending transition */
   cancelTransition: () => void
   /** Notify autopilot of a new recommendation result */
@@ -46,6 +71,8 @@ export interface UseAutopilotReturn {
   onManualAction: () => void
   /** Update config */
   setConfig: (patch: Partial<AutopilotConfig>) => void
+  /** Reload config from the persistent store (call after Settings closes) */
+  reloadConfig: () => void
 }
 
 export function useAutopilot(
@@ -60,6 +87,9 @@ export function useAutopilot(
   const [state, setState] = useState<AutopilotState>('idle')
   const [pendingTransition, setPendingTransition] = useState<PendingTransition | null>(null)
   const [lastAutoSfx, setLastAutoSfx] = useState<AutoSfxEvent | null>(null)
+  const [lastConfidence, setLastConfidence] = useState(0)
+  const [lastCandidate, setLastCandidate] = useState<string | null>(null)
+  const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
 
   // Cooldown tracking
   const lastMusicTransitionRef = useRef<number>(0)
@@ -70,8 +100,15 @@ export function useAutopilot(
   const lastSfxGlobalRef = useRef<number>(0)
   const sfxPerEffectCooldownMap = useRef<Map<string, number>>(new Map())
 
+  // Recent-track avoidance: map of track -> timestamp when auto-played
+  const recentlyPlayedRef = useRef<Map<string, number>>(new Map())
+
   const configRef = useRef(config)
   configRef.current = config
+
+  const addLogEntry = useCallback((entry: Omit<DecisionLogEntry, 'time'>) => {
+    setDecisionLog((prev) => [{ ...entry, time: Date.now() }, ...prev].slice(0, MAX_LOG_ENTRIES))
+  }, [])
 
   // Load config from store on mount
   useEffect(() => {
@@ -88,16 +125,29 @@ export function useAutopilot(
     })
   }, [])
 
+  const reloadConfig = useCallback(() => {
+    window.doty.getAutopilotConfig().then((c) => {
+      setConfigState(c)
+    })
+  }, [])
+
   const cancelTransition = useCallback(() => {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current)
       countdownTimerRef.current = null
     }
+    addLogEntry({
+      channel: 'music',
+      action: 'cancel',
+      candidate: lastCandidate ?? '',
+      confidence: lastConfidence,
+      reason: 'manually cancelled',
+    })
     setPendingTransition(null)
     setState('cooldown')
     // Short cooldown after cancel to avoid immediate re-trigger
     lastMusicTransitionRef.current = Date.now()
-  }, [])
+  }, [addLogEntry, lastCandidate, lastConfidence])
 
   const onManualAction = useCallback(() => {
     // Pause autopilot decisions for 60 seconds after manual interaction
@@ -108,34 +158,117 @@ export function useAutopilot(
 
   const onRecommendation = useCallback(
     (topTrack: string, confidence: number) => {
+      // Always track latest confidence/candidate for UI display
+      setLastConfidence(confidence)
+      setLastCandidate(topTrack)
+
       const cfg = configRef.current
-      if (!cfg.enabled || !cfg.musicEnabled) return
-      if (state === 'transitioning') return
+      if (!cfg.enabled || !cfg.musicEnabled) {
+        addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'autopilot disabled' })
+        return
+      }
+      if (state === 'transitioning') {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: 'already transitioning',
+        })
+        return
+      }
 
       const now = Date.now()
 
       // Respect manual override pause
-      if (now < manualOverrideUntilRef.current) return
+      if (now < manualOverrideUntilRef.current) {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: 'manual override active',
+        })
+        return
+      }
 
       // Check confidence threshold
       if (confidence < cfg.confidenceThreshold) {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: `below threshold (${(cfg.confidenceThreshold * 100).toFixed(0)}%)`,
+        })
         if (state !== 'idle') setState('idle')
         return
       }
 
       // Don't switch to the same track
-      if (topTrack === currentTrack) return
+      if (topTrack === currentTrack) {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: 'same as current track',
+        })
+        return
+      }
+
+      // Don't replay recently auto-played tracks
+      const lastPlayed = recentlyPlayedRef.current.get(topTrack)
+      if (lastPlayed && now - lastPlayed < cfg.recentlyPlayedMinutes * 60_000) {
+        const minsAgo = ((now - lastPlayed) / 60_000).toFixed(0)
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: `played ${minsAgo}m ago (avoid ${cfg.recentlyPlayedMinutes}m)`,
+        })
+        return
+      }
 
       // Don't replace pinned tracks
-      if (currentTrack && pinnedTracks.includes(currentTrack)) return
+      if (currentTrack && pinnedTracks.includes(currentTrack)) {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: 'current track is pinned',
+        })
+        return
+      }
 
       // Check music cooldown
-      if (now - lastMusicTransitionRef.current < cfg.musicCooldownSeconds * 1000) return
+      if (now - lastMusicTransitionRef.current < cfg.musicCooldownSeconds * 1000) {
+        addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'cooldown active' })
+        return
+      }
 
       // Check minimum play time
-      if (currentTrackStartTime && now - currentTrackStartTime < cfg.minPlaySeconds * 1000) return
+      if (currentTrackStartTime && now - currentTrackStartTime < cfg.minPlaySeconds * 1000) {
+        addLogEntry({
+          channel: 'music',
+          action: 'skip',
+          candidate: topTrack,
+          confidence,
+          reason: 'min play time not reached',
+        })
+        return
+      }
 
       // All checks passed — start countdown
+      addLogEntry({
+        channel: 'music',
+        action: 'pending',
+        candidate: topTrack,
+        confidence,
+        reason: 'starting countdown',
+      })
       setState('pending_transition')
       const countdownSeconds = Math.ceil(cfg.crossfadeDuration)
       setPendingTransition({ track: topTrack, confidence, countdown: countdownSeconds })
@@ -157,6 +290,15 @@ export function useAutopilot(
           setState('transitioning')
           setPendingTransition(null)
           lastMusicTransitionRef.current = Date.now()
+          addLogEntry({
+            channel: 'music',
+            action: 'play',
+            candidate: topTrack,
+            confidence,
+            reason: 'countdown complete',
+          })
+          // Record track as recently played to avoid repeat cycling
+          recentlyPlayedRef.current.set(topTrack, Date.now())
           onAutoPlay(topTrack)
 
           // Return to idle after crossfade duration
@@ -168,7 +310,7 @@ export function useAutopilot(
         }
       }, 1000)
     },
-    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay],
+    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay, addLogEntry],
   )
 
   // ── SFX auto-trigger ────────────────────────────────────────────────
@@ -200,6 +342,7 @@ export function useAutopilot(
 
       // Auto-trigger the SFX
       console.log('[autopilot] auto-triggering SFX:', candidate)
+      addLogEntry({ channel: 'sfx', action: 'sfx_play', candidate, confidence: 0, reason: 'auto-triggered' })
       lastSfxGlobalRef.current = now
       sfxPerEffectCooldownMap.current.set(candidate, now)
       setLastAutoSfx({ sfxId: candidate, timestamp: now })
@@ -210,7 +353,7 @@ export function useAutopilot(
         setLastAutoSfx((prev) => (prev?.timestamp === now ? null : prev))
       }, 2000)
     },
-    [isSfxPlaying, onAutoSfx],
+    [isSfxPlaying, onAutoSfx, addLogEntry],
   )
 
   // Cleanup on unmount
@@ -228,10 +371,14 @@ export function useAutopilot(
     enabled: config.enabled,
     pendingTransition,
     lastAutoSfx,
+    lastConfidence,
+    lastCandidate,
+    decisionLog,
     cancelTransition,
     onRecommendation,
     onSfxRecommendation,
     onManualAction,
     setConfig,
+    reloadConfig,
   }
 }

@@ -26,6 +26,8 @@ export interface AutopilotConfig {
   sfxGlobalCooldownSeconds: number
   /** Volume multiplier for auto-triggered SFX (default: 0.7) */
   sfxAutoVolume: number
+  /** Minutes to avoid replaying a recently auto-played track (default: 10) */
+  recentlyPlayedMinutes: number
 }
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
@@ -39,6 +41,7 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
   sfxPerEffectCooldownSeconds: 30,
   sfxGlobalCooldownSeconds: 10,
   sfxAutoVolume: 0.7,
+  recentlyPlayedMinutes: 10,
 }
 
 /** Autopilot state machine states */

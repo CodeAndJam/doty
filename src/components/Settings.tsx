@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { onQwenLog } from '../hooks/useQwen'
 import { confidenceLabel } from '../lib/autopilot'
@@ -91,6 +91,11 @@ export default function Settings({
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
+  const refreshTrackCount = useCallback(async () => {
+    const files = await window.doty.listMusic()
+    setTrackCount(files.length)
+  }, [])
+
   useEffect(() => {
     window.doty.getMusicFolder().then((f) => {
       setFolder(f)
@@ -152,11 +157,6 @@ export default function Settings({
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [onClose])
-
-  async function refreshTrackCount() {
-    const files = await window.doty.listMusic()
-    setTrackCount(files.length)
-  }
 
   async function pickFolder() {
     const picked = await window.doty.pickMusicFolder()
@@ -820,7 +820,8 @@ export default function Settings({
                 <div className="flex gap-4">
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       const next = !autopilotMusic
                       setAutopilotMusic(next)
                       window.doty.setAutopilotConfig({ musicEnabled: next })
@@ -839,7 +840,8 @@ export default function Settings({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       const next = !autopilotSfx
                       setAutopilotSfx(next)
                       window.doty.setAutopilotConfig({ sfxEnabled: next })

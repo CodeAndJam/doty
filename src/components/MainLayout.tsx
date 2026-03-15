@@ -15,6 +15,7 @@ export default function MainLayout() {
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
+  const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -36,7 +37,7 @@ export default function MainLayout() {
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
   const { start, stop } = useRecorder(micDeviceId)
-  const { recommend, modelStatus, downloadProgress } = useQwen()
+  const { recommend, modelStatus, downloadProgress, lastRanker } = useQwen()
   const recommendRef = useRef(recommend)
 
   // Keep refs in sync with latest values
@@ -86,6 +87,7 @@ export default function MainLayout() {
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
+    setLastTranscriptSnippet(recentTranscript.slice(-120))
   }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -124,6 +126,7 @@ export default function MainLayout() {
       console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
       setRecommendations(result.files)
       setLastConfidence(result.confidence)
+      setLastTranscriptSnippet(prompt.slice(-120))
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
     },
@@ -321,8 +324,11 @@ export default function MainLayout() {
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}
+              lastRanker={lastRanker}
+              lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
+              settingsOpen={showSettings}
               onNoFolder={() => setShowSettings(true)}
             />
           </div>

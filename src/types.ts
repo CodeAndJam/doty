@@ -115,6 +115,19 @@ export interface SfxPlaybackChannel {
   volume: number
 }
 
+// ── Decision log (beta) ─────────────────────────────────────────────
+
+export interface DecisionLogEntry {
+  timestamp: number
+  ranker: 'reranker' | 'heuristic' | null
+  confidence: number
+  topTrack: string | null
+  transcriptSnippet: string
+  /** Optional autopilot action/reason (when entry comes from autopilot) */
+  action?: string
+  reason?: string
+}
+
 // ── API types ───────────────────────────────────────────────────────
 
 // ── Discord types ───────────────────────────────────────────────────
