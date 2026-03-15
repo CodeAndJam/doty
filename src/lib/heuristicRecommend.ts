@@ -24,14 +24,49 @@ interface MoodProfile {
 
 const MOOD_PROFILES: MoodProfile[] = [
   {
-    keywords: ['battle', 'combat', 'fight', 'war', 'clash', 'attack', 'assault', 'enemy', 'rivals', 'boss'],
+    keywords: [
+      'battle',
+      'combat',
+      'fight',
+      'war',
+      'clash',
+      'attack',
+      'assault',
+      'enemy',
+      'rivals',
+      'boss',
+      // pt
+      'batalha',
+      'combate',
+      'luta',
+      'guerra',
+      'ataque',
+      'inimigo',
+      'inimigos',
+      'chefe',
+    ],
     bpmMin: 120,
     bpmMax: 200,
     energyMin: 0.6,
     energyMax: 1.0,
   },
   {
-    keywords: ['chase', 'run', 'escape', 'flee', 'pursuit', 'urgent', 'danger'],
+    keywords: [
+      'chase',
+      'run',
+      'escape',
+      'flee',
+      'pursuit',
+      'urgent',
+      'danger',
+      // pt
+      'perseguição',
+      'correr',
+      'fuga',
+      'fugir',
+      'urgente',
+      'perigo',
+    ],
     bpmMin: 130,
     bpmMax: 200,
     energyMin: 0.65,
@@ -51,6 +86,17 @@ const MOOD_PROFILES: MoodProfile[] = [
       'bonfire',
       'halfling',
       'village',
+      // pt
+      'fogueira',
+      'acampamento',
+      'descanso',
+      'taverna',
+      'estalagem',
+      'pacífico',
+      'calmo',
+      'relaxar',
+      'aldeia',
+      'vila',
     ],
     bpmMin: 60,
     bpmMax: 100,
@@ -71,6 +117,19 @@ const MOOD_PROFILES: MoodProfile[] = [
       'dungeon',
       'corrupted',
       'obscure',
+      // pt
+      'horror',
+      'escuro',
+      'assombrado',
+      'fantasma',
+      'morto',
+      'mortos',
+      'amaldiçoado',
+      'cemitério',
+      'masmorra',
+      'corrompido',
+      'obscuro',
+      'trevas',
     ],
     bpmMin: 50,
     bpmMax: 110,
@@ -79,14 +138,48 @@ const MOOD_PROFILES: MoodProfile[] = [
     scale: 'minor',
   },
   {
-    keywords: ['ocean', 'sea', 'sail', 'voyage', 'ship', 'pirate', 'water', 'storm', 'rowboat'],
+    keywords: [
+      'ocean',
+      'sea',
+      'sail',
+      'voyage',
+      'ship',
+      'pirate',
+      'water',
+      'storm',
+      'rowboat',
+      // pt
+      'oceano',
+      'mar',
+      'navegar',
+      'viagem',
+      'navio',
+      'pirata',
+      'água',
+      'tempestade',
+      'barco',
+    ],
     bpmMin: 80,
     bpmMax: 130,
     energyMin: 0.3,
     energyMax: 0.75,
   },
   {
-    keywords: ['victory', 'triumph', 'celebration', 'heroic', 'epic', 'glorious'],
+    keywords: [
+      'victory',
+      'triumph',
+      'celebration',
+      'heroic',
+      'epic',
+      'glorious',
+      // pt
+      'vitória',
+      'triunfo',
+      'celebração',
+      'heroico',
+      'épico',
+      'glorioso',
+    ],
     bpmMin: 100,
     bpmMax: 160,
     energyMin: 0.6,
@@ -94,14 +187,52 @@ const MOOD_PROFILES: MoodProfile[] = [
     scale: 'major',
   },
   {
-    keywords: ['travel', 'journey', 'road', 'adventure', 'explore', 'caravan', 'walk', 'mountain', 'snow'],
+    keywords: [
+      'travel',
+      'journey',
+      'road',
+      'adventure',
+      'explore',
+      'caravan',
+      'walk',
+      'mountain',
+      'snow',
+      // pt
+      'viagem',
+      'jornada',
+      'estrada',
+      'aventura',
+      'explorar',
+      'caravana',
+      'caminhar',
+      'montanha',
+      'neve',
+    ],
     bpmMin: 80,
     bpmMax: 120,
     energyMin: 0.3,
     energyMax: 0.65,
   },
   {
-    keywords: ['mystery', 'intrigue', 'stealth', 'shadow', 'secret', 'underground', 'cave', 'cavern'],
+    keywords: [
+      'mystery',
+      'intrigue',
+      'stealth',
+      'shadow',
+      'secret',
+      'underground',
+      'cave',
+      'cavern',
+      // pt
+      'mistério',
+      'intriga',
+      'furtivo',
+      'sombra',
+      'segredo',
+      'subterrâneo',
+      'caverna',
+      'gruta',
+    ],
     bpmMin: 60,
     bpmMax: 110,
     energyMin: 0.2,
@@ -109,7 +240,24 @@ const MOOD_PROFILES: MoodProfile[] = [
     scale: 'minor',
   },
   {
-    keywords: ['desert', 'sand', 'dry', 'heat', 'ancient', 'temple', 'ruin'],
+    keywords: [
+      'desert',
+      'sand',
+      'dry',
+      'heat',
+      'ancient',
+      'temple',
+      'ruin',
+      // pt
+      'deserto',
+      'areia',
+      'seco',
+      'calor',
+      'antigo',
+      'templo',
+      'ruína',
+      'ruínas',
+    ],
     bpmMin: 70,
     bpmMax: 110,
     energyMin: 0.25,
@@ -120,7 +268,7 @@ const MOOD_PROFILES: MoodProfile[] = [
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .split(/\s+/)
     .filter(Boolean)
 }
@@ -164,6 +312,12 @@ function filenameScore(filename: string, tokens: string[]): number {
   return Math.min(1, (matches / Math.max(1, nameTokens.length)) * 2)
 }
 
+export interface HeuristicResult {
+  files: string[]
+  /** Estimated confidence 0-1 based on score distribution (top-1 vs rest) */
+  confidence: number
+}
+
 export function heuristicRecommend(
   transcript: string,
   files: string[],
@@ -171,14 +325,14 @@ export function heuristicRecommend(
   count = 5,
   tagsMap: Record<string, string[]> = {},
   playFrequencies: Record<string, number> = {},
-): string[] {
-  if (files.length === 0) return []
+): HeuristicResult {
+  if (files.length === 0) return { files: [], confidence: 0 }
 
   const tokens = tokenize(transcript)
 
   // If no tokens (empty prompt/transcript), return most-played tracks or random selection
   if (tokens.length === 0) {
-    return defaultRecommendations(files, playFrequencies, count)
+    return { files: defaultRecommendations(files, playFrequencies, count), confidence: 0 }
   }
 
   const mood = detectMood(tokens)
@@ -215,7 +369,20 @@ export function heuristicRecommend(
   })
 
   scored.sort((a, b) => b.score - a.score)
-  return scored.slice(0, count).map((s) => s.file)
+
+  // Estimate confidence from score distribution:
+  // High confidence = top score is much higher than the rest
+  const topScore = scored[0]?.score ?? 0
+  const avgScore =
+    scored.length > 1
+      ? scored.slice(1, Math.min(6, scored.length)).reduce((s, x) => s + x.score, 0) / Math.min(5, scored.length - 1)
+      : 0
+  // Confidence based on gap between top and average, normalized to 0-1
+  // A top score of 3+ with a gap of 1.5+ over average is high confidence
+  const gap = topScore - avgScore
+  const confidence = topScore > 0 ? Math.min(1, (gap / Math.max(topScore, 1)) * 0.8 + (topScore > 2 ? 0.2 : 0)) : 0
+
+  return { files: scored.slice(0, count).map((s) => s.file), confidence }
 }
 
 /**
