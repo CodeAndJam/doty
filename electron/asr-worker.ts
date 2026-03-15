@@ -9,7 +9,6 @@ const MODEL_DIR: string = workerData.modelDir
 const VAD_MODEL_PATH: string = workerData.vadModelPath
 const HOTWORDS_FILE: string | null = workerData.hotwordsFile || null
 const DENOISER_MODEL_PATH: string | null = workerData.denoiserModelPath || null
-const PUNCT_MODEL_PATH: string | null = workerData.punctModelPath || null
 
 const SAMPLE_RATE = 16000
 
@@ -38,7 +37,12 @@ const recognizer = new sherpa.OfflineRecognizer({
 })
 
 // ── Silero VAD ────────────────────────────────────────────────────────────────
-// Tuned: threshold 0.3 (catches quieter speech), maxSpeechDuration 25s (long DM monologues)
+// Tuned for multilingual accuracy: longer segments give the model more audio
+// context for language identification, reducing en/pt confusion.
+//   - minSilenceDuration 0.5s: merges nearby speech into longer segments
+//   - minSpeechDuration 0.25s: drops very short bursts that confuse LID
+//   - threshold 0.3: catches quieter speech
+//   - maxSpeechDuration 15s: long DM monologues
 let vad: InstanceType<typeof sherpa.Vad> | null = null
 if (fs.existsSync(VAD_MODEL_PATH)) {
   try {
@@ -47,8 +51,8 @@ if (fs.existsSync(VAD_MODEL_PATH)) {
         sileroVad: {
           model: VAD_MODEL_PATH,
           threshold: 0.3,
-          minSilenceDuration: 0.15,
-          minSpeechDuration: 0.15,
+          minSilenceDuration: 0.5,
+          minSpeechDuration: 0.25,
           windowSize: 512,
           maxSpeechDuration: 15,
         },
@@ -58,7 +62,7 @@ if (fs.existsSync(VAD_MODEL_PATH)) {
       },
       30,
     )
-    console.log('[asr-worker] Silero VAD initialized (threshold=0.3, minSilence=0.15, maxSpeech=15s)')
+    console.log('[asr-worker] Silero VAD initialized (threshold=0.3, minSilence=0.5, minSpeech=0.25, maxSpeech=15s)')
   } catch (e) {
     console.error('[asr-worker] VAD init failed, falling back to raw chunks:', e)
     vad = null
@@ -84,24 +88,6 @@ if (DENOISER_MODEL_PATH && fs.existsSync(DENOISER_MODEL_PATH)) {
   }
 }
 
-// ── CT-Transformer Punctuation ────────────────────────────────────────────────
-let punctuation: unknown = null
-if (PUNCT_MODEL_PATH && fs.existsSync(PUNCT_MODEL_PATH)) {
-  try {
-    punctuation = new sherpa.OfflinePunctuation({
-      model: {
-        ctTransformer: PUNCT_MODEL_PATH,
-        numThreads: 1,
-        debug: 0,
-      },
-    })
-    console.log('[asr-worker] CT-Transformer punctuation initialized')
-  } catch (e) {
-    console.error('[asr-worker] Punctuation init failed (non-fatal):', e)
-    punctuation = null
-  }
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function denoiseSamples(samples: Float32Array): Float32Array {
@@ -115,24 +101,13 @@ function denoiseSamples(samples: Float32Array): Float32Array {
   }
 }
 
-function addPunctuation(text: string): string {
-  if (!punctuation || !text) return text
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (punctuation as any).addPunct(text) || text
-  } catch {
-    return text
-  }
-}
-
 function transcribeSegment(samples: Float32Array, sampleRate: number): string {
   const cleaned = denoiseSamples(samples)
   const stream = recognizer.createStream()
   stream.acceptWaveform({ samples: cleaned, sampleRate })
   recognizer.decode(stream)
   const result = recognizer.getResult(stream)
-  const raw = (result.text as string).trim()
-  return addPunctuation(raw)
+  return (result.text as string).trim()
 }
 
 // ── VAD flush on silence ──────────────────────────────────────────────────────

@@ -46,13 +46,10 @@ import {
   DENOISER_MODEL_URL,
   isDenoiserReady,
   isModelReady,
-  isPunctReady,
   isRerankerCached,
   isVadReady,
   MODEL_DIR,
   MODEL_URL,
-  PUNCT_MODEL_DIR,
-  PUNCT_MODEL_URL,
   VAD_MODEL_PATH,
   VAD_MODEL_URL,
 } from './model-paths'
@@ -82,37 +79,7 @@ function downloadFile(url: string, destPath: string): Promise<void> {
   })
 }
 
-/** Download a tar.bz2 archive, extract it, and optionally rename the extracted dir. */
-async function downloadAndExtractTarBz2(
-  url: string,
-  destDir: string,
-  extractedName?: string,
-  finalDir?: string,
-): Promise<void> {
-  const tarPath = join(destDir, 'download.tar.bz2')
-  fs.mkdirSync(destDir, { recursive: true })
-  await downloadFile(url, tarPath)
-  await new Promise<void>((resolve, reject) => {
-    exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
-      if (err) return reject(err)
-      // Rename extracted directory if needed
-      if (extractedName && finalDir) {
-        const extracted = join(destDir, extractedName)
-        if (fs.existsSync(extracted) && extracted !== finalDir) {
-          fs.renameSync(extracted, finalDir)
-        }
-      }
-      try {
-        fs.unlinkSync(tarPath)
-      } catch {
-        /* ignore */
-      }
-      resolve()
-    })
-  })
-}
-
-/** Download all auxiliary STT models (VAD, denoiser, punctuation) if not present. Non-fatal. */
+/** Download auxiliary STT models (VAD, denoiser) if not present. Non-fatal. */
 async function downloadAuxModels(): Promise<void> {
   // Silero VAD (~2MB)
   if (!isVadReady()) {
@@ -131,22 +98,6 @@ async function downloadAuxModels(): Promise<void> {
       console.log('[main] GTCRN denoiser model downloaded')
     } catch (e) {
       console.error('[main] Denoiser download failed (non-fatal):', e)
-    }
-  }
-
-  // CT-Transformer punctuation model (~100MB tar.bz2)
-  if (!isPunctReady()) {
-    try {
-      const modelsDir = join(PUNCT_MODEL_DIR, '..')
-      await downloadAndExtractTarBz2(
-        PUNCT_MODEL_URL,
-        modelsDir,
-        'sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12',
-        PUNCT_MODEL_DIR,
-      )
-      console.log('[main] CT-Transformer punctuation model downloaded')
-    } catch (e) {
-      console.error('[main] Punctuation model download failed (non-fatal):', e)
     }
   }
 }
@@ -397,7 +348,7 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   if (ready) {
-    // Download auxiliary STT models (VAD, denoiser, punctuation) if not present
+    // Download auxiliary STT models (VAD, denoiser) if not present
     await downloadAuxModels()
 
     setTimeout(() => {
@@ -697,7 +648,7 @@ ipcMain.handle('model:download', async () => {
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 
-  // Download auxiliary STT models (VAD, denoiser, punctuation)
+  // Download auxiliary STT models (VAD, denoiser)
   await downloadAuxModels()
 
   return { ok: true }
