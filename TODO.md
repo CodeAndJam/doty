@@ -3,9 +3,6 @@
 ## Pending
 
 - [ ] Remaining `pnpm audit` vuln: `esbuild <=0.24.2` via `vite` — waiting on vite to bump esbuild to >=0.25.0
-- [ ] Investigate upgrading `chokidar` to v4 (drops `fsevents` issue entirely)
-- [ ] Discord: add `asarUnpack` config for native modules (packaging)
-- [ ] Discord: integration tests for connect/disconnect/stream lifecycle
 - [ ] #12 Autopilot mode (placeholder in Settings, needs implementation)
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
@@ -23,7 +20,11 @@
 
 ## Done
 
-- [x] Add `"type": "module"` to `package.json` to silence Node ESM reparsing warning
+- [x] Discord: asarUnpack config for @discordjs/opus, sodium-native, opusscript, prism-media
+- [x] Upgrade chokidar v3 to v4 (drops fsevents dependency, uses native fs.watch)
+- [x] Discord: 17 integration tests for connect/disconnect/stream lifecycle
+- [x] Lower Node engine requirement from >=24 to >=20 (LTS)
+- [x] ~~Add `"type": "module"` to `package.json`~~ — incompatible with electron-vite (changes preload output to .mjs, breaks app)
 - [x] Show directory in SFX tooltip (matching TrackCard behavior)
 - [x] Resolve all Biome lint warnings: useButtonType, useIterableCallbackReturn, useExhaustiveDependencies, useKeyWithClickEvents
 - [x] Pre-commit hook: Husky + lint-staged for Biome lint + tsc typecheck on every commit
