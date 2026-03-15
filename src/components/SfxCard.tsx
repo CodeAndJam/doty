@@ -19,6 +19,12 @@ import VolumePopover from './VolumePopover'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Extract directory path from a filename (everything before the last separator). */
+function dirName(filename: string): string {
+  const idx = Math.max(filename.lastIndexOf('/'), filename.lastIndexOf('\\'))
+  return idx > 0 ? filename.substring(0, idx) : ''
+}
+
 function MetaRow({ label, value }: { label: string; value: string | number | null | undefined }) {
   if (value == null || value === '') return null
   return (
@@ -85,6 +91,7 @@ function SfxMetadataTooltip({
         {sfx.description && <MetaRow label="Desc" value={sfx.description} />}
         <MetaRow label="Duration" value={sfx.duration ? formatTime(sfx.duration) : null} />
         <MetaRow label="Source" value={sfx.source === 'builtin' ? 'Built-in' : 'Custom'} />
+        <MetaRow label="Dir" value={dirName(sfx.filename)} />
         <MetaRow label="File" value={sfx.filename.split('/').pop() ?? sfx.filename} />
         {tags.length > 0 && <MetaRow label="Tags" value={tags.join(', ')} />}
         {sfx.attribution && (
