@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
+import { useAutopilot } from '../hooks/useAutopilot'
 import { useQueue } from '../hooks/useQueue'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import type { SfxMeta, TrackMeta } from '../types'
@@ -38,6 +39,7 @@ function saveSfxPins(pins: string[]) {
 interface Props {
   recommendations: string[]
   sfxRecommendations: string[]
+  lastConfidence: number
   musicFolder: string
   speakerDeviceId?: string
   onNoFolder: () => void
@@ -46,6 +48,7 @@ interface Props {
 export default function Soundboard({
   recommendations,
   sfxRecommendations,
+  lastConfidence,
   musicFolder,
   speakerDeviceId,
   onNoFolder,
@@ -224,6 +227,7 @@ export default function Soundboard({
   function handlePlayTrack(filename: string, forceRestart?: boolean) {
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
+    autopilot.onManualAction()
   }
 
   function togglePin(filename: string) {
@@ -266,6 +270,7 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
+    autopilot.onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -284,6 +289,35 @@ export default function Soundboard({
       })
       .catch(() => {})
   }
+
+  // ── Autopilot ─────────────────────────────────────────────────────────
+
+  // Track when the current track started playing (for autopilot min-play check)
+  const trackStartTimeRef = useRef<number | null>(null)
+  const [trackStartTime, setTrackStartTime] = useState<number | null>(null)
+  useEffect(() => {
+    if (playing) {
+      const now = Date.now()
+      trackStartTimeRef.current = now
+      setTrackStartTime(now)
+    } else {
+      trackStartTimeRef.current = null
+      setTrackStartTime(null)
+    }
+  }, [playing])
+
+  const autopilot = useAutopilot(playing, trackStartTime, pinned, (track) => {
+    console.log('[autopilot] auto-playing:', track)
+    playTrack(track, true)
+    window.doty.recordPlay(track, 'music').catch(() => {})
+  })
+
+  // Feed confidence to autopilot when recommendations change
+  useEffect(() => {
+    if (recommendations.length > 0 && lastConfidence > 0) {
+      autopilot.onRecommendation(recommendations[0], lastConfidence)
+    }
+  }, [recommendations, lastConfidence, autopilot.onRecommendation])
 
   // ── Derived data ─────────────────────────────────────────────────────
 
@@ -397,6 +431,20 @@ export default function Soundboard({
               >
                 Music
               </span>
+              {autopilot.enabled && (
+                <span
+                  style={{
+                    fontSize: '9px',
+                    color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
+                    border: `1px solid ${autopilot.state === 'idle' ? 'rgba(107,78,21,0.4)' : 'rgba(200,146,42,0.5)'}`,
+                    padding: '1px 4px',
+                    fontFamily: 'monospace',
+                    letterSpacing: '0.1em',
+                  }}
+                >
+                  AUTO
+                </span>
+              )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
             </button>
             {showMusic && (
@@ -424,6 +472,39 @@ export default function Soundboard({
           </div>
 
           {/* Music content — scrollable, hidden when collapsed */}
+          {autopilot.pendingTransition && showMusic && (
+            <div
+              className="mb-2 shrink-0 flex items-center justify-between px-3 py-2"
+              style={{
+                background: 'rgba(200,146,42,0.08)',
+                border: '1px solid rgba(200,146,42,0.3)',
+                fontSize: '12px',
+                fontFamily: "'Crimson Text', serif",
+              }}
+            >
+              <span style={{ color: '#c8b07a' }}>
+                Switching to{' '}
+                <span style={{ color: '#c8922a' }}>
+                  {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
+                </span>{' '}
+                in {autopilot.pendingTransition.countdown}s…
+              </span>
+              <button
+                type="button"
+                onClick={autopilot.cancelTransition}
+                style={{
+                  fontSize: '11px',
+                  fontFamily: 'monospace',
+                  color: '#c8922a',
+                  border: '1px solid rgba(200,146,42,0.3)',
+                  padding: '2px 8px',
+                  background: 'rgba(200,146,42,0.1)',
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {showMusic &&
             (!musicFolder ? (
               emptyState('No archive selected', 'Open Configuration')

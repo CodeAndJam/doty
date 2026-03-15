@@ -14,6 +14,7 @@ export default function MainLayout() {
   const [recording, setRecording] = useState(false)
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
+  const [lastConfidence, setLastConfidence] = useState(0)
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -84,6 +85,7 @@ export default function MainLayout() {
     const result = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
     setRecommendations(result.files)
+    setLastConfidence(result.confidence)
   }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -121,6 +123,7 @@ export default function MainLayout() {
       const result = await recommendRef.current(combined, files, recommendCountRef.current)
       console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
       setRecommendations(result.files)
+      setLastConfidence(result.confidence)
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
     },
@@ -317,6 +320,7 @@ export default function MainLayout() {
             <Soundboard
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
+              lastConfidence={lastConfidence}
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               onNoFolder={() => setShowSettings(true)}
