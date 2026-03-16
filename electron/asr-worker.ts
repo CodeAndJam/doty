@@ -113,7 +113,7 @@ function transcribeSegment(samples: Float32Array, sampleRate: number): string {
 // ── VAD flush on silence ──────────────────────────────────────────────────────
 // When no audio arrives for FLUSH_TIMEOUT_MS, flush the VAD to push any
 // pending partial speech segment through for transcription.
-const FLUSH_TIMEOUT_MS = 2000
+const FLUSH_TIMEOUT_MS = 500
 let flushTimer: ReturnType<typeof setTimeout> | null = null
 
 function scheduleFlush() {

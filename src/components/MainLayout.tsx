@@ -31,7 +31,6 @@ export default function MainLayout() {
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const sfxDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
@@ -150,9 +149,9 @@ export default function MainLayout() {
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
-      // Debounce SFX recommendations — heuristic, runs in renderer
-      if (sfxDebounceRef.current) clearTimeout(sfxDebounceRef.current)
-      sfxDebounceRef.current = setTimeout(runSfxRecommendation, 1500)
+      // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
+      // autopilot needs low latency for reactive SFX triggers (see #43)
+      runSfxRecommendation()
     })
 
     // Listen for SFX recommendations from the backend (fallback)
@@ -174,7 +173,6 @@ export default function MainLayout() {
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
-      if (sfxDebounceRef.current) clearTimeout(sfxDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
     }
   }, [runRecommendation, runSfxRecommendation])
