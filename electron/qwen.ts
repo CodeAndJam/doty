@@ -50,7 +50,7 @@ function getReranker(): Promise<ScoreFn> {
 
   _rerankerPromise = Promise.all([
     AutoTokenizer.from_pretrained(MODEL_ID),
-    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu' }),
   ])
     .then(([tokenizer, model]: [unknown, unknown]) => {
       console.log('[reranker] model ready')

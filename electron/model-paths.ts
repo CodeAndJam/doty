@@ -47,7 +47,7 @@ const RERANKER_CACHE_DIR = join(
 
 export function isRerankerCached(): boolean {
   try {
-    return fs.existsSync(join(RERANKER_CACHE_DIR, 'onnx', 'model_q4.onnx'))
+    return fs.existsSync(join(RERANKER_CACHE_DIR, 'onnx', 'model.onnx'))
   } catch {
     return false
   }
