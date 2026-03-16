@@ -136,8 +136,8 @@ function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: str
   return parts.join(', ')
 }
 
-/** Number of heuristic pre-filter candidates to rerank */
-const RERANK_CANDIDATES = 20
+/** Number of heuristic pre-filter candidates to rerank (reduced for Qwen3 CausalLM perf) */
+const RERANK_CANDIDATES = 10
 
 export type RankerType = 'reranker' | 'heuristic' | null
 
