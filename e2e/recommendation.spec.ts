@@ -23,11 +23,19 @@
  *   alphabetical first-5, which would only happen if the fallback fired.
  */
 
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { join, resolve } from 'path'
 import fs from 'fs'
 
 const FIXTURES_DIR = resolve(__dirname, 'fixtures')
+
+/** Gracefully quit Electron so macOS doesn't show "quit unexpectedly" dialog. */
+async function gracefulClose(app: ElectronApplication) {
+  await app.evaluate(({ app: electronApp }) => {
+    setTimeout(() => electronApp.quit(), 50)
+  })
+  await app.close()
+}
 
 // Alphabetical first-5 — what the fallback would return
 const FALLBACK_FIRST_5 = fs.readdirSync(FIXTURES_DIR)
@@ -91,6 +99,6 @@ test('typing "campfire" returns model recommendations, not the fallback', async 
     const hasRelevant = names.some(n => relevant.some(r => n.includes(r)))
     expect(hasRelevant, `No mood-relevant track found in: ${names.join(', ')}`).toBe(true)
   } finally {
-    await app.close()
+    await gracefulClose(app)
   }
 })

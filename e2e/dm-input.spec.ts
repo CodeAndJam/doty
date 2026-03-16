@@ -15,10 +15,19 @@
  *   - The ASR (Parakeet) model must already be downloaded to ~/.doty/models/.
  */
 
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { join, resolve } from 'path'
 
 const FIXTURES_DIR = resolve(__dirname, 'fixtures')
+
+/** Gracefully quit Electron so macOS doesn't show "quit unexpectedly" dialog. */
+async function gracefulClose(app: ElectronApplication) {
+  // Fire-and-forget: schedule quit, then close() waits for the process to exit
+  await app.evaluate(({ app: electronApp }) => {
+    setTimeout(() => electronApp.quit(), 50)
+  })
+  await app.close()
+}
 
 test.describe('DM input box', () => {
   test('typing in the input updates its value', async () => {
@@ -66,7 +75,7 @@ test.describe('DM input box', () => {
       await input.fill('campfire')
       await expect(input).toHaveValue('campfire')
     } finally {
-      await app.close()
+      await gracefulClose(app)
     }
   })
 
@@ -144,7 +153,7 @@ test.describe('DM input box', () => {
       // We just verify that tracks are still shown (the app didn't break).
       expect(clearedNames.length).toBeGreaterThan(0)
     } finally {
-      await app.close()
+      await gracefulClose(app)
     }
   })
 
@@ -227,7 +236,7 @@ test.describe('DM input box', () => {
         `Captured logs: ${consoleLogs.filter(l => l.includes('[recommend]')).join(' | ')}`,
       ).toBe(true)
     } finally {
-      await app.close()
+      await gracefulClose(app)
     }
   })
 })
