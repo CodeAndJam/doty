@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/CodeAndJam/doty/compare/v1.7.0...v2.0.0) (2026-03-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* **asr:** Users with existing ~/.doty/models/punct-ct-transformer/ can safely delete it — the directory is no longer used.
+
+### Features
+
+* **autopilot:** auto music/SFX transitions with decision transparency ([#42](https://github.com/CodeAndJam/doty/issues/42)) ([022beb6](https://github.com/CodeAndJam/doty/commit/022beb695961209bfd81dbc38e368749c97c0ef3))
+* **recommend:** multilingual mood keywords, Unicode tokenizer, and heuristic confidence ([#46](https://github.com/CodeAndJam/doty/issues/46)) ([9aa0931](https://github.com/CodeAndJam/doty/commit/9aa0931acbf82d40545df32bba8fce595f9a7e5f))
+
+
+### Bug Fixes
+
+* **asr:** remove CT-Transformer punctuation and tune VAD for multilingual accuracy ([#44](https://github.com/CodeAndJam/doty/issues/44)) ([d1c0ffb](https://github.com/CodeAndJam/doty/commit/d1c0ffb6abf4a3b518860ff54d735ed97988ba46))
+
 ## [1.7.0](https://github.com/CodeAndJam/doty/compare/v1.6.1...v1.7.0) (2026-03-15)
 
 
