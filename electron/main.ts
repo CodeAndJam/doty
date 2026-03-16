@@ -116,18 +116,10 @@ async function downloadRerankerModel(): Promise<void> {
 
   console.log('[main] Pre-downloading reranker model in main process...')
   try {
-    // Dynamic import to avoid loading transformers at startup if already cached
-    const transformersPath = join(
-      __dirname,
-      '..',
-      'node_modules',
-      '@huggingface',
-      'transformers',
-      'dist',
-      'transformers.node.cjs',
-    )
+    // Dynamic require — the package is externalized by electron-vite so Node's
+    // module resolution finds it in the project root node_modules.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(transformersPath)
+    const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
     const homePath = app.getPath('home')
     env.cacheDir = join(homePath, '.doty', 'hf-cache')
     env.allowRemoteModels = true
