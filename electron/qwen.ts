@@ -30,18 +30,11 @@ function getReranker(): Promise<ScoreFn> {
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { app } = require('electron')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs')
-  let appPath = app.getAppPath()
-  while (appPath !== require('node:path').dirname(appPath)) {
-    if (fs.existsSync(join(appPath, 'node_modules/@huggingface/transformers'))) break
-    appPath = require('node:path').dirname(appPath)
-  }
   const homePath = app.getPath('home')
-  const transformersPath = join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
-  console.log('[reranker] resolved appPath:', appPath)
+  // Dynamic require — the package is externalized by electron-vite so Node's
+  // module resolution finds it in the project root node_modules.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(transformersPath)
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
@@ -50,7 +43,7 @@ function getReranker(): Promise<ScoreFn> {
 
   _rerankerPromise = Promise.all([
     AutoTokenizer.from_pretrained(MODEL_ID),
-    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu' }),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
   ])
     .then(([tokenizer, model]: [unknown, unknown]) => {
       console.log('[reranker] model ready')

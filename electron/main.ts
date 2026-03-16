@@ -142,6 +142,7 @@ async function downloadRerankerModel(): Promise<void> {
     await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb })
     await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
       device: 'cpu',
+      dtype: 'fp32',
       progress_callback: progressCb,
     })
 

@@ -97,6 +97,7 @@ function getReranker() {
       AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb }),
       AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
         device: 'wasm',
+        dtype: 'fp32',
         progress_callback: progressCb,
       }),
     ])
