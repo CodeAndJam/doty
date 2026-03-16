@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('stt:transcript', handler)
     return () => ipcRenderer.removeListener('stt:transcript', handler)
   },
+  onDraftTranscript: (cb: (text: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
+    ipcRenderer.on('stt:draft', handler)
+    return () => ipcRenderer.removeListener('stt:draft', handler)
+  },
+  onRevisedTranscript: (cb: (text: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
+    ipcRenderer.on('stt:revised', handler)
+    return () => ipcRenderer.removeListener('stt:revised', handler)
+  },
 
   // Music
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),

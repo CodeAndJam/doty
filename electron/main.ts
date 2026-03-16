@@ -4,7 +4,15 @@ import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
-import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
+import {
+  freeRecognizer,
+  initRecognizer,
+  restartRecognizer,
+  setOnDraftText,
+  setOnFlushText,
+  setOnRevisedText,
+  transcribeFloat32,
+} from './asr'
 import {
   closeDb,
   getAllTags,
@@ -412,6 +420,15 @@ app.whenReady().then(async () => {
           const file = getSessionTranscriptFile()
           if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
         })
+        // Two-phase transcription: draft (fast SFX) and revised (accurate)
+        setOnDraftText((text) => {
+          mainWindow?.webContents.send('stt:draft', text)
+        })
+        setOnRevisedText((text) => {
+          mainWindow?.webContents.send('stt:revised', text)
+          const file = getSessionTranscriptFile()
+          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+        })
       } catch (e) {
         console.error('ASR init error:', e)
       }
@@ -695,6 +712,15 @@ ipcMain.handle('model:download', async () => {
   // Forward VAD flush text to renderer (sentence tails after silence)
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
+    const file = getSessionTranscriptFile()
+    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+  })
+  // Two-phase transcription: draft (fast SFX) and revised (accurate)
+  setOnDraftText((text) => {
+    mainWindow?.webContents.send('stt:draft', text)
+  })
+  setOnRevisedText((text) => {
+    mainWindow?.webContents.send('stt:revised', text)
     const file = getSessionTranscriptFile()
     if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
   })

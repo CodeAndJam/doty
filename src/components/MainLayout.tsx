@@ -10,9 +10,14 @@ import Transcript from './Transcript'
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
 const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
 
+export interface TranscriptLine {
+  text: string
+  draft: boolean
+}
+
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
-  const [transcripts, setTranscripts] = useState<string[]>([])
+  const [transcripts, setTranscripts] = useState<TranscriptLine[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -144,13 +149,35 @@ export default function MainLayout() {
     window.doty.getMusicFolder().then(setMusicFolder)
 
     const unsubTranscript = window.doty.onTranscript((text) => {
-      setTranscripts((prev) => [...prev, text])
+      // Natural VAD segments are already good quality — add as final
+      setTranscripts((prev) => [...prev, { text, draft: false }])
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
       // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
       // autopilot needs low latency for reactive SFX triggers (see #43)
+      runSfxRecommendation()
+    })
+
+    // Draft transcripts: fast 500ms flush, rough text for SFX keyword matching
+    const unsubDraft = window.doty.onDraftTranscript((text) => {
+      setTranscripts((prev) => [...prev, { text, draft: true }])
+      // Trigger SFX immediately on drafts for low-latency autopilot
+      runSfxRecommendation(text)
+    })
+
+    // Revised transcripts: 2s re-transcription replaces all pending drafts
+    const unsubRevised = window.doty.onRevisedTranscript((text) => {
+      setTranscripts((prev) => {
+        // Remove all trailing draft lines and replace with the revised text
+        const withoutDrafts = prev.filter((l) => !l.draft)
+        return [...withoutDrafts, { text, draft: false }]
+      })
+      transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
+      // Trigger music recommendations with the improved text
+      if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      recommendDebounceRef.current = setTimeout(runRecommendation, 500)
       runSfxRecommendation()
     })
 
@@ -170,6 +197,8 @@ export default function MainLayout() {
 
     return () => {
       unsubTranscript()
+      unsubDraft()
+      unsubRevised()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)

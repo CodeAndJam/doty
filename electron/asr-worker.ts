@@ -110,15 +110,48 @@ function transcribeSegment(samples: Float32Array, sampleRate: number): string {
   return (result.text as string).trim()
 }
 
-// ── VAD flush on silence ──────────────────────────────────────────────────────
-// When no audio arrives for FLUSH_TIMEOUT_MS, flush the VAD to push any
-// pending partial speech segment through for transcription.
-const FLUSH_TIMEOUT_MS = 500
-let flushTimer: ReturnType<typeof setTimeout> | null = null
+// ── Two-phase transcription ───────────────────────────────────────────────────
+// Phase 1 (Draft): 500ms after last audio → fast flush of VAD → rough text
+//   for SFX keyword matching. Shown dimmed in UI.
+// Phase 2 (Revised): 2s after last audio → re-transcribe accumulated audio
+//   buffer as one chunk → better language detection and coherent phrases.
+//   Replaces all pending drafts in UI.
+// Natural VAD segments (speech boundary detected) are already good quality
+//   and go straight to final, clearing the revision buffer.
 
-function scheduleFlush() {
-  if (flushTimer) clearTimeout(flushTimer)
-  flushTimer = setTimeout(() => {
+const DRAFT_FLUSH_MS = 500
+const REVISION_FLUSH_MS = 2000
+
+// Audio ring buffer for revision pass (up to 2 minutes of audio)
+const MAX_REVISION_SAMPLES = SAMPLE_RATE * 120
+const revisionBuffer = new Float32Array(MAX_REVISION_SAMPLES)
+let revisionLen = 0
+
+// Track whether we have pending drafts that need revision
+let pendingDraftCount = 0
+
+let draftTimer: ReturnType<typeof setTimeout> | null = null
+let revisionTimer: ReturnType<typeof setTimeout> | null = null
+
+function appendToRevisionBuffer(samples: Float32Array) {
+  if (revisionLen + samples.length > MAX_REVISION_SAMPLES) {
+    // Shift buffer: drop oldest samples to make room
+    const overflow = revisionLen + samples.length - MAX_REVISION_SAMPLES
+    revisionBuffer.copyWithin(0, overflow, revisionLen)
+    revisionLen -= overflow
+  }
+  revisionBuffer.set(samples, revisionLen)
+  revisionLen += samples.length
+}
+
+function clearRevisionBuffer() {
+  revisionLen = 0
+  pendingDraftCount = 0
+}
+
+function scheduleDraftFlush() {
+  if (draftTimer) clearTimeout(draftTimer)
+  draftTimer = setTimeout(() => {
     if (!vad) return
     try {
       vad.flush()
@@ -130,14 +163,31 @@ function scheduleFlush() {
         if (text) texts.push(text)
       }
       if (texts.length > 0) {
-        // Use a separate message type so asr.ts can forward directly to renderer
-        // (the original request's promise was already resolved)
-        parentPort!.postMessage({ type: 'flush', text: texts.join(' ') })
+        pendingDraftCount++
+        parentPort!.postMessage({ type: 'draft', text: texts.join(' ') })
       }
     } catch (e) {
-      console.error('[asr-worker] flush error:', e)
+      console.error('[asr-worker] draft flush error:', e)
     }
-  }, FLUSH_TIMEOUT_MS)
+  }, DRAFT_FLUSH_MS)
+}
+
+function scheduleRevision() {
+  if (revisionTimer) clearTimeout(revisionTimer)
+  revisionTimer = setTimeout(() => {
+    // Only revise if there are pending drafts to improve
+    if (pendingDraftCount === 0 || revisionLen === 0) return
+    try {
+      const audioSlice = revisionBuffer.slice(0, revisionLen)
+      const text = transcribeSegment(audioSlice, SAMPLE_RATE)
+      if (text) {
+        parentPort!.postMessage({ type: 'revised', text })
+      }
+      clearRevisionBuffer()
+    } catch (e) {
+      console.error('[asr-worker] revision error:', e)
+    }
+  }, REVISION_FLUSH_MS)
 }
 
 // ── Message handler ───────────────────────────────────────────────────────────
@@ -145,6 +195,9 @@ function scheduleFlush() {
 parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: ArrayBuffer; sampleRate: number }) => {
   try {
     const samples = new Float32Array(buffer)
+
+    // Accumulate raw audio for the revision pass
+    appendToRevisionBuffer(samples)
 
     if (vad) {
       // Feed audio through VAD — it accumulates internally across calls,
@@ -159,8 +212,17 @@ parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: Arr
         if (text) texts.push(text)
       }
 
-      // Schedule a flush in case this is the last chunk for a while
-      scheduleFlush()
+      // Natural VAD segments are already good quality — emit as final
+      // and clear the revision buffer (no revision needed)
+      if (texts.length > 0) {
+        clearRevisionBuffer()
+        if (revisionTimer) clearTimeout(revisionTimer)
+        if (draftTimer) clearTimeout(draftTimer)
+      }
+
+      // Schedule draft flush (fast, 500ms) and revision (slower, 2s)
+      scheduleDraftFlush()
+      scheduleRevision()
 
       parentPort!.postMessage({ id, text: texts.join(' ') })
     } else {

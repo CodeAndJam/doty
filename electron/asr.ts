@@ -12,9 +12,19 @@ const pending = new Map<number, { resolve: (text: string) => void; reject: (e: E
 
 /** Callback for flushed transcript text (VAD silence flush). Set by main process. */
 let onFlushText: ((text: string) => void) | null = null
+/** Callback for draft transcript text (fast 500ms flush). */
+let onDraftText: ((text: string) => void) | null = null
+/** Callback for revised transcript text (2s re-transcription). */
+let onRevisedText: ((text: string) => void) | null = null
 
 export function setOnFlushText(cb: (text: string) => void): void {
   onFlushText = cb
+}
+export function setOnDraftText(cb: (text: string) => void): void {
+  onDraftText = cb
+}
+export function setOnRevisedText(cb: (text: string) => void): void {
+  onRevisedText = cb
 }
 function resolveHotwordsFile(): string | null {
   const custom = store.get('hotwordsFile', '') as string
@@ -38,6 +48,15 @@ function getWorker(): Worker {
     // Handle VAD flush messages (no pending promise, forward directly)
     if (msg.type === 'flush') {
       if (msg.text && onFlushText) onFlushText(msg.text)
+      return
+    }
+    // Two-phase transcription: draft (fast, rough) and revised (slower, accurate)
+    if (msg.type === 'draft') {
+      if (msg.text && onDraftText) onDraftText(msg.text)
+      return
+    }
+    if (msg.type === 'revised') {
+      if (msg.text && onRevisedText) onRevisedText(msg.text)
       return
     }
 
