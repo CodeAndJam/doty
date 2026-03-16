@@ -36,12 +36,18 @@ export function isDenoiserReady(): boolean {
 /** Default hotwords file path: ~/.doty/hotwords.txt */
 export const DEFAULT_HOTWORDS_PATH = join(app.getPath('home'), '.doty', 'hotwords.txt')
 
-// Reranker model cache: ~/.doty/hf-cache/Xenova/ms-marco-MiniLM-L-6-v2/
-const RERANKER_CACHE_DIR = join(app.getPath('home'), '.doty', 'hf-cache', 'Xenova', 'ms-marco-MiniLM-L-6-v2')
+// Reranker model cache: ~/.doty/hf-cache/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1/
+const RERANKER_CACHE_DIR = join(
+  app.getPath('home'),
+  '.doty',
+  'hf-cache',
+  'cross-encoder',
+  'mmarco-mMiniLMv2-L12-H384-v1',
+)
 
 export function isRerankerCached(): boolean {
   try {
-    return fs.existsSync(join(RERANKER_CACHE_DIR, 'onnx', 'model_q4.onnx'))
+    return fs.existsSync(join(RERANKER_CACHE_DIR, 'onnx', 'model.onnx'))
   } catch {
     return false
   }

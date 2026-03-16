@@ -102,6 +102,56 @@ async function downloadAuxModels(): Promise<void> {
   }
 }
 
+/**
+ * Pre-download the reranker model in the main process (Node.js context).
+ * The renderer worker's fetch can stall in Electron's sandboxed context,
+ * so we download here where Node.js networking works reliably, then the
+ * worker loads from the local cache with allowRemoteModels=false.
+ */
+async function downloadRerankerModel(): Promise<void> {
+  if (isRerankerCached()) {
+    console.log('[main] Reranker model already cached')
+    return
+  }
+
+  console.log('[main] Pre-downloading reranker model in main process...')
+  try {
+    // Dynamic require — the package is externalized by electron-vite so Node's
+    // module resolution finds it in the project root node_modules.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
+    const homePath = app.getPath('home')
+    env.cacheDir = join(homePath, '.doty', 'hf-cache')
+    env.allowRemoteModels = true
+
+    const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
+
+    // Notify renderer about download progress via IPC
+    const sendProgress = (p: Record<string, unknown>) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('reranker:download-progress', p)
+      }
+    }
+
+    const progressCb = (p: Record<string, unknown>) => {
+      if (p.status === 'progress' || p.status === 'download' || p.status === 'initiate' || p.status === 'done') {
+        sendProgress(p)
+      }
+    }
+
+    await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb })
+    await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
+      device: 'cpu',
+      dtype: 'fp32',
+      progress_callback: progressCb,
+    })
+
+    console.log('[main] Reranker model pre-downloaded successfully')
+  } catch (e) {
+    console.error('[main] Reranker model pre-download failed (non-fatal):', e)
+  }
+}
+
 // Register app:// as a privileged scheme BEFORE app is ready.
 // This makes the renderer a secure context (like https://) so the Cache API
 // is available — transformers.js uses it to cache model weights between launches.
@@ -350,6 +400,8 @@ app.whenReady().then(async () => {
   if (ready) {
     // Download auxiliary STT models (VAD, denoiser) if not present
     await downloadAuxModels()
+    // Pre-download reranker model in main process (worker fetch stalls in Electron)
+    downloadRerankerModel().catch(() => {})
 
     setTimeout(() => {
       try {
@@ -650,6 +702,8 @@ ipcMain.handle('model:download', async () => {
 
   // Download auxiliary STT models (VAD, denoiser)
   await downloadAuxModels()
+  // Pre-download reranker model in main process (worker fetch stalls in Electron)
+  downloadRerankerModel().catch(() => {})
 
   return { ok: true }
 })

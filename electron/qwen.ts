@@ -5,12 +5,12 @@ import type { TrackMetadata } from './analyzer'
 type ScoreFn = (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
 
 // ── In-process reranker inference (HuggingFace official pattern) ─────────────
-// Uses ms-marco-MiniLM-L-6-v2 as a cross-encoder to score (transcript, track)
-// pairs for relevance. Uses AutoTokenizer + AutoModelForSequenceClassification
-// directly to extract raw logits — the text-classification pipeline applies
-// softmax which always returns 1.0 for single-label cross-encoders.
+// Uses mmarco-mMiniLMv2-L12-H384-v1 as a multilingual cross-encoder to score
+// (transcript, track) pairs for relevance. Trained on mMARCO (14 languages
+// including Portuguese). Uses AutoTokenizer + AutoModelForSequenceClassification
+// directly to extract raw logits.
 
-const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
+const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
 
 let _onStatus: ((status: 'loading' | 'ready') => void) | null = null
 let _rerankerPromise: Promise<ScoreFn> | null = null
@@ -30,18 +30,11 @@ function getReranker(): Promise<ScoreFn> {
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { app } = require('electron')
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const fs = require('node:fs')
-  let appPath = app.getAppPath()
-  while (appPath !== require('node:path').dirname(appPath)) {
-    if (fs.existsSync(join(appPath, 'node_modules/@huggingface/transformers'))) break
-    appPath = require('node:path').dirname(appPath)
-  }
   const homePath = app.getPath('home')
-  const transformersPath = join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
-  console.log('[reranker] resolved appPath:', appPath)
+  // Dynamic require — the package is externalized by electron-vite so Node's
+  // module resolution finds it in the project root node_modules.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(transformersPath)
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
@@ -50,7 +43,7 @@ function getReranker(): Promise<ScoreFn> {
 
   _rerankerPromise = Promise.all([
     AutoTokenizer.from_pretrained(MODEL_ID),
-    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
   ])
     .then(([tokenizer, model]: [unknown, unknown]) => {
       console.log('[reranker] model ready')

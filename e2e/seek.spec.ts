@@ -16,10 +16,18 @@
  *   - The ASR (Parakeet) model must already be downloaded to ~/.doty/models/.
  */
 
-import { test, expect, _electron as electron } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { join, resolve } from 'path'
 
 const FIXTURES_DIR = resolve(__dirname, 'fixtures')
+
+/** Gracefully quit Electron so macOS doesn't show "quit unexpectedly" dialog. */
+async function gracefulClose(app: ElectronApplication) {
+  await app.evaluate(({ app: electronApp }) => {
+    setTimeout(() => electronApp.quit(), 50)
+  })
+  await app.close()
+}
 
 test('seek bar reflects correct position after seeking to 75%', async () => {
   const app = await electron.launch({
@@ -45,8 +53,8 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
       window.Audio.prototype = origAudio.prototype
     })
 
-    // Skip if ASR model not downloaded yet
-    const onDownloadScreen = await page.getByText('Download', { exact: false }).isVisible().catch(() => false)
+    // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
+    const onDownloadScreen = await page.getByText('Speech Recognition Model').isVisible().catch(() => false)
     if (onDownloadScreen) {
       test.skip(true, 'ASR model not present — run the app once to download it first')
       return
@@ -104,6 +112,6 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
     ).toBeGreaterThan(50)
 
   } finally {
-    await app.close()
+    await gracefulClose(app)
   }
 })

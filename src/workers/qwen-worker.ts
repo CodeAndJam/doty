@@ -1,12 +1,15 @@
 /**
  * qwen-worker.ts — Renderer Web Worker (IIFE format)
- * Uses @huggingface/transformers with ms-marco-MiniLM-L-6-v2 as a cross-encoder.
- * Scores (transcript, track_description) pairs for relevance instead of
- * generating text — faster, more reliable, no JSON parsing needed.
+ * Uses @huggingface/transformers with mmarco-mMiniLMv2-L12-H384-v1 as a
+ * multilingual cross-encoder. Scores (transcript, track_description) pairs
+ * for relevance. Trained on mMARCO (14 languages including Portuguese).
  *
  * Uses AutoTokenizer + AutoModelForSequenceClassification directly (not the
  * text-classification pipeline) to extract raw logits — the pipeline applies
  * softmax which always returns 1.0 for single-label cross-encoders.
+ *
+ * The model is pre-downloaded by the main process to avoid fetch stalls in
+ * Electron's sandboxed worker context. The worker loads from local cache only.
  */
 import { AutoModelForSequenceClassification, AutoTokenizer, env } from '@huggingface/transformers'
 
@@ -54,13 +57,13 @@ if (wasmEnv) {
   logError('wasmEnv is null — WASM config not applied!')
 }
 
-env.useWasmCache = true
-log('useWasmCache = true')
+env.useFSCache = true
+log('useFSCache = true')
 log('env.cacheDir =', env.cacheDir)
 log('env.allowLocalModels =', env.allowLocalModels)
 log('env.allowRemoteModels =', env.allowRemoteModels)
 
-const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
+const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let modelPromise: Promise<{ tokenizer: any; model: any }> | null = null
@@ -94,7 +97,7 @@ function getReranker() {
       AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb }),
       AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
         device: 'wasm',
-        dtype: 'q4',
+        dtype: 'fp32',
         progress_callback: progressCb,
       }),
     ])

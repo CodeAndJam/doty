@@ -1,9 +1,9 @@
 /**
- * Integration test: downloads the real ms-marco-MiniLM-L-6-v2 model
- * and runs a dummy rerank to verify the pipeline works end-to-end.
+ * Integration test: downloads the real mmarco-mMiniLMv2-L12-H384-v1 model
+ * and runs reranking to verify the multilingual pipeline works end-to-end.
  *
  * Uses a temporary cache directory that is cleaned up after each run.
- * First run downloads ~80 MB (under 1 min).
+ * First run downloads ~450 MB (may take a few minutes).
  *
  * Run with:  npx vitest run electron/qwen-integration.test.ts
  *
@@ -15,12 +15,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
+const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
 
 // Create a fresh temp directory for each test run
 const CACHE_DIR = mkdtempSync(join(tmpdir(), 'doty-reranker-test-'))
 
-describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
+describe('mMiniLM multilingual reranker integration', { timeout: 600_000 }, () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let tokenizer: any = null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -39,7 +39,6 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
 
     tokenizer = await AutoTokenizer.from_pretrained(MODEL_ID)
     model = await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
-      dtype: 'q4',
       progress_callback: (p: Record<string, unknown>) => {
         if (p.status === 'progress' && typeof p.progress === 'number') {
           const file = (p.file ?? p.name ?? '') as string
@@ -52,7 +51,7 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1)
     console.log(`[integration] model loaded in ${elapsed}s`)
-  })
+  }, 600_000)
 
   afterAll(() => {
     console.log('[integration] cleaning up temp cache:', CACHE_DIR)
@@ -77,7 +76,7 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
     expect(model).toBeTruthy()
   })
 
-  it('scores a relevant pair higher than an irrelevant pair', async () => {
+  it('scores a relevant pair higher than an irrelevant pair (English)', async () => {
     const scores = await scoreBatch([
       {
         query: 'We are sitting around a warm campfire telling stories',
@@ -90,9 +89,45 @@ describe('MiniLM reranker integration', { timeout: 600_000 }, () => {
     ])
 
     const [relevantScore, irrelevantScore] = scores
-    console.log(`[integration] relevant: ${relevantScore}, irrelevant: ${irrelevantScore}`)
+    console.log(`[integration] EN relevant: ${relevantScore}, irrelevant: ${irrelevantScore}`)
 
     expect(relevantScore).toBeGreaterThan(irrelevantScore)
+  })
+
+  it('scores a relevant pair higher than an irrelevant pair (Portuguese)', async () => {
+    const scores = await scoreBatch([
+      {
+        query: 'Estamos sentados à volta da fogueira a contar histórias',
+        passage: 'Campfire Rest, genre: ambient, energy: 0.3, tags: fogueira, descanso',
+      },
+      {
+        query: 'Estamos sentados à volta da fogueira a contar histórias',
+        passage: 'Decisive Battle Rivals, genre: metal, energy: 0.95, tags: combate',
+      },
+    ])
+
+    const [relevantScore, irrelevantScore] = scores
+    console.log(`[integration] PT campfire relevant: ${relevantScore}, irrelevant: ${irrelevantScore}`)
+
+    expect(relevantScore).toBeGreaterThan(irrelevantScore)
+  })
+
+  it('ranks combat music higher for Portuguese combat transcript', async () => {
+    const scores = await scoreBatch([
+      {
+        query: 'o grupo entra em combate contra o dragão',
+        passage: 'Battle Theme Epic Warriors, genre: orchestral, energy: 0.9',
+      },
+      {
+        query: 'o grupo entra em combate contra o dragão',
+        passage: 'Campfire Calm Rest, genre: ambient, energy: 0.2',
+      },
+    ])
+
+    const [combatScore, calmScore] = scores
+    console.log(`[integration] PT combat: ${combatScore}, calm: ${calmScore}`)
+
+    expect(combatScore).toBeGreaterThan(calmScore)
   })
 
   it('returns meaningful scores for multiple pairs', async () => {
