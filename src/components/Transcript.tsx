@@ -1,8 +1,7 @@
 import { useEffect, useRef } from 'react'
-import type { TranscriptLine } from './MainLayout'
 
 interface Props {
-  lines: TranscriptLine[]
+  lines: string[]
   recording: boolean
 }
 
@@ -96,16 +95,14 @@ export default function Transcript({ lines, recording }: Props) {
               key={i}
               style={{
                 fontSize: '16px',
-                color: line.draft ? '#6b5a3a' : '#c8b07a',
+                color: '#c8b07a',
                 lineHeight: '1.6',
                 fontFamily: "'Crimson Text', serif",
-                fontStyle: line.draft ? 'italic' : 'normal',
-                borderLeft: `1px solid ${line.draft ? 'rgba(46,36,22,0.3)' : 'rgba(46,36,22,0.6)'}`,
+                borderLeft: '1px solid rgba(46,36,22,0.6)',
                 paddingLeft: '8px',
-                opacity: line.draft ? 0.7 : 1,
               }}
             >
-              {line.text}
+              {line}
             </p>
           ))
         )}
