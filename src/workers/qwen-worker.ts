@@ -1,12 +1,17 @@
 /**
  * qwen-worker.ts — Renderer Web Worker (IIFE format)
- * Uses @huggingface/transformers with Qwen3-Reranker-0.6B as a CausalLM-based
- * cross-encoder. Scores (transcript, track_description) pairs for relevance
- * by predicting "yes"/"no" token probabilities.
+ * Uses @huggingface/transformers with ms-marco-MiniLM-L-6-v2 as a cross-encoder.
+ * Scores (transcript, track_description) pairs for relevance instead of
+ * generating text — faster, more reliable, no JSON parsing needed.
  *
- * Multilingual: supports 25+ languages including Portuguese, English, etc.
+ * Uses AutoTokenizer + AutoModelForSequenceClassification directly (not the
+ * text-classification pipeline) to extract raw logits — the pipeline applies
+ * softmax which always returns 1.0 for single-label cross-encoders.
+ *
+ * The model is pre-downloaded by the main process to avoid fetch stalls in
+ * Electron's sandboxed worker context. The worker loads from local cache only.
  */
-import { AutoModelForCausalLM, AutoTokenizer, env } from '@huggingface/transformers'
+import { AutoModelForSequenceClassification, AutoTokenizer, env } from '@huggingface/transformers'
 
 const t0 = Date.now()
 const elapsed = () => `+${((Date.now() - t0) / 1000).toFixed(1)}s`
@@ -58,29 +63,15 @@ log('env.cacheDir =', env.cacheDir)
 log('env.allowLocalModels =', env.allowLocalModels)
 log('env.allowRemoteModels =', env.allowRemoteModels)
 
-const MODEL_ID = 'onnx-community/Qwen3-Reranker-0.6B-ONNX'
-
-const RERANKER_INSTRUCTION =
-  'Given a spoken transcript from a tabletop RPG session, retrieve the most relevant background music or sound effect track that matches the current mood, scene, or action.'
-
-/** Build the Qwen3-Reranker chat prompt for a (query, document) pair. */
-function buildPrompt(query: string, document: string): string {
-  const systemMsg =
-    'Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".'
-  return (
-    `<|im_start|>system\n${systemMsg}<|im_end|>\n` +
-    `<|im_start|>user\n<Instruct>: ${RERANKER_INSTRUCTION}\n<Query>: ${query}\n<Document>: ${document}<|im_end|>\n` +
-    `<|im_start|>assistant\n`
-  )
-}
+const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let modelPromise: Promise<{ tokenizer: any; model: any; tokenYes: number; tokenNo: number }> | null = null
+let modelPromise: Promise<{ tokenizer: any; model: any }> | null = null
 
 function getReranker() {
   if (!modelPromise) {
     self.postMessage({ type: 'status', status: 'loading' })
-    log('loading AutoTokenizer + AutoModelForCausalLM for', MODEL_ID)
+    log('loading AutoTokenizer + AutoModelForSequenceClassification for', MODEL_ID)
 
     const progressCb = (progress: unknown) => {
       const p = progress as Record<string, unknown>
@@ -104,19 +95,16 @@ function getReranker() {
 
     modelPromise = Promise.all([
       AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb }),
-      AutoModelForCausalLM.from_pretrained(MODEL_ID, {
+      AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
         device: 'wasm',
         dtype: 'q4',
         progress_callback: progressCb,
       }),
     ])
       .then(([tokenizer, model]) => {
-        // Resolve "yes" and "no" token IDs once
-        const tokenYes = tokenizer.convert_tokens_to_ids('yes') as number
-        const tokenNo = tokenizer.convert_tokens_to_ids('no') as number
-        log(`model ready — tokenYes=${tokenYes}, tokenNo=${tokenNo}`)
+        log('model ready — reranker loaded successfully')
         self.postMessage({ type: 'status', status: 'ready' })
-        return { tokenizer, model, tokenYes, tokenNo }
+        return { tokenizer, model }
       })
       .catch((err) => {
         logError('model load FAILED:', err)
@@ -139,44 +127,19 @@ getReranker().catch(() => {
 /**
  * Message protocol:
  *   Request:  { id, pairs: Array<{ text: string, text_pair: string }> }
- *   Response: { id, output: number[] }  — relevance scores (0-1), one per pair
+ *   Response: { id, output: number[] }  — raw logit scores, one per pair
  */
 self.onmessage = async (e: MessageEvent) => {
   const { id, pairs } = e.data as { id: number; pairs: Array<{ text: string; text_pair: string }> }
   log('received rerank request id=', id, 'pairs=', pairs.length)
   try {
-    const { tokenizer, model, tokenYes, tokenNo } = await getReranker()
-    const scores: number[] = []
-
-    for (const pair of pairs) {
-      const prompt = buildPrompt(pair.text, pair.text_pair)
-      const inputs = tokenizer(prompt)
-      const output = await model(inputs)
-      const logits = output.logits
-
-      // Get logits for the last token position
-      const seqLen = logits.dims[1]
-      const vocabSize = logits.dims[2]
-      const data = logits.data as Float32Array
-      const offset = (seqLen - 1) * vocabSize
-
-      const yesLogit = data[offset + tokenYes]
-      const noLogit = data[offset + tokenNo]
-
-      // Softmax over [yes, no] to get relevance probability
-      const maxLogit = Math.max(yesLogit, noLogit)
-      const expYes = Math.exp(yesLogit - maxLogit)
-      const expNo = Math.exp(noLogit - maxLogit)
-      const score = expYes / (expYes + expNo)
-      scores.push(score)
-    }
-
-    log(
-      'rerank complete for id=',
-      id,
-      'scores sample:',
-      scores.slice(0, 3).map((s) => s.toFixed(3)),
-    )
+    const { tokenizer, model } = await getReranker()
+    const queries = pairs.map((p) => p.text)
+    const passages = pairs.map((p) => p.text_pair)
+    const inputs = tokenizer(queries, { text_pair: passages, padding: true, truncation: true })
+    const { logits } = await model(inputs)
+    const scores: number[] = Array.from(logits.data as Float32Array)
+    log('rerank complete for id=', id)
     self.postMessage({ id, output: scores })
   } catch (err) {
     logError('rerank error for id=', id, ':', err)

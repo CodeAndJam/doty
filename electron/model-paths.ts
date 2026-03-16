@@ -36,8 +36,8 @@ export function isDenoiserReady(): boolean {
 /** Default hotwords file path: ~/.doty/hotwords.txt */
 export const DEFAULT_HOTWORDS_PATH = join(app.getPath('home'), '.doty', 'hotwords.txt')
 
-// Reranker model cache: ~/.doty/hf-cache/onnx-community/Qwen3-Reranker-0.6B-ONNX/
-const RERANKER_CACHE_DIR = join(app.getPath('home'), '.doty', 'hf-cache', 'onnx-community', 'Qwen3-Reranker-0.6B-ONNX')
+// Reranker model cache: ~/.doty/hf-cache/Xenova/ms-marco-MiniLM-L-6-v2/
+const RERANKER_CACHE_DIR = join(app.getPath('home'), '.doty', 'hf-cache', 'Xenova', 'ms-marco-MiniLM-L-6-v2')
 
 export function isRerankerCached(): boolean {
   try {

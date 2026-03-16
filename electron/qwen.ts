@@ -4,16 +4,13 @@ import type { TrackMetadata } from './analyzer'
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ScoreFn = (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
 
-// ── In-process reranker inference ────────────────────────────────────────────
-// Uses Qwen3-Reranker-0.6B as a CausalLM-based cross-encoder to score
-// (transcript, track) pairs for relevance. Unlike traditional cross-encoders,
-// this model uses a chat prompt and predicts "yes"/"no" token probabilities.
-// Multilingual: supports 25+ languages including Portuguese, English, etc.
+// ── In-process reranker inference (HuggingFace official pattern) ─────────────
+// Uses ms-marco-MiniLM-L-6-v2 as a cross-encoder to score (transcript, track)
+// pairs for relevance. Uses AutoTokenizer + AutoModelForSequenceClassification
+// directly to extract raw logits — the text-classification pipeline applies
+// softmax which always returns 1.0 for single-label cross-encoders.
 
-const MODEL_ID = 'onnx-community/Qwen3-Reranker-0.6B-ONNX'
-
-const RERANKER_INSTRUCTION =
-  'Given a spoken transcript from a tabletop RPG session, retrieve the most relevant background music or sound effect track that matches the current mood, scene, or action.'
+const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
 
 let _onStatus: ((status: 'loading' | 'ready') => void) | null = null
 let _rerankerPromise: Promise<ScoreFn> | null = null
@@ -44,52 +41,29 @@ function getReranker(): Promise<ScoreFn> {
   const transformersPath = join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs')
   console.log('[reranker] resolved appPath:', appPath)
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AutoTokenizer, AutoModelForCausalLM, env } = require(transformersPath)
+  const { AutoTokenizer, AutoModelForSequenceClassification, env } = require(transformersPath)
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
-  console.log('[reranker] loading Qwen3-Reranker-0.6B in main process...')
+  console.log('[reranker] loading model in main process...')
   _onStatus?.('loading')
 
   _rerankerPromise = Promise.all([
     AutoTokenizer.from_pretrained(MODEL_ID),
-    AutoModelForCausalLM.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
+    AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'q4' }),
   ])
     .then(([tokenizer, model]: [unknown, unknown]) => {
-      console.log('[reranker] Qwen3-Reranker-0.6B ready')
+      console.log('[reranker] model ready')
       _onStatus?.('ready')
-
-      // Resolve "yes" and "no" token IDs once
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tokenYes = (tokenizer as any).convert_tokens_to_ids('yes') as number
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const tokenNo = (tokenizer as any).convert_tokens_to_ids('no') as number
-
-      // Return a scoring function that scores each pair individually
+      // Return a scoring function that batches all pairs in one call
       const scoreFn: ScoreFn = async (pairs) => {
-        const scores: number[] = []
-        for (const pair of pairs) {
-          const prompt = buildPrompt(pair.text, pair.text_pair)
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const inputs = (tokenizer as any)(prompt, { return_tensors: 'pt' })
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const output = await (model as any)(inputs)
-          const logits = output.logits
-          // Get logits for the last token position
-          const seqLen = logits.dims[1]
-          const vocabSize = logits.dims[2]
-          const lastTokenLogits = logits.data as Float32Array
-          const offset = (seqLen - 1) * vocabSize
-          const yesLogit = lastTokenLogits[offset + tokenYes]
-          const noLogit = lastTokenLogits[offset + tokenNo]
-          // Softmax over [yes, no] to get relevance probability
-          const maxLogit = Math.max(yesLogit, noLogit)
-          const expYes = Math.exp(yesLogit - maxLogit)
-          const expNo = Math.exp(noLogit - maxLogit)
-          const score = expYes / (expYes + expNo)
-          scores.push(score)
-        }
-        return scores
+        const queries = pairs.map((p) => p.text)
+        const passages = pairs.map((p) => p.text_pair)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const inputs = (tokenizer as any)(queries, { text_pair: passages, padding: true, truncation: true })
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { logits } = await (model as any)(inputs)
+        return Array.from(logits.data as Float32Array)
       }
       return scoreFn
     })
@@ -100,17 +74,6 @@ function getReranker(): Promise<ScoreFn> {
     })
 
   return _rerankerPromise
-}
-
-/** Build the Qwen3-Reranker chat prompt for a (query, document) pair. */
-function buildPrompt(query: string, document: string): string {
-  const systemMsg =
-    'Judge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".'
-  return (
-    `<|im_start|>system\n${systemMsg}<|im_end|>\n` +
-    `<|im_start|>user\n<Instruct>: ${RERANKER_INSTRUCTION}\n<Query>: ${query}\n<Document>: ${document}<|im_end|>\n` +
-    `<|im_start|>assistant\n`
-  )
 }
 
 function describeTrack(filename: string, meta: TrackMetadata | null, tags?: string[]): string {
