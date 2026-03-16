@@ -33,9 +33,9 @@ test.describe('DM input box', () => {
       page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
       page.on('pageerror', err => console.error('[renderer:error]', err.message))
 
-      // Skip if ASR model not downloaded yet
+      // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
       const onDownloadScreen = await page
-        .getByText('Download', { exact: false })
+        .getByText('Speech Recognition Model')
         .isVisible()
         .catch(() => false)
       if (onDownloadScreen) {
@@ -82,9 +82,9 @@ test.describe('DM input box', () => {
       page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
       page.on('pageerror', err => console.error('[renderer:error]', err.message))
 
-      // Skip if ASR model not downloaded yet
+      // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
       const onDownloadScreen = await page
-        .getByText('Download', { exact: false })
+        .getByText('Speech Recognition Model')
         .isVisible()
         .catch(() => false)
       if (onDownloadScreen) {
@@ -166,9 +166,9 @@ test.describe('DM input box', () => {
       })
       page.on('pageerror', err => console.error('[renderer:error]', err.message))
 
-      // Skip if ASR model not downloaded yet
+      // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
       const onDownloadScreen = await page
-        .getByText('Download', { exact: false })
+        .getByText('Speech Recognition Model')
         .isVisible()
         .catch(() => false)
       if (onDownloadScreen) {

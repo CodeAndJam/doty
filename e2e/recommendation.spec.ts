@@ -1,6 +1,8 @@
 /**
- * E2E test: launch the app, submit "campfire" via the Attune button,
+ * E2E test: launch the app, type "campfire" in the DM input,
  * and assert that the recommendation model returns relevant tracks.
+ *
+ * The DM input triggers recommendations via a 500ms debounce on change.
  *
  * Prerequisites:
  *   - Run `npm run build` before executing this test.
@@ -33,7 +35,7 @@ const FALLBACK_FIRST_5 = fs.readdirSync(FIXTURES_DIR)
   .sort()
   .slice(0, 5)
 
-test('submitting "campfire" returns model recommendations, not the fallback', async () => {
+test('typing "campfire" returns model recommendations, not the fallback', async () => {
   const app = await electron.launch({
     args: [join(__dirname, '../out/main/index.js')],
   })
@@ -46,8 +48,8 @@ test('submitting "campfire" returns model recommendations, not the fallback', as
     page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
     page.on('pageerror', err => console.error('[renderer:error]', err.message))
 
-    // Skip if ASR model not downloaded yet
-    const onDownloadScreen = await page.getByText('Download', { exact: false }).isVisible().catch(() => false)
+    // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
+    const onDownloadScreen = await page.getByText('Speech Recognition Model').isVisible().catch(() => false)
     if (onDownloadScreen) {
       test.skip(true, 'ASR model not present — run the app once to download it first')
       return
@@ -62,17 +64,20 @@ test('submitting "campfire" returns model recommendations, not the fallback', as
     const input = page.getByTestId('dm-input')
     await expect(input).toBeVisible({ timeout: 15_000 })
 
-    // Type and click Attune
+    // Type "campfire" — recommendations trigger via 500ms debounce
     await input.fill('campfire')
-    await page.getByRole('button', { name: 'Attune' }).click()
 
-    // Wait for 5 track cards — first run may download reranker model (~80 MB, up to 2 min)
+    // Wait for debounce (500ms) + reranker model load (up to 5 min on first run) + inference
     await expect(page.getByTestId('track-card')).toHaveCount(5, { timeout: 300_000 })
+
+    // Allow extra time for the reranker model to finish loading and re-rank
+    // The initial cards may be heuristic fallback; wait for a reranker-powered update
+    await page.waitForTimeout(5000)
 
     // Collect the track names shown in the UI
     const cards = page.getByTestId('track-card')
     const names = await cards.evaluateAll((els) =>
-      els.map(el => el.querySelector('span.line-clamp-2')?.textContent?.trim() ?? '')
+      els.map(el => el.querySelector('span.flex-1')?.textContent?.trim() ?? '')
     )
     console.log('[e2e] recommended tracks:', names)
 

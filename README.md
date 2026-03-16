@@ -9,7 +9,7 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 ## Features
 
 ### Real-time speech-to-text
-Doty transcribes your game table continuously using Parakeet TDT v3 (via sherpa-onnx). It runs fully offline with Silero VAD for voice activity detection, GTCRN for speech denoising, and CT-Transformer for automatic punctuation. You can add a hotwords file with campaign-specific names, spells, and places to improve transcription accuracy.
+Doty transcribes your game table continuously using Parakeet TDT v3 (via sherpa-onnx). It runs fully offline with Silero VAD for voice activity detection and GTCRN for speech denoising. You can add a hotwords file with campaign-specific names, spells, and places to improve transcription accuracy.
 
 ### AI music recommendations
 As the conversation flows, Doty uses a cross-encoder model (ms-marco-MiniLM-L-6-v2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
@@ -169,7 +169,7 @@ These are downloaded on first use and never committed to the repository.
 electron/           Electron main process
   main.ts           App entry, IPC handlers, window management
   asr.ts            Speech-to-text orchestration
-  asr-worker.ts     STT worker (sherpa-onnx, VAD, denoiser, punctuation)
+  asr-worker.ts     STT worker (sherpa-onnx, VAD, denoiser)
   discord.ts        Discord bot client (connect, voice, streaming)
   discord-audio.ts  Audio transcoding pipeline (ffmpeg -> Opus)
   database.ts       SQLite database for track metadata and tags

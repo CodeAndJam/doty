@@ -45,8 +45,8 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
       window.Audio.prototype = origAudio.prototype
     })
 
-    // Skip if ASR model not downloaded yet
-    const onDownloadScreen = await page.getByText('Download', { exact: false }).isVisible().catch(() => false)
+    // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
+    const onDownloadScreen = await page.getByText('Speech Recognition Model').isVisible().catch(() => false)
     if (onDownloadScreen) {
       test.skip(true, 'ASR model not present — run the app once to download it first')
       return
