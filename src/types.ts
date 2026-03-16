@@ -181,6 +181,15 @@ export interface DotyAPI {
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
   onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void
 
+  // STT model selection
+  getSttModel: () => Promise<string>
+  setSttModel: (model: string) => Promise<{ ok: boolean }>
+  getSttModelStatus: () => Promise<Record<string, boolean>>
+  downloadWhisper: (model: string) => Promise<{ ok: boolean; alreadyDownloaded?: boolean }>
+  onSttDownloadProgress: (
+    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
+  ) => () => void
+
   // Transcripts
   getTranscriptFolder: () => Promise<string>
   pickTranscriptFolder: () => Promise<string | null>

@@ -1,0 +1,15 @@
+[
+  {
+    "file": "gato-portuguese.wav",
+    "language": "pt",
+    "expected": "Um gato e um rato estão a escrever.",
+    "description": "Portuguese phrase with nasal vowels and negation"
+  },
+  {
+    "file": "dragon-portuguese.wav",
+    "language": "pt",
+    "expected": "Entramos numa dungeon, estamos numa sala e não sabemos o que nos aparece. De repente vemos 3 esqueletos e um dragão.",
+    "description": "Portuguese dungeon description with heavy background music. Speech in the second half (7-13s) is completely masked by music — Parakeet TDT v3 int8 cannot recover it. The 40% threshold reflects the model's ceiling for this SNR level.",
+    "minOverlap": 0.8
+  }
+]
