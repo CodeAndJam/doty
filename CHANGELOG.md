@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/CodeAndJam/doty/compare/v2.0.0...v2.0.1) (2026-03-16)
+
+
+### Bug Fixes
+
+* **e2e:** tighten ASR skip guard to avoid false-skipping during reranker download ([#47](https://github.com/CodeAndJam/doty/issues/47)) ([e009d8c](https://github.com/CodeAndJam/doty/commit/e009d8c46cad8aef2ee93c0b6cdc658f976fb201))
+
 ## [2.0.0](https://github.com/CodeAndJam/doty/compare/v1.7.0...v2.0.0) (2026-03-15)
 
 
