@@ -5,12 +5,12 @@ import type { TrackMetadata } from './analyzer'
 type ScoreFn = (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
 
 // ── In-process reranker inference (HuggingFace official pattern) ─────────────
-// Uses ms-marco-MiniLM-L-6-v2 as a cross-encoder to score (transcript, track)
-// pairs for relevance. Uses AutoTokenizer + AutoModelForSequenceClassification
-// directly to extract raw logits — the text-classification pipeline applies
-// softmax which always returns 1.0 for single-label cross-encoders.
+// Uses mmarco-mMiniLMv2-L12-H384-v1 as a multilingual cross-encoder to score
+// (transcript, track) pairs for relevance. Trained on mMARCO (14 languages
+// including Portuguese). Uses AutoTokenizer + AutoModelForSequenceClassification
+// directly to extract raw logits.
 
-const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
+const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
 
 let _onStatus: ((status: 'loading' | 'ready') => void) | null = null
 let _rerankerPromise: Promise<ScoreFn> | null = null

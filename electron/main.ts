@@ -132,7 +132,7 @@ async function downloadRerankerModel(): Promise<void> {
     env.cacheDir = join(homePath, '.doty', 'hf-cache')
     env.allowRemoteModels = true
 
-    const MODEL_ID = 'Xenova/ms-marco-MiniLM-L-6-v2'
+    const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
 
     // Notify renderer about download progress via IPC
     const sendProgress = (p: Record<string, unknown>) => {
