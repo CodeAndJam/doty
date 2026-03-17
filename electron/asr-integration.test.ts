@@ -369,14 +369,34 @@ describe('ASR STT integration — Whisper large-v3', { timeout: 300_000 }, () =>
   it('transcribes each WAV file with high accuracy', () => {
     if (!recognizer || manifest.length === 0) return
 
+    // Chunked long-form transcription: Whisper has a 30s receptive field,
+    // so we use a sliding window for longer audio (same logic as asr-worker.ts).
+    const WHISPER_MAX_SAMPLES = 28 * 16000
+    const WHISPER_OVERLAP_SAMPLES = 1 * 16000
+    const step = WHISPER_MAX_SAMPLES - WHISPER_OVERLAP_SAMPLES
+
+    function transcribeChunked(samples: Float32Array, sampleRate: number): string {
+      if (samples.length <= WHISPER_MAX_SAMPLES) {
+        const stream = recognizer.createStream()
+        stream.acceptWaveform({ samples, sampleRate })
+        recognizer.decode(stream)
+        return (recognizer.getResult(stream).text as string).trim()
+      }
+      const texts: string[] = []
+      for (let offset = 0; offset < samples.length; offset += step) {
+        const chunk = samples.subarray(offset, Math.min(offset + WHISPER_MAX_SAMPLES, samples.length))
+        const stream = recognizer.createStream()
+        stream.acceptWaveform({ samples: chunk, sampleRate })
+        recognizer.decode(stream)
+        const text = (recognizer.getResult(stream).text as string).trim()
+        if (text) texts.push(text)
+      }
+      return texts.join(' ')
+    }
+
     for (const tc of manifest) {
       const { samples, sampleRate } = readWavAsFloat32(join(FIXTURES_DIR, tc.file))
-      // Feed raw samples — Whisper handles resampling internally and
-      // performs better without VAD/denoiser preprocessing.
-      const stream = recognizer.createStream()
-      stream.acceptWaveform({ samples, sampleRate })
-      recognizer.decode(stream)
-      const actual = (recognizer.getResult(stream).text as string).trim()
+      const actual = transcribeChunked(samples, sampleRate)
 
       const ov = wordOverlapRatio(tc.expected, actual)
       const threshold = tc.minOverlap ?? 0.6

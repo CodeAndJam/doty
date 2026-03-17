@@ -136,13 +136,37 @@ function denoiseSamples(samples: Float32Array): Float32Array {
   }
 }
 
+// ── Whisper chunked transcription ─────────────────────────────────────────────
+// Whisper has a 30s receptive field. For longer audio we use a sliding window
+// with overlap, transcribe each chunk independently, and concatenate.
+const WHISPER_MAX_SAMPLES = 28 * SAMPLE_RATE // 28s (safe margin under 30s)
+const WHISPER_OVERLAP_SAMPLES = 1 * SAMPLE_RATE // 1s overlap between chunks
+const isWhisper = STT_MODEL.startsWith('whisper')
+
+function transcribeChunk(samples: Float32Array, sampleRate: number): string {
+  const stream = recognizer.createStream()
+  stream.acceptWaveform({ samples, sampleRate })
+  recognizer.decode(stream)
+  return (recognizer.getResult(stream).text as string).trim()
+}
+
 function transcribeSegment(samples: Float32Array, sampleRate: number): string {
   const cleaned = denoiseSamples(samples)
-  const stream = recognizer.createStream()
-  stream.acceptWaveform({ samples: cleaned, sampleRate })
-  recognizer.decode(stream)
-  const result = recognizer.getResult(stream)
-  return (result.text as string).trim()
+
+  // Short audio or non-Whisper: single pass
+  if (!isWhisper || cleaned.length <= WHISPER_MAX_SAMPLES) {
+    return transcribeChunk(cleaned, sampleRate)
+  }
+
+  // Chunked long-form transcription for Whisper
+  const step = WHISPER_MAX_SAMPLES - WHISPER_OVERLAP_SAMPLES
+  const texts: string[] = []
+  for (let offset = 0; offset < cleaned.length; offset += step) {
+    const chunk = cleaned.subarray(offset, Math.min(offset + WHISPER_MAX_SAMPLES, cleaned.length))
+    const text = transcribeChunk(chunk, sampleRate)
+    if (text) texts.push(text)
+  }
+  return texts.join(' ')
 }
 
 // ── Confidence filtering ──────────────────────────────────────────────────────
