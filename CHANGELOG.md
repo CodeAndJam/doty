@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.1](https://github.com/CodeAndJam/doty/compare/v2.1.0...v2.1.1) (2026-03-17)
+
+
+### Bug Fixes
+
+* **build:** remove asyncify.wasm reference dropped by onnxruntime-web ([fb1ea18](https://github.com/CodeAndJam/doty/commit/fb1ea18543bef88917d0874fe97528c90b557cbb))
+
 ## [2.1.0](https://github.com/CodeAndJam/doty/compare/v2.0.1...v2.1.0) (2026-03-17)
 
 
