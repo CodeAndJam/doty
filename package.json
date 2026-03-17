@@ -9,7 +9,7 @@
     "preview": "electron-vite preview",
     "start": "electron .",
     "rebuild": "electron-rebuild --only sherpa-onnx-node,better-sqlite3",
-    "copy-wasm": "node -e \"const fs=require('fs');['asyncify.wasm','wasm'].forEach(s=>fs.copyFileSync('node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.'+s,'public/ort-wasm-simd-threaded.'+s))\"",
+    "copy-wasm": "node -e \"const fs=require('fs');fs.copyFileSync('node_modules/onnxruntime-web/dist/ort-wasm-simd-threaded.wasm','public/ort-wasm-simd-threaded.wasm')\"",
     "postinstall": "pnpm run rebuild && pnpm run copy-wasm",
     "dist": "pnpm run build && electron-builder --mac dmg",
     "pack": "electron-builder --mac dmg",

@@ -50,7 +50,7 @@ if (wasmEnv) {
   wasmEnv.numThreads = 1
   log('set proxy=false, numThreads=1')
 
-  const wasmUrl = new URL('/ort-wasm-simd-threaded.asyncify.wasm', self.location.origin).href
+  const wasmUrl = new URL('/ort-wasm-simd-threaded.wasm', self.location.origin).href
   log('wasmPaths.wasm =', wasmUrl)
   wasmEnv.wasmPaths = { wasm: wasmUrl }
 } else {
