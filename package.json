@@ -1,6 +1,6 @@
 {
   "name": "doty",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "Continuous STT + AI music recommender",
   "main": "out/main/index.js",
   "scripts": {

@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/CodeAndJam/doty/compare/v2.0.1...v2.1.0) (2026-03-17)
+
+
+### Features
+
+* **asr:** add Whisper medium/large-v3 model support with Settings UI ([#50](https://github.com/CodeAndJam/doty/issues/50)) ([ec35357](https://github.com/CodeAndJam/doty/commit/ec353576c72c1d9c1ee1c7ff039daddffacf3195))
+
+
+### Performance Improvements
+
+* **autopilot:** reduce SFX auto-trigger latency — Phase A ([#49](https://github.com/CodeAndJam/doty/issues/49)) ([8fbe726](https://github.com/CodeAndJam/doty/commit/8fbe72623eb76c2fa18ad6ae4b4062077f7f3084))
+
 ## [2.0.1](https://github.com/CodeAndJam/doty/compare/v2.0.0...v2.0.1) (2026-03-16)
 
 
