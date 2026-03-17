@@ -44,14 +44,22 @@ import {
   DEFAULT_HOTWORDS_PATH,
   DENOISER_MODEL_PATH,
   DENOISER_MODEL_URL,
+  getSttModelInfo,
   isDenoiserReady,
   isModelReady,
   isRerankerCached,
   isVadReady,
+  isWhisperLargeV3Ready,
+  isWhisperMediumReady,
   MODEL_DIR,
   MODEL_URL,
+  type SttModelType,
   VAD_MODEL_PATH,
   VAD_MODEL_URL,
+  WHISPER_LARGE_V3_DIR,
+  WHISPER_LARGE_V3_URL,
+  WHISPER_MEDIUM_DIR,
+  WHISPER_MEDIUM_URL,
 } from './model-paths'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import { store } from './store'
@@ -705,6 +713,86 @@ ipcMain.handle('model:download', async () => {
   // Pre-download reranker model in main process (worker fetch stalls in Electron)
   downloadRerankerModel().catch(() => {})
 
+  return { ok: true }
+})
+
+// ── IPC: STT Model Selection ─────────────────────────────────────────────────
+
+ipcMain.handle('stt:get-model', () => {
+  return store.get('sttModel', 'parakeet') as string
+})
+
+ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
+  store.set('sttModel', model)
+  restartRecognizer()
+  return { ok: true }
+})
+
+ipcMain.handle('stt:get-model-status', () => {
+  return {
+    parakeet: isModelReady(),
+    'whisper-medium': isWhisperMediumReady(),
+    'whisper-large-v3': isWhisperLargeV3Ready(),
+  }
+})
+
+ipcMain.handle('stt:download-whisper', async (_e, model: 'whisper-medium' | 'whisper-large-v3') => {
+  const info = getSttModelInfo(model)
+  if (info.isReady()) return { ok: true, alreadyDownloaded: true }
+
+  const modelsDir = join(info.dir, '..')
+  fs.mkdirSync(modelsDir, { recursive: true })
+  const tarName = model === 'whisper-medium' ? 'whisper-medium.tar.bz2' : 'whisper-large-v3.tar.bz2'
+  const tarPath = join(modelsDir, tarName)
+
+  // Download with progress
+  await new Promise<void>((resolve, reject) => {
+    const file = fs.createWriteStream(tarPath)
+    const get = (url: string) => {
+      https
+        .get(url, (res) => {
+          if (res.statusCode === 301 || res.statusCode === 302) {
+            return get(res.headers.location!)
+          }
+          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
+
+          const total = Number.parseInt(res.headers['content-length'] || '0', 10)
+          let downloaded = 0
+
+          res.on('data', (chunk: Buffer) => {
+            downloaded += chunk.length
+            file.write(chunk)
+            if (total > 0) {
+              mainWindow?.webContents.send('stt:download-progress', {
+                model,
+                percent: Math.round((downloaded / total) * 100),
+                downloadedMB: Math.round(downloaded / 1024 / 1024),
+                totalMB: Math.round(total / 1024 / 1024),
+              })
+            }
+          })
+          res.on('end', () => file.close(() => resolve()))
+          res.on('error', reject)
+        })
+        .on('error', reject)
+    }
+    get(info.url)
+  })
+
+  // Extract
+  await new Promise<void>((resolve, reject) => {
+    exec(`tar -xjf "${tarPath}" -C "${modelsDir}"`, (err) => {
+      if (err) return reject(err)
+      try {
+        fs.unlinkSync(tarPath)
+      } catch {
+        /* non-fatal */
+      }
+      resolve()
+    })
+  })
+
+  mainWindow?.webContents.send('stt:download-progress', { model, percent: 100, done: true })
   return { ok: true }
 })
 

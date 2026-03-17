@@ -1,11 +1,12 @@
 // AudioWorklet processor — runs in audio thread
-// Accumulates samples and posts a 1-second Float32Array to the main thread.
+// Accumulates samples and posts a 0.5-second Float32Array to the main thread.
 // The ASR worker uses Silero VAD to detect speech boundaries, so we send
-// smaller chunks more frequently for better segmentation accuracy.
+// smaller chunks more frequently for better segmentation accuracy in
+// noisy multi-speaker environments (tabletop RPG sessions).
 class PcmCapture extends AudioWorkletProcessor {
   constructor() {
     super()
-    this.segmentSamples = 16000 * 0.5 // 0.5 seconds at 16kHz — smaller chunks for better VAD in noisy multi-speaker environments
+    this.segmentSamples = 16000 * 0.5 // 0.5 seconds at 16kHz — smaller chunks for better VAD in multi-speaker environments
     this.buffer = new Float32Array(this.segmentSamples)
     this.writePos = 0
   }

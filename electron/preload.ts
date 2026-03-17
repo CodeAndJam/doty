@@ -43,6 +43,22 @@ contextBridge.exposeInMainWorld('doty', {
     return () => ipcRenderer.removeListener('model:status', handler)
   },
 
+  // STT model selection
+  getSttModel: () => ipcRenderer.invoke('stt:get-model'),
+  setSttModel: (model: string) => ipcRenderer.invoke('stt:set-model', model),
+  getSttModelStatus: () => ipcRenderer.invoke('stt:get-model-status'),
+  downloadWhisper: (model: string) => ipcRenderer.invoke('stt:download-whisper', model),
+  onSttDownloadProgress: (
+    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
+  ) => {
+    const handler = (
+      _e: Electron.IpcRendererEvent,
+      p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean },
+    ) => cb(p)
+    ipcRenderer.on('stt:download-progress', handler)
+    return () => ipcRenderer.removeListener('stt:download-progress', handler)
+  },
+
   // Transcripts
   getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),
   pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),

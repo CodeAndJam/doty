@@ -1,0 +1,22 @@
+[
+  {
+    "file": "gato-portuguese.wav",
+    "language": "pt",
+    "expected": "Um gato e um rato estão a escrever.",
+    "description": "Portuguese phrase with nasal vowels and negation"
+  },
+  {
+    "file": "dragon-portuguese.wav",
+    "language": "pt",
+    "expected": "Entramos numa dungeon, estamos numa sala e não sabemos o que nos aparece. De repente vemos 3 esqueletos e um dragão.",
+    "description": "Portuguese dungeon description with heavy background music. Speech in the second half (7-13s) is completely masked by music — Parakeet TDT v3 int8 cannot recover it. Whisper hallucinates on the music segments, so threshold is conservative.",
+    "minOverlap": 0.6
+  },
+  {
+    "file": "dm-portuguese.wav",
+    "language": "pt",
+    "expected": "Você chegou a um túnel, parte da caverna feita de rocha natural e uniforme. Ele afunila, criando uma altura aproximadamente de 10 feet e com apenas umas saída no fundo deste túnel. Os tectos paredes e chão estão cobertos quase que como uma caperte de braços e mãos com dedos delicados a esticar-se para a abertura do túnel. A uma primeira vista, estes braços quase parecem algas ou matéria vegetal. Mas no local onde vocês se aproximam, vocês ouvem susurros na vossa mente de frases como junta-te a nós, sê como nós, nunca irás ficar sozinho.",
+    "description": "DM describing a dungeon in Portuguese with no background noise",
+    "minOverlap": 0.8
+  }
+]

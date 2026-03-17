@@ -72,6 +72,10 @@ export default function Settings({
   const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
   const [autopilotMusic, setAutopilotMusic] = useState(true)
   const [autopilotSfx, setAutopilotSfx] = useState(true)
+  const [sttModel, setSttModel] = useState('parakeet')
+  const [sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
+  const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
+  const [whisperProgress, setWhisperProgress] = useState(0)
   const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -106,6 +110,8 @@ export default function Settings({
     window.doty.getHotwordsFile().then(setHotwordsFile)
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
+    window.doty.getSttModel().then(setSttModel)
+    window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
@@ -122,6 +128,14 @@ export default function Settings({
       setScanProgress(null)
       setScanDone(true)
       setLastScanTime(new Date().toLocaleTimeString())
+    })
+    const unsubWhisper = window.doty.onSttDownloadProgress((p) => {
+      setWhisperProgress(p.percent)
+      if (p.done) {
+        setWhisperDownloading(null)
+        setWhisperProgress(0)
+        window.doty.getSttModelStatus().then(setSttModelStatus)
+      }
     })
 
     navigator.mediaDevices
@@ -142,6 +156,7 @@ export default function Settings({
     return () => {
       unsubProgress()
       unsubComplete()
+      unsubWhisper()
     }
     // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect, refreshTrackCount is stable
   }, [refreshTrackCount])
@@ -642,28 +657,176 @@ export default function Settings({
         <div className="mb-6">
           <Label>Cognition Engines</Label>
 
-          {/* STT model */}
-          <div
-            className="flex items-center gap-3 mb-2"
-            style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
-          >
-            <div
-              style={{
-                width: '6px',
-                height: '6px',
-                borderRadius: '50%',
-                flexShrink: 0,
-                background: sttReady ? '#4a8a6a' : '#c8922a',
-                boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)',
-              }}
-            />
-            <div className="flex-1 min-w-0">
-              <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Parakeet TDT v3</p>
-              <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-                {sttReady ? 'Attuned' : 'Not yet summoned'}
-              </p>
+          {/* STT model selector */}
+          <div className="mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div className="flex items-center gap-3 mb-2">
+              <div
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: sttReady ? '#4a8a6a' : '#c8922a',
+                  boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)',
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                  Speech Recognition
+                </p>
+                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                  {sttReady ? 'Attuned' : 'Not yet summoned'}
+                </p>
+              </div>
             </div>
-            {!sttReady && <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~640 MB</span>}
+
+            {/* Model radio buttons */}
+            <div className="space-y-1.5 mt-3">
+              {(
+                [
+                  {
+                    id: 'parakeet' as const,
+                    name: 'Parakeet TDT v3',
+                    desc: 'Fast, CPU-optimized',
+                    size: '~640 MB',
+                    builtin: true,
+                  },
+                  {
+                    id: 'whisper-medium' as const,
+                    name: 'Whisper Medium',
+                    desc: 'Multilingual, balanced',
+                    size: '~1.5 GB',
+                    builtin: false,
+                  },
+                  {
+                    id: 'whisper-large-v3' as const,
+                    name: 'Whisper Large-v3',
+                    desc: 'Best accuracy, slower',
+                    size: '~1.8 GB',
+                    builtin: false,
+                  },
+                ] as const
+              ).map((m) => {
+                const isDownloaded = m.builtin ? sttReady : sttModelStatus[m.id]
+                const isActive = sttModel === m.id
+                const isDownloading = whisperDownloading === m.id
+
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-2"
+                    style={{
+                      padding: '6px 8px',
+                      background: isActive ? 'rgba(200,146,42,0.06)' : 'transparent',
+                      border: isActive ? '1px solid rgba(200,146,42,0.2)' : '1px solid transparent',
+                    }}
+                  >
+                    {/* Radio dot */}
+                    <button
+                      type="button"
+                      disabled={!isDownloaded || isDownloading}
+                      onClick={() => {
+                        if (isDownloaded && !isActive) {
+                          setSttModel(m.id)
+                          window.doty.setSttModel(m.id)
+                        }
+                      }}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        border: `1px solid ${isActive ? '#c8922a' : '#3a2e1a'}`,
+                        background: 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: isDownloaded && !isActive ? 'pointer' : 'default',
+                        flexShrink: 0,
+                        padding: 0,
+                      }}
+                    >
+                      {isActive && (
+                        <div
+                          style={{
+                            width: '8px',
+                            height: '8px',
+                            borderRadius: '50%',
+                            background: '#c8922a',
+                          }}
+                        />
+                      )}
+                    </button>
+
+                    {/* Label */}
+                    <div className="flex-1 min-w-0">
+                      <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                        {m.name}
+                      </span>
+                      <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginLeft: '8px' }}>
+                        {m.desc}
+                      </span>
+                    </div>
+
+                    {/* Status / Download button */}
+                    {isDownloading ? (
+                      <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                        {whisperProgress}%
+                      </span>
+                    ) : isDownloaded ? (
+                      <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
+                        ready
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setWhisperDownloading(m.id)
+                          setWhisperProgress(0)
+                          try {
+                            await window.doty.downloadWhisper(m.id)
+                          } catch (e) {
+                            console.error('Whisper download failed:', e)
+                          }
+                          setWhisperDownloading(null)
+                          window.doty.getSttModelStatus().then(setSttModelStatus)
+                        }}
+                        style={{
+                          fontSize: '11px',
+                          color: '#c8922a',
+                          fontFamily: 'monospace',
+                          background: 'none',
+                          border: '1px solid rgba(200,146,42,0.3)',
+                          padding: '2px 8px',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.1)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                      >
+                        {m.size}
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Download progress bar */}
+            {whisperDownloading && (
+              <div style={{ marginTop: '8px' }}>
+                <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${whisperProgress}%`,
+                      background: '#c8922a',
+                      boxShadow: '0 0 6px rgba(200,146,42,0.6)',
+                      transition: 'width 0.3s',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* MiniLM reranker recommendation model */}

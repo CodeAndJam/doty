@@ -1,7 +1,14 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { DENOISER_MODEL_PATH, MODEL_DIR, VAD_MODEL_PATH } from './model-paths'
+import {
+  DENOISER_MODEL_PATH,
+  MODEL_DIR,
+  type SttModelType,
+  VAD_MODEL_PATH,
+  WHISPER_LARGE_V3_DIR,
+  WHISPER_MEDIUM_DIR,
+} from './model-paths'
 import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
@@ -22,12 +29,28 @@ function resolveHotwordsFile(): string | null {
   return null
 }
 
+/** Resolve the model directory for the selected STT model */
+function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
+  const sttModel = (store.get('sttModel', 'parakeet') as SttModelType) || 'parakeet'
+  switch (sttModel) {
+    case 'whisper-medium':
+      return { modelDir: WHISPER_MEDIUM_DIR, sttModel }
+    case 'whisper-large-v3':
+      return { modelDir: WHISPER_LARGE_V3_DIR, sttModel }
+    default:
+      return { modelDir: MODEL_DIR, sttModel: 'parakeet' }
+  }
+}
+
 function getWorker(): Worker {
   if (worker) return worker
 
+  const { modelDir, sttModel } = resolveModelDir()
+
   worker = new Worker(WORKER_PATH, {
     workerData: {
-      modelDir: MODEL_DIR,
+      modelDir,
+      sttModel,
       vadModelPath: VAD_MODEL_PATH,
       hotwordsFile: resolveHotwordsFile(),
       denoiserModelPath: DENOISER_MODEL_PATH,

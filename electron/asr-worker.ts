@@ -9,32 +9,67 @@ const MODEL_DIR: string = workerData.modelDir
 const VAD_MODEL_PATH: string = workerData.vadModelPath
 const HOTWORDS_FILE: string | null = workerData.hotwordsFile || null
 const DENOISER_MODEL_PATH: string | null = workerData.denoiserModelPath || null
+const STT_MODEL: string = workerData.sttModel || 'parakeet'
 
 const SAMPLE_RATE = 16000
+
+// ── Recognizer initialization ─────────────────────────────────────────────────
+// Supports Parakeet TDT (default) and Whisper (medium, large-v3).
 
 // Determine decoding strategy: use beam search when hotwords are available
 const hasHotwords =
   HOTWORDS_FILE && fs.existsSync(HOTWORDS_FILE) && fs.readFileSync(HOTWORDS_FILE, 'utf-8').trim().length > 0
 
-const recognizer = new sherpa.OfflineRecognizer({
-  featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
-  modelConfig: {
-    transducer: {
-      encoder: join(MODEL_DIR, 'encoder.int8.onnx'),
-      decoder: join(MODEL_DIR, 'decoder.int8.onnx'),
-      joiner: join(MODEL_DIR, 'joiner.int8.onnx'),
+function createRecognizer() {
+  if (STT_MODEL.startsWith('whisper')) {
+    // Whisper models use encoder/decoder architecture with language parameter
+    const prefix = STT_MODEL === 'whisper-medium' ? 'medium' : 'large-v3'
+    // Whisper large-v3 uses 128-dim features; medium and smaller use 80
+    const featureDim = STT_MODEL === 'whisper-large-v3' ? 128 : 80
+
+    console.log(`[asr-worker] Initializing Whisper (${prefix}), featureDim=${featureDim}`)
+    return new sherpa.OfflineRecognizer({
+      featConfig: { sampleRate: SAMPLE_RATE, featureDim },
+      modelConfig: {
+        whisper: {
+          encoder: join(MODEL_DIR, `${prefix}-encoder.int8.onnx`),
+          decoder: join(MODEL_DIR, `${prefix}-decoder.int8.onnx`),
+          language: '', // auto-detect language
+          task: 'transcribe',
+          tailPaddings: -1,
+        },
+        tokens: join(MODEL_DIR, `${prefix}-tokens.txt`),
+        numThreads: 4,
+        debug: 0,
+      },
+      decodingMethod: 'greedy_search',
+    })
+  }
+
+  // Default: Parakeet TDT v3
+  console.log('[asr-worker] Initializing Parakeet TDT v3')
+  return new sherpa.OfflineRecognizer({
+    featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+    modelConfig: {
+      transducer: {
+        encoder: join(MODEL_DIR, 'encoder.int8.onnx'),
+        decoder: join(MODEL_DIR, 'decoder.int8.onnx'),
+        joiner: join(MODEL_DIR, 'joiner.int8.onnx'),
+      },
+      tokens: join(MODEL_DIR, 'tokens.txt'),
+      numThreads: 4,
+      debug: 0,
+      modelType: 'nemo_transducer',
     },
-    tokens: join(MODEL_DIR, 'tokens.txt'),
-    numThreads: 4,
-    debug: 0,
-    modelType: 'nemo_transducer',
-  },
-  decodingMethod: hasHotwords ? 'modified_beam_search' : 'greedy_search',
-  maxActivePaths: hasHotwords ? 4 : 1,
-  hotwordsFile: hasHotwords ? HOTWORDS_FILE : '',
-  hotwordsScore: hasHotwords ? 2.0 : 0,
-  blankPenalty: 0.5,
-})
+    decodingMethod: hasHotwords ? 'modified_beam_search' : 'greedy_search',
+    maxActivePaths: hasHotwords ? 4 : 1,
+    hotwordsFile: hasHotwords ? HOTWORDS_FILE : '',
+    hotwordsScore: hasHotwords ? 2.0 : 0,
+    blankPenalty: 0.5,
+  })
+}
+
+const recognizer = createRecognizer()
 
 // ── Silero VAD ────────────────────────────────────────────────────────────────
 // Tuned for multilingual accuracy: longer segments give the model more audio
@@ -101,13 +136,54 @@ function denoiseSamples(samples: Float32Array): Float32Array {
   }
 }
 
+// ── Whisper chunked transcription ─────────────────────────────────────────────
+// Whisper has a 30s receptive field. For longer audio we use a sliding window
+// with overlap, transcribe each chunk independently, and concatenate.
+const WHISPER_MAX_SAMPLES = 28 * SAMPLE_RATE // 28s (safe margin under 30s)
+const WHISPER_OVERLAP_SAMPLES = 1 * SAMPLE_RATE // 1s overlap between chunks
+const isWhisper = STT_MODEL.startsWith('whisper')
+
+function transcribeChunk(samples: Float32Array, sampleRate: number): string {
+  const stream = recognizer.createStream()
+  stream.acceptWaveform({ samples, sampleRate })
+  recognizer.decode(stream)
+  return (recognizer.getResult(stream).text as string).trim()
+}
+
 function transcribeSegment(samples: Float32Array, sampleRate: number): string {
   const cleaned = denoiseSamples(samples)
-  const stream = recognizer.createStream()
-  stream.acceptWaveform({ samples: cleaned, sampleRate })
-  recognizer.decode(stream)
-  const result = recognizer.getResult(stream)
-  return (result.text as string).trim()
+
+  // Short audio or non-Whisper: single pass
+  if (!isWhisper || cleaned.length <= WHISPER_MAX_SAMPLES) {
+    return transcribeChunk(cleaned, sampleRate)
+  }
+
+  // Chunked long-form transcription for Whisper
+  const step = WHISPER_MAX_SAMPLES - WHISPER_OVERLAP_SAMPLES
+  const texts: string[] = []
+  for (let offset = 0; offset < cleaned.length; offset += step) {
+    const chunk = cleaned.subarray(offset, Math.min(offset + WHISPER_MAX_SAMPLES, cleaned.length))
+    const text = transcribeChunk(chunk, sampleRate)
+    if (text) texts.push(text)
+  }
+  return texts.join(' ')
+}
+
+// ── Confidence filtering ──────────────────────────────────────────────────────
+// Filters out low-quality transcriptions: very short text, single repeated
+// characters, or segments too brief to contain meaningful speech.
+
+/** Minimum audio duration in seconds for a segment to be worth transcribing */
+const MIN_SEGMENT_DURATION_S = 0.3
+
+/** Returns true if the transcription looks like garbage / noise artifacts */
+function isGarbageText(text: string): boolean {
+  if (text.length <= 2) return true
+  // Single repeated word/char like "the the" or "a a a"
+  if (/^(\S+)(\s+\1)+$/i.test(text)) return true
+  // Only whitespace and single characters like "I" or "a" with spaces
+  if (/^(\s*\S\s*){1,2}$/.test(text)) return true
+  return false
 }
 
 // ── VAD flush on silence ──────────────────────────────────────────────────────
@@ -126,8 +202,10 @@ function scheduleFlush() {
       while (!vad.isEmpty()) {
         const segment = vad.front(false)
         vad.pop()
+        const durationS = segment.samples.length / SAMPLE_RATE
+        if (durationS < MIN_SEGMENT_DURATION_S) continue
         const text = transcribeSegment(segment.samples, SAMPLE_RATE)
-        if (text) texts.push(text)
+        if (text && !isGarbageText(text)) texts.push(text)
       }
       if (texts.length > 0) {
         // Use a separate message type so asr.ts can forward directly to renderer
@@ -148,15 +226,18 @@ parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: Arr
 
     if (vad) {
       // Feed audio through VAD — it accumulates internally across calls,
-      // so speech that spans 1s chunk boundaries is handled correctly.
+      // so speech that spans chunk boundaries is handled correctly.
       vad.acceptWaveform(samples)
       const texts: string[] = []
 
       while (!vad.isEmpty()) {
         const segment = vad.front(false)
         vad.pop()
+        // Skip segments too short to contain meaningful speech
+        const durationS = segment.samples.length / SAMPLE_RATE
+        if (durationS < MIN_SEGMENT_DURATION_S) continue
         const text = transcribeSegment(segment.samples, sampleRate)
-        if (text) texts.push(text)
+        if (text && !isGarbageText(text)) texts.push(text)
       }
 
       // Schedule a flush in case this is the last chunk for a while
@@ -166,7 +247,8 @@ parentPort!.on('message', ({ id, buffer, sampleRate }: { id: number; buffer: Arr
     } else {
       // Fallback: denoise + transcribe the raw chunk directly
       const text = transcribeSegment(samples, sampleRate)
-      parentPort!.postMessage({ id, text })
+      const filtered = text && !isGarbageText(text) ? text : ''
+      parentPort!.postMessage({ id, text: filtered })
     }
   } catch (e) {
     parentPort!.postMessage({ id, error: String(e) })
