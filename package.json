@@ -75,6 +75,7 @@
       "@discordjs/opus",
       "better-sqlite3",
       "electron",
+      "electron-winstaller",
       "esbuild",
       "ffmpeg-static",
       "onnxruntime-node",
