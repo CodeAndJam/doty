@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/CodeAndJam/doty/compare/v2.1.1...v2.2.0) (2026-04-28)
+
+
+### Features
+
+* **asr:** add Voxtral-Mini-4B-Realtime as streaming STT engine ([#60](https://github.com/CodeAndJam/doty/issues/60)) ([b871f90](https://github.com/CodeAndJam/doty/commit/b871f900371d96dabbb51c08331083b41466e907))
+
 ## [2.1.1](https://github.com/CodeAndJam/doty/compare/v2.1.0...v2.1.1) (2026-03-17)
 
 
