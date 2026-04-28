@@ -156,10 +156,14 @@ function getProcess(): AsrProcess {
     asrProcess = null
   })
 
+  const isVoxtral = sttModel === 'voxtral'
+
   asrProcess.onExit(() => {
-    console.warn('[asr] process exited — will not auto-respawn')
     asrProcess = null
-    asrProcessDead = true
+    if (isVoxtral) {
+      console.warn('[asr] voxtral process exited — will not auto-respawn')
+      asrProcessDead = true
+    }
   })
 
   return asrProcess
