@@ -22,11 +22,11 @@ let model: any = null
 let processor: any = null
 
 const SAMPLE_RATE = 16000
-const MIN_SECONDS = 5 // minimum audio to attempt transcription (model needs context for language detection)
-const MAX_SECONDS = 30 // flush after this much audio
-const SILENCE_THRESHOLD = 0.02 // RMS below this = silence (tuned for real mic)
-const SPEECH_THRESHOLD = 0.03 // RMS above this = speech detected
-const SILENCE_CHUNKS = 3 // 3 consecutive silent 1s chunks to trigger flush
+const MIN_SECONDS = 3 // minimum audio to attempt transcription
+const MAX_SECONDS = 20 // flush after this much audio
+const SILENCE_THRESHOLD = 0.015 // RMS below this = silence
+const SPEECH_THRESHOLD = 0.025 // RMS above this = speech detected
+const SILENCE_CHUNKS = 2 // 2 consecutive silent 1s chunks to trigger flush
 
 let audioBuffer = new Float32Array(0)
 let silenceCount = 0
