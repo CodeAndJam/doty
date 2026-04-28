@@ -174,7 +174,8 @@ async function runStreamingSession() {
 
   function scheduleFlush() {
     if (flushTimer) clearTimeout(flushTimer)
-    flushTimer = setTimeout(flushText, 300)
+    // 2s timeout — long enough to span inter-token CPU delays
+    flushTimer = setTimeout(flushText, 2000)
   }
 
   const streamer = new (class extends BaseStreamer {
@@ -192,8 +193,8 @@ async function runStreamingSession() {
       printLen = text.length
       if (newText.length > 0) {
         textBuffer += newText
-        // Flush on sentence-ending punctuation
-        if (/[.!?]\s*$/.test(textBuffer)) {
+        // Flush when we have a substantial chunk with sentence endings
+        if (textBuffer.length > 60 && /[.!?]\s*$/.test(textBuffer)) {
           if (flushTimer) clearTimeout(flushTimer)
           flushText()
         } else {
