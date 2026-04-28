@@ -715,7 +715,6 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
 
   await new Promise<void>((resolve, reject) => {
     const destDir = join(model.dir, '..')
-    const beforeDirs = new Set(fs.readdirSync(destDir))
     exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
       if (err) return reject(err)
       try {
@@ -725,10 +724,12 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
       }
       // Rename extracted directory to match expected model.dir
       if (!fs.existsSync(model.dir)) {
-        const afterEntries = fs.readdirSync(destDir, { withFileTypes: true })
-        const newDir = afterEntries.find((e) => e.isDirectory() && !beforeDirs.has(e.name))
-        if (newDir) {
-          fs.renameSync(join(destDir, newDir.name), model.dir)
+        const entries = fs.readdirSync(destDir, { withFileTypes: true })
+        const candidate = entries.find(
+          (e) => e.isDirectory() && e.name !== model.dir.split('/').pop() && fs.existsSync(join(destDir, e.name, 'tokens.txt')),
+        )
+        if (candidate) {
+          fs.renameSync(join(destDir, candidate.name), model.dir)
         }
       }
       resolve()
