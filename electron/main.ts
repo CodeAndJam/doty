@@ -654,17 +654,25 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
   if (model.downloadMethod === 'auto') {
-    // Voxtral and similar: auto-downloaded by transformers.js on first use
+    // Voxtral and similar: auto-downloaded by transformers.js on first use.
+    // Don't block — return immediately so the UI transitions to the main screen.
     store.set('sttModel', model.id)
-    initRecognizer()
-    setOnFlushText((text) => {
-      mainWindow?.webContents.send('stt:transcript', text)
-      const file = getSessionTranscriptFile()
-      if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
-    })
     mainWindow?.webContents.send('model:status', { ready: true })
-    await downloadAuxModels()
+    // Fire-and-forget: aux models + reranker download in background
+    downloadAuxModels().catch(() => {})
     downloadRerankerModel().catch(() => {})
+    setTimeout(() => {
+      try {
+        initRecognizer()
+        setOnFlushText((text) => {
+          mainWindow?.webContents.send('stt:transcript', text)
+          const file = getSessionTranscriptFile()
+          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+        })
+      } catch (e) {
+        console.error('ASR init error:', e)
+      }
+    }, 500)
     return { ok: true }
   }
 
