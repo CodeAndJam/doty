@@ -10,7 +10,7 @@
 import { join } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
 
-const { appPath, homePath } = workerData as { appPath: string; homePath: string }
+const { homePath } = workerData as { homePath: string }
 
 const MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
 
@@ -25,7 +25,7 @@ async function loadModel() {
   parentPort!.postMessage({ type: 'status', status: 'loading' })
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const transformers = require(join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs'))
+  const transformers = require('@huggingface/transformers')
   const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
 
   env.cacheDir = join(homePath, '.doty', 'hf-cache')

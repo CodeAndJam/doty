@@ -52,10 +52,9 @@ function getWorker(): Worker {
 
   if (sttModel === 'voxtral') {
     // Voxtral uses transformers.js, not sherpa-onnx
-    const appPath = require('node:path').resolve(__dirname, '..')
     const homePath = require('electron').app.getPath('home')
     worker = new Worker(VOXTRAL_WORKER_PATH, {
-      workerData: { appPath, homePath },
+      workerData: { homePath },
     })
   } else {
     worker = new Worker(WORKER_PATH, {
