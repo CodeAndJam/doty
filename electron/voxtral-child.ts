@@ -106,26 +106,30 @@ async function runStreamingSession() {
   async function* inputFeaturesGenerator() {
     yield firstChunkInputs.input_features
 
+    // Trim audio already consumed by the first chunk
+    audioBuffer = audioBuffer.slice(numSamplesFirst)
+    let audioConsumed = 0 // tracks how much of current audioBuffer has been consumed
+
     while (sessionActive) {
       // Wait until we have enough audio for the next chunk
-      const endNeeded = startIdx + numSamplesPerChunk
-      while (audioBuffer.length < endNeeded && sessionActive) {
+      const needed = audioConsumed + numSamplesPerChunk
+      while (audioBuffer.length < needed && sessionActive) {
         await waitForAudio()
       }
       if (!sessionActive) return
 
       // Consume as much available audio as possible (token-aligned)
-      let batchEnd = Math.min(endNeeded, audioBuffer.length)
+      let batchEnd = Math.min(needed, audioBuffer.length)
       while (batchEnd + samplesPerTok <= audioBuffer.length) {
         batchEnd += samplesPerTok
       }
-      if (batchEnd <= startIdx) {
+      if (batchEnd <= audioConsumed) {
         await waitForAudio()
         continue
       }
 
       // Pad to align mel_frames % 8 == 0
-      let chunkAudio = audioBuffer.slice(startIdx, batchEnd)
+      let chunkAudio = audioBuffer.slice(audioConsumed, batchEnd)
       const rawMel = Math.floor((chunkAudio.length - nfft) / hop)
       const rem = rawMel % 8
       if (rem !== 0) {
@@ -141,7 +145,13 @@ async function runStreamingSession() {
       yield chunkInputs.input_features
 
       melFrameIdx += chunkInputs.input_features.dims[2]
-      startIdx = melFrameIdx * hop - winHalf
+      audioConsumed = batchEnd
+
+      // Trim consumed audio to prevent unbounded memory growth
+      if (audioConsumed > SAMPLE_RATE * 10) {
+        audioBuffer = audioBuffer.slice(audioConsumed)
+        audioConsumed = 0
+      }
     }
   }
 
