@@ -161,6 +161,8 @@ export interface DotyAPI {
   sttStop: () => Promise<{ ok: boolean }>
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
   onTranscript: (cb: (text: string) => void) => () => void
+  onSttStatus: (cb: (status: string) => void) => () => void
+  onSttInterim: (cb: (text: string) => void) => () => void
 
   // Music
   pickMusicFolder: () => Promise<string | null>
@@ -173,8 +175,20 @@ export interface DotyAPI {
 
   // Model
   modelStatus: () => Promise<{ ready: boolean }>
-  downloadModel: () => Promise<{ ok: boolean }>
+  downloadModel: (modelId?: string) => Promise<{ ok: boolean }>
+  getSttModelList: () => Promise<
+    Array<{
+      id: string
+      label: string
+      description: string
+      size: string
+      downloadMethod: string
+      ready: boolean
+    }>
+  >
   rerankerStatus: () => Promise<{ cached: boolean }>
+  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
+  onRerankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void

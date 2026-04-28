@@ -33,7 +33,7 @@ const MANIFEST_PATH = join(FIXTURES_DIR, 'manifest.json')
 // Model paths — same as electron/model-paths.ts but without Electron app import
 const HOME = process.env.HOME ?? process.env.USERPROFILE ?? ''
 const PARAKEET_DIR = join(HOME, '.doty', 'models', 'parakeet-tdt-0.6b-v3-int8')
-const WHISPER_MEDIUM_DIR = join(HOME, '.doty', 'models', 'sherpa-onnx-whisper-medium')
+const _WHISPER_MEDIUM_DIR = join(HOME, '.doty', 'models', 'sherpa-onnx-whisper-medium')
 const WHISPER_LARGE_V3_DIR = join(HOME, '.doty', 'models', 'sherpa-onnx-whisper-large-v3')
 const DENOISER_MODEL_PATH = join(HOME, '.doty', 'models', 'gtcrn_simple.onnx')
 const VAD_MODEL_PATH = join(HOME, '.doty', 'models', 'silero_vad.onnx')
@@ -158,7 +158,7 @@ function transcribeWithPipeline(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   denoiser: any,
   samples: Float32Array,
-  label: string,
+  _label: string,
 ): string {
   if (vad) {
     const CHUNK_SIZE = 16000 * 0.5

@@ -74,6 +74,9 @@ export default function Settings({
   const [autopilotSfx, setAutopilotSfx] = useState(true)
   const [sttModel, setSttModel] = useState('parakeet')
   const [sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
+  const [sttModelList, setSttModelList] = useState<
+    Array<{ id: string; label: string; description: string; size: string; downloadMethod: string; ready: boolean }>
+  >([])
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -112,6 +115,7 @@ export default function Settings({
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
     window.doty.getSttModelStatus().then(setSttModelStatus)
+    window.doty.getSttModelList().then(setSttModelList)
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
@@ -158,7 +162,6 @@ export default function Settings({
       unsubComplete()
       unsubWhisper()
     }
-    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect, refreshTrackCount is stable
   }, [refreshTrackCount])
 
   // Escape key to close
@@ -680,36 +683,13 @@ export default function Settings({
               </div>
             </div>
 
-            {/* Model radio buttons */}
+            {/* Model radio buttons — driven by registry */}
             <div className="space-y-1.5 mt-3">
-              {(
-                [
-                  {
-                    id: 'parakeet' as const,
-                    name: 'Parakeet TDT v3',
-                    desc: 'Fast, CPU-optimized',
-                    size: '~640 MB',
-                    builtin: true,
-                  },
-                  {
-                    id: 'whisper-medium' as const,
-                    name: 'Whisper Medium',
-                    desc: 'Multilingual, balanced',
-                    size: '~1.5 GB',
-                    builtin: false,
-                  },
-                  {
-                    id: 'whisper-large-v3' as const,
-                    name: 'Whisper Large-v3',
-                    desc: 'Best accuracy, slower',
-                    size: '~1.8 GB',
-                    builtin: false,
-                  },
-                ] as const
-              ).map((m) => {
-                const isDownloaded = m.builtin ? sttReady : sttModelStatus[m.id]
+              {sttModelList.map((m) => {
+                const isDownloaded = m.ready || sttModelStatus[m.id]
                 const isActive = sttModel === m.id
                 const isDownloading = whisperDownloading === m.id
+                const needsDownload = m.downloadMethod === 'tar' && !isDownloaded
 
                 return (
                   <div
@@ -724,9 +704,9 @@ export default function Settings({
                     {/* Radio dot */}
                     <button
                       type="button"
-                      disabled={!isDownloaded || isDownloading}
+                      disabled={needsDownload || isDownloading}
                       onClick={() => {
-                        if (isDownloaded && !isActive) {
+                        if (!needsDownload && !isActive) {
                           setSttModel(m.id)
                           window.doty.setSttModel(m.id)
                         }
@@ -740,7 +720,7 @@ export default function Settings({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        cursor: isDownloaded && !isActive ? 'pointer' : 'default',
+                        cursor: !needsDownload && !isActive ? 'pointer' : 'default',
                         flexShrink: 0,
                         padding: 0,
                       }}
@@ -760,10 +740,10 @@ export default function Settings({
                     {/* Label */}
                     <div className="flex-1 min-w-0">
                       <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                        {m.name}
+                        {m.label}
                       </span>
                       <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginLeft: '8px' }}>
-                        {m.desc}
+                        {m.description}
                       </span>
                     </div>
 
@@ -772,7 +752,7 @@ export default function Settings({
                       <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
                         {whisperProgress}%
                       </span>
-                    ) : isDownloaded ? (
+                    ) : !needsDownload ? (
                       <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
                         ready
                       </span>

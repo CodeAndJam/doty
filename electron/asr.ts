@@ -12,24 +12,44 @@ import {
 import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
+const VOXTRAL_CHILD_PATH = join(__dirname, 'voxtral-child.js')
 
-let worker: Worker | null = null
+/** Abstraction over Worker thread and utilityProcess */
+interface AsrProcess {
+  postMessage(msg: unknown, transfer?: ArrayBuffer[]): void
+  terminate(): void
+  onMessage(cb: (msg: any) => void): void
+  onError(cb: (e: Error) => void): void
+  onExit(cb: () => void): void
+}
+
+let asrProcess: AsrProcess | null = null
+let asrProcessDead = false // prevent respawn after crash
 let nextId = 0
 const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
-/** Callback for flushed transcript text (VAD silence flush). Set by main process. */
 let onFlushText: ((text: string) => void) | null = null
+let onInterimText: ((text: string) => void) | null = null
+let onAsrStatus: ((status: string) => void) | null = null
 
 export function setOnFlushText(cb: (text: string) => void): void {
   onFlushText = cb
 }
+
+export function setOnInterimText(cb: (text: string) => void): void {
+  onInterimText = cb
+}
+
+export function setOnAsrStatus(cb: (status: string) => void): void {
+  onAsrStatus = cb
+}
+
 function resolveHotwordsFile(): string | null {
   const custom = store.get('hotwordsFile', '') as string
   if (custom && fs.existsSync(custom)) return custom
   return null
 }
 
-/** Resolve the model directory for the selected STT model */
 function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
   const sttModel = (store.get('sttModel', 'parakeet') as SttModelType) || 'parakeet'
   switch (sttModel) {
@@ -37,17 +57,15 @@ function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
       return { modelDir: WHISPER_MEDIUM_DIR, sttModel }
     case 'whisper-large-v3':
       return { modelDir: WHISPER_LARGE_V3_DIR, sttModel }
+    case 'voxtral':
+      return { modelDir: '', sttModel }
     default:
       return { modelDir: MODEL_DIR, sttModel: 'parakeet' }
   }
 }
 
-function getWorker(): Worker {
-  if (worker) return worker
-
-  const { modelDir, sttModel } = resolveModelDir()
-
-  worker = new Worker(WORKER_PATH, {
+function createWorkerProcess(modelDir: string, sttModel: SttModelType): AsrProcess {
+  const w = new Worker(WORKER_PATH, {
     workerData: {
       modelDir,
       sttModel,
@@ -56,11 +74,75 @@ function getWorker(): Worker {
       denoiserModelPath: DENOISER_MODEL_PATH,
     },
   })
+  return {
+    postMessage: (msg, transfer) => w.postMessage(msg, transfer ?? []),
+    terminate: () => w.terminate(),
+    onMessage: (cb) => w.on('message', cb),
+    onError: (cb) => w.on('error', cb),
+    onExit: (cb) => w.on('exit', cb),
+  }
+}
 
-  worker.on('message', (msg: { type?: string; id?: number; text?: string; error?: string }) => {
-    // Handle VAD flush messages (no pending promise, forward directly)
+function createVoxtralProcess(): AsrProcess {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { utilityProcess } = require('electron')
+  const child = utilityProcess.fork(VOXTRAL_CHILD_PATH, [], {
+    serviceName: 'voxtral-asr',
+  })
+  let spawned = false
+  let killed = false
+  const pendingMessages: unknown[] = []
+  child.on('spawn', () => {
+    console.log('[asr] voxtral utilityProcess spawned')
+    spawned = true
+    for (const msg of pendingMessages) child.postMessage(msg)
+    pendingMessages.length = 0
+  })
+  child.on('exit', (code: number) => {
+    console.log(`[asr] voxtral process exited with code ${code}`)
+  })
+  return {
+    postMessage: (msg) => {
+      if (killed) return
+      if (spawned) child.postMessage(msg)
+      else pendingMessages.push(msg)
+    },
+    terminate: () => {
+      killed = true
+      child.kill()
+    },
+    onMessage: (cb) => child.on('message', cb),
+    onError: () => {},
+    onExit: (cb) => child.on('exit', cb),
+  }
+}
+
+function getProcess(): AsrProcess {
+  if (asrProcess) return asrProcess
+  if (asrProcessDead) {
+    // Don't respawn automatically — only explicit restartRecognizer() should do this
+    throw new Error('ASR process exited unexpectedly. Restart transcription to recover.')
+  }
+
+  const { modelDir, sttModel } = resolveModelDir()
+
+  if (sttModel === 'voxtral') {
+    asrProcess = createVoxtralProcess()
+  } else {
+    asrProcess = createWorkerProcess(modelDir, sttModel)
+  }
+
+  asrProcess.onMessage((msg: { type?: string; id?: number; text?: string; error?: string; status?: string }) => {
     if (msg.type === 'flush') {
       if (msg.text && onFlushText) onFlushText(msg.text)
+      return
+    }
+    if (msg.type === 'interim') {
+      if (msg.text && onInterimText) onInterimText(msg.text)
+      return
+    }
+    if (msg.type === 'status') {
+      if (onAsrStatus) onAsrStatus(msg.status ?? '')
       return
     }
 
@@ -71,44 +153,54 @@ function getWorker(): Worker {
     else p.resolve(msg.text ?? '')
   })
 
-  worker.on('error', (e) => {
+  asrProcess.onError((e) => {
     for (const p of pending.values()) p.reject(e)
     pending.clear()
-    worker = null
+    asrProcess = null
   })
 
-  worker.on('exit', () => {
-    worker = null
+  const isVoxtral = sttModel === 'voxtral'
+
+  asrProcess.onExit(() => {
+    asrProcess = null
+    if (isVoxtral) {
+      console.warn('[asr] voxtral process exited — will not auto-respawn')
+      asrProcessDead = true
+    }
   })
 
-  return worker
+  return asrProcess
 }
 
 export function initRecognizer(): void {
-  getWorker() // warm up
+  getProcess()
 }
 
 export function transcribeFloat32(samples: Float32Array, sampleRate = 16000): Promise<string> {
   return new Promise((resolve, reject) => {
+    if (asrProcessDead) {
+      resolve('') // silently drop — user must restart transcription
+      return
+    }
     const id = nextId++
     pending.set(id, { resolve, reject })
-    const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
-    getWorker().postMessage({ id, buffer: buf, sampleRate }, [buf as ArrayBuffer])
+    const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
+    getProcess().postMessage({ id, buffer: buf, sampleRate }, [buf])
   })
 }
 
-/** Restart the worker to pick up new hotwords config */
 export function restartRecognizer(): void {
-  if (worker) {
-    worker.terminate()
-    worker = null
+  if (asrProcess) {
+    asrProcess.terminate()
+    asrProcess = null
     pending.clear()
   }
-  getWorker()
+  asrProcessDead = false
+  getProcess()
 }
 
 export function freeRecognizer(): void {
-  worker?.terminate()
-  worker = null
+  asrProcess?.terminate()
+  asrProcess = null
   pending.clear()
 }

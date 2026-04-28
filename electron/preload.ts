@@ -12,6 +12,16 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('stt:transcript', handler)
     return () => ipcRenderer.removeListener('stt:transcript', handler)
   },
+  onSttStatus: (cb: (status: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
+    ipcRenderer.on('stt:status', handler)
+    return () => ipcRenderer.removeListener('stt:status', handler)
+  },
+  onSttInterim: (cb: (text: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
+    ipcRenderer.on('stt:interim', handler)
+    return () => ipcRenderer.removeListener('stt:interim', handler)
+  },
 
   // Music
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),
@@ -28,8 +38,17 @@ contextBridge.exposeInMainWorld('doty', {
 
   // Model
   modelStatus: () => ipcRenderer.invoke('model:status'),
-  downloadModel: () => ipcRenderer.invoke('model:download'),
+  downloadModel: (modelId?: string) => ipcRenderer.invoke('model:download', modelId),
+  getSttModelList: () => ipcRenderer.invoke('stt:get-model-list'),
   rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
+  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => ipcRenderer.invoke('reranker:score', pairs),
+  onRerankerStatus: (cb: (status: string) => void) => {
+    const handler = (_e: any, status: string) => cb(status)
+    ipcRenderer.on('reranker:ipc-status', handler)
+    return () => {
+      ipcRenderer.removeListener('reranker:ipc-status', handler)
+    }
+  },
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
   onModelProgress: (cb: (p: ProgressPayload) => void) => {

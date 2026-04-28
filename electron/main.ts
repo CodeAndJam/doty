@@ -4,7 +4,15 @@ import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
-import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
+import {
+  freeRecognizer,
+  initRecognizer,
+  restartRecognizer,
+  setOnAsrStatus,
+  setOnFlushText,
+  setOnInterimText,
+  transcribeFloat32,
+} from './asr'
 import {
   closeDb,
   getAllTags,
@@ -46,20 +54,12 @@ import {
   DENOISER_MODEL_URL,
   getSttModelInfo,
   isDenoiserReady,
-  isModelReady,
   isRerankerCached,
   isVadReady,
-  isWhisperLargeV3Ready,
-  isWhisperMediumReady,
-  MODEL_DIR,
-  MODEL_URL,
+  STT_MODELS,
   type SttModelType,
   VAD_MODEL_PATH,
   VAD_MODEL_URL,
-  WHISPER_LARGE_V3_DIR,
-  WHISPER_LARGE_V3_URL,
-  WHISPER_MEDIUM_DIR,
-  WHISPER_MEDIUM_URL,
 } from './model-paths'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import { store } from './store'
@@ -402,8 +402,21 @@ app.whenReady().then(async () => {
   registerMusicProtocol()
   createWindow()
 
-  const ready = isModelReady()
+  const ready = isAnySttModelReady()
   mainWindow?.webContents.send('model:status', { ready })
+
+  // Always set up ASR callbacks (process starts lazily on first transcribe)
+  setOnFlushText((text) => {
+    mainWindow?.webContents.send('stt:transcript', text)
+    const file = getSessionTranscriptFile()
+    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+  })
+  setOnInterimText((text) => {
+    mainWindow?.webContents.send('stt:interim', text)
+  })
+  setOnAsrStatus((status) => {
+    mainWindow?.webContents.send('stt:status', status)
+  })
 
   if (ready) {
     // Download auxiliary STT models (VAD, denoiser) if not present
@@ -414,12 +427,6 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       try {
         initRecognizer()
-        // Forward VAD flush text to renderer (sentence tails after silence)
-        setOnFlushText((text) => {
-          mainWindow?.webContents.send('stt:transcript', text)
-          const file = getSessionTranscriptFile()
-          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
-        })
       } catch (e) {
         console.error('ASR init error:', e)
       }
@@ -582,9 +589,53 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
 
-ipcMain.handle('model:status', () => ({ ready: isModelReady() }))
+/** Check if the user has a usable STT model: they must have selected one and it must be ready */
+function isAnySttModelReady(): boolean {
+  const selected = store.get('sttModel', '') as string
+  if (!selected) return false // fresh install — no model selected yet
+  const model = STT_MODELS.find((m) => m.id === selected)
+  return model ? model.isReady() : false
+}
+
+ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
+
+// Reranker scoring via IPC — replaces broken WASM worker
+let _rerankerScorer: ((pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>) | null = null
+let _rerankerLoading: Promise<void> | null = null
+
+ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
+  if (!pairs || pairs.length === 0) return []
+  if (!_rerankerScorer) {
+    if (!_rerankerLoading) {
+      _rerankerLoading = (async () => {
+        const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers')
+        env.cacheDir = join(app.getPath('home'), '.doty', 'hf-cache')
+        env.allowRemoteModels = true
+        const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
+        console.log('[reranker-ipc] loading model...')
+        mainWindow?.webContents.send('reranker:ipc-status', 'loading')
+        const [tokenizer, model] = await Promise.all([
+          AutoTokenizer.from_pretrained(MODEL_ID),
+          AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
+        ])
+        _rerankerScorer = async (p) => {
+          const inputs = (tokenizer as any)(
+            p.map((x) => x.text),
+            { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true },
+          )
+          const { logits } = await (model as any)(inputs)
+          return Array.from(logits.data as Float32Array)
+        }
+        console.log('[reranker-ipc] model ready')
+        mainWindow?.webContents.send('reranker:ipc-status', 'ready')
+      })()
+    }
+    await _rerankerLoading
+  }
+  return await _rerankerScorer!(pairs)
+})
 
 ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
 
@@ -599,11 +650,14 @@ ipcMain.handle('settings:get-hotwords-file', () => store.get('hotwordsFile', '')
 
 ipcMain.handle('settings:set-hotwords-file', (_e, filePath: string) => {
   store.set('hotwordsFile', filePath)
-  // Restart the ASR worker to pick up the new hotwords
-  try {
-    restartRecognizer()
-  } catch (e) {
-    console.error('ASR restart error:', e)
+  // Restart only sherpa-onnx models (voxtral doesn't use hotwords)
+  const currentModel = store.get('sttModel', 'parakeet') as string
+  if (currentModel !== 'voxtral') {
+    try {
+      restartRecognizer()
+    } catch (e) {
+      console.error('ASR restart error:', e)
+    }
   }
   return { ok: true }
 })
@@ -616,10 +670,13 @@ ipcMain.handle('settings:pick-hotwords-file', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('hotwordsFile', result.filePaths[0])
-    try {
-      restartRecognizer()
-    } catch (e) {
-      console.error('ASR restart error:', e)
+    const currentModel = store.get('sttModel', 'parakeet') as string
+    if (currentModel !== 'voxtral') {
+      try {
+        restartRecognizer()
+      } catch (e) {
+        console.error('ASR restart error:', e)
+      }
     }
     return result.filePaths[0]
   }
@@ -650,9 +707,25 @@ ipcMain.handle('settings:create-default-hotwords', () => {
   }
 })
 
-ipcMain.handle('model:download', async () => {
-  fs.mkdirSync(join(MODEL_DIR, '..'), { recursive: true })
-  const tarPath = join(MODEL_DIR, '..', 'parakeet-v3-int8.tar.bz2')
+ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
+  const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
+
+  if (model.downloadMethod === 'auto') {
+    // Voxtral and similar: auto-downloaded by transformers.js on first use.
+    // Don't block — return immediately so the UI transitions to the main screen.
+    store.set('sttModel', model.id)
+    mainWindow?.webContents.send('model:status', { ready: true })
+    // Fire-and-forget: aux models + reranker download in background
+    downloadAuxModels().catch(() => {})
+    downloadRerankerModel().catch(() => {})
+    // Don't initRecognizer here — it will start on first transcribe-chunk
+    return { ok: true }
+  }
+
+  // tar.bz2 download + extract
+  fs.mkdirSync(join(model.dir, '..'), { recursive: true })
+  const tarName = `${model.id}.tar.bz2`
+  const tarPath = join(model.dir, '..', tarName)
 
   await new Promise<void>((resolve, reject) => {
     const file = fs.createWriteStream(tarPath)
@@ -683,24 +756,37 @@ ipcMain.handle('model:download', async () => {
         })
         .on('error', reject)
     }
-    get(MODEL_URL)
+    get(model.url)
   })
 
   await new Promise<void>((resolve, reject) => {
-    const destDir = join(MODEL_DIR, '..')
+    const destDir = join(model.dir, '..')
     exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
       if (err) return reject(err)
-      const extracted = join(destDir, 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8')
-      if (fs.existsSync(extracted) && extracted !== MODEL_DIR) {
-        fs.renameSync(extracted, MODEL_DIR)
+      try {
+        fs.unlinkSync(tarPath)
+      } catch {
+        /* non-fatal */
       }
-      fs.unlinkSync(tarPath)
+      // Rename extracted directory to match expected model.dir
+      if (!fs.existsSync(model.dir)) {
+        const entries = fs.readdirSync(destDir, { withFileTypes: true })
+        const candidate = entries.find(
+          (e) =>
+            e.isDirectory() &&
+            e.name !== model.dir.split('/').pop() &&
+            fs.existsSync(join(destDir, e.name, 'tokens.txt')),
+        )
+        if (candidate) {
+          fs.renameSync(join(destDir, candidate.name), model.dir)
+        }
+      }
       resolve()
     })
   })
 
+  store.set('sttModel', model.id)
   initRecognizer()
-  // Forward VAD flush text to renderer (sentence tails after silence)
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
     const file = getSessionTranscriptFile()
@@ -708,9 +794,7 @@ ipcMain.handle('model:download', async () => {
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 
-  // Download auxiliary STT models (VAD, denoiser)
   await downloadAuxModels()
-  // Pre-download reranker model in main process (worker fetch stalls in Electron)
   downloadRerankerModel().catch(() => {})
 
   return { ok: true }
@@ -723,17 +807,27 @@ ipcMain.handle('stt:get-model', () => {
 })
 
 ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
+  const current = store.get('sttModel', '') as string
+  if (current === model) return { ok: true } // no change
   store.set('sttModel', model)
   restartRecognizer()
   return { ok: true }
 })
 
 ipcMain.handle('stt:get-model-status', () => {
-  return {
-    parakeet: isModelReady(),
-    'whisper-medium': isWhisperMediumReady(),
-    'whisper-large-v3': isWhisperLargeV3Ready(),
-  }
+  return Object.fromEntries(STT_MODELS.map((m) => [m.id, m.isReady()]))
+})
+
+/** Return the model registry for the renderer (without functions) */
+ipcMain.handle('stt:get-model-list', () => {
+  return STT_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    description: m.description,
+    size: m.size,
+    downloadMethod: m.downloadMethod,
+    ready: m.isReady(),
+  }))
 })
 
 ipcMain.handle('stt:download-whisper', async (_e, model: 'whisper-medium' | 'whisper-large-v3') => {
