@@ -10,6 +10,7 @@ import {
   restartRecognizer,
   setOnAsrStatus,
   setOnFlushText,
+  setOnInterimText,
   transcribeFloat32,
 } from './asr'
 import {
@@ -409,6 +410,9 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('stt:transcript', text)
     const file = getSessionTranscriptFile()
     if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+  })
+  setOnInterimText((text) => {
+    mainWindow?.webContents.send('stt:interim', text)
   })
   setOnAsrStatus((status) => {
     mainWindow?.webContents.send('stt:status', status)

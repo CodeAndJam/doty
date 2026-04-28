@@ -4,14 +4,15 @@ interface Props {
   lines: string[]
   recording: boolean
   asrStatus?: 'idle' | 'loading' | 'ready'
+  interimText?: string
 }
 
-export default function Transcript({ lines, recording, asrStatus = 'idle' }: Props) {
+export default function Transcript({ lines, recording, asrStatus = 'idle', interimText = '' }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [lines])
+  }, [lines, interimText])
 
   return (
     <div
@@ -113,6 +114,21 @@ export default function Transcript({ lines, recording, asrStatus = 'idle' }: Pro
               {line}
             </p>
           ))
+        )}
+        {interimText && (
+          <p
+            style={{
+              fontSize: '16px',
+              color: '#8a7a5a',
+              lineHeight: '1.6',
+              fontFamily: "'Crimson Text', serif",
+              borderLeft: '1px solid rgba(200,146,42,0.3)',
+              paddingLeft: '8px',
+              fontStyle: 'italic',
+            }}
+          >
+            {interimText}
+          </p>
         )}
         <div ref={bottomRef} />
       </div>

@@ -166,15 +166,21 @@ async function runStreamingSession() {
 
   function flushText() {
     if (textBuffer.length > 0) {
+      // Send as final (locked-in) text
       process.parentPort.postMessage({ type: 'flush', text: textBuffer })
       textBuffer = ''
     }
     flushTimer = null
   }
 
+  function emitInterim() {
+    // Send current buffer as interim (speculative, may change)
+    process.parentPort.postMessage({ type: 'interim', text: textBuffer })
+  }
+
   function scheduleFlush() {
     if (flushTimer) clearTimeout(flushTimer)
-    // 2s timeout — long enough to span inter-token CPU delays
+    // 2s without new tokens = finalize what we have
     flushTimer = setTimeout(flushText, 2000)
   }
 
@@ -193,8 +199,10 @@ async function runStreamingSession() {
       printLen = text.length
       if (newText.length > 0) {
         textBuffer += newText
-        // Flush when we have a substantial chunk with sentence endings
-        if (textBuffer.length > 60 && /[.!?]\s*$/.test(textBuffer)) {
+        // Emit interim immediately so UI updates in real-time
+        emitInterim()
+        // Finalize on sentence-ending punctuation with enough content
+        if (textBuffer.length > 40 && /[.!?]\s*$/.test(textBuffer)) {
           if (flushTimer) clearTimeout(flushTimer)
           flushText()
         } else {

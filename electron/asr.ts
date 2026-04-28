@@ -28,10 +28,15 @@ let nextId = 0
 const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
 let onFlushText: ((text: string) => void) | null = null
+let onInterimText: ((text: string) => void) | null = null
 let onAsrStatus: ((status: string) => void) | null = null
 
 export function setOnFlushText(cb: (text: string) => void): void {
   onFlushText = cb
+}
+
+export function setOnInterimText(cb: (text: string) => void): void {
+  onInterimText = cb
 }
 
 export function setOnAsrStatus(cb: (status: string) => void): void {
@@ -117,6 +122,10 @@ function getProcess(): AsrProcess {
   asrProcess.onMessage((msg: { type?: string; id?: number; text?: string; error?: string; status?: string }) => {
     if (msg.type === 'flush') {
       if (msg.text && onFlushText) onFlushText(msg.text)
+      return
+    }
+    if (msg.type === 'interim') {
+      if (msg.text && onInterimText) onInterimText(msg.text)
       return
     }
     if (msg.type === 'status') {

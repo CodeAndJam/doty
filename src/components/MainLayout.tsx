@@ -14,6 +14,7 @@ export default function MainLayout() {
   const [recording, setRecording] = useState(false)
   const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
   const [transcripts, setTranscripts] = useState<string[]>([])
+  const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -146,6 +147,7 @@ export default function MainLayout() {
 
     const unsubTranscript = window.doty.onTranscript((text) => {
       setTranscripts((prev) => [...prev, text])
+      setInterimText('') // Clear interim when final arrives
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
@@ -157,6 +159,10 @@ export default function MainLayout() {
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
       setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
+    })
+
+    const unsubInterim = window.doty.onSttInterim((text) => {
+      setInterimText(text)
     })
 
     // Listen for SFX recommendations from the backend (fallback)
@@ -176,6 +182,7 @@ export default function MainLayout() {
     return () => {
       unsubTranscript()
       unsubSttStatus()
+      unsubInterim()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
@@ -301,7 +308,7 @@ export default function MainLayout() {
         {/* Left: Transcript (hidden entirely when collapsed) */}
         {showTranscript && (
           <div className="flex flex-col shrink-0 gap-2 w-72">
-            <Transcript lines={transcripts} recording={recording} asrStatus={asrStatus} />
+            <Transcript lines={transcripts} recording={recording} asrStatus={asrStatus} interimText={interimText} />
           </div>
         )}
 

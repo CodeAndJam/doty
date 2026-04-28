@@ -162,6 +162,7 @@ export interface DotyAPI {
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
   onTranscript: (cb: (text: string) => void) => () => void
   onSttStatus: (cb: (status: string) => void) => () => void
+  onSttInterim: (cb: (text: string) => void) => () => void
 
   // Music
   pickMusicFolder: () => Promise<string | null>
