@@ -614,11 +614,14 @@ ipcMain.handle('settings:get-hotwords-file', () => store.get('hotwordsFile', '')
 
 ipcMain.handle('settings:set-hotwords-file', (_e, filePath: string) => {
   store.set('hotwordsFile', filePath)
-  // Restart the ASR worker to pick up the new hotwords
-  try {
-    restartRecognizer()
-  } catch (e) {
-    console.error('ASR restart error:', e)
+  // Restart only sherpa-onnx models (voxtral doesn't use hotwords)
+  const currentModel = store.get('sttModel', 'parakeet') as string
+  if (currentModel !== 'voxtral') {
+    try {
+      restartRecognizer()
+    } catch (e) {
+      console.error('ASR restart error:', e)
+    }
   }
   return { ok: true }
 })
@@ -631,10 +634,13 @@ ipcMain.handle('settings:pick-hotwords-file', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('hotwordsFile', result.filePaths[0])
-    try {
-      restartRecognizer()
-    } catch (e) {
-      console.error('ASR restart error:', e)
+    const currentModel = store.get('sttModel', 'parakeet') as string
+    if (currentModel !== 'voxtral') {
+      try {
+        restartRecognizer()
+      } catch (e) {
+        console.error('ASR restart error:', e)
+      }
     }
     return result.filePaths[0]
   }
@@ -765,6 +771,8 @@ ipcMain.handle('stt:get-model', () => {
 })
 
 ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
+  const current = store.get('sttModel', '') as string
+  if (current === model) return { ok: true } // no change
   store.set('sttModel', model)
   restartRecognizer()
   return { ok: true }
