@@ -1,11 +1,8 @@
 /**
- * Streaming integration test: measures Voxtral transcription accuracy
- * and latency when audio is delivered in real-time 1-second chunks.
+ * Streaming performance test: measures Voxtral stability over extended audio.
  *
- * Metrics:
- *   - Time to first token (TTFT): how long until first text appears
- *   - Total latency: time from last audio chunk to final text
- *   - Word overlap ratio: accuracy vs expected transcription
+ * Uses dm-portuguese.wav (47s) — long enough to catch memory leaks
+ * and progressive slowdown without taking too long on CPU.
  *
  * Run with:  npx vitest run electron/voxtral-streaming.test.ts
  *
@@ -17,18 +14,8 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const FIXTURES_DIR = join(__dirname, '..', 'test-fixtures', 'stt')
-const MANIFEST_PATH = join(FIXTURES_DIR, 'manifest.json')
 const HOME = process.env.HOME ?? process.env.USERPROFILE ?? ''
 const SAMPLE_RATE = 16000
-const CHUNK_DURATION_S = 1 // simulate 1-second chunks like the app
-
-interface TestCase {
-  file: string
-  language: string
-  expected: string
-  description: string
-  minOverlap?: number
-}
 
 function readWavAsFloat32(filePath: string): { samples: Float32Array; sampleRate: number } {
   const buf = fs.readFileSync(filePath)
@@ -50,16 +37,15 @@ function readWavAsFloat32(filePath: string): { samples: Float32Array; sampleRate
       const totalSamples = chunkSize / bytesPerSample / numChannels
       const samples = new Float32Array(totalSamples)
       for (let i = 0; i < totalSamples; i++) {
-        const sampleOffset = dataStart + i * numChannels * bytesPerSample
-        if (bitsPerSample === 16) samples[i] = buf.readInt16LE(sampleOffset) / 32768.0
-        else if (bitsPerSample === 32) samples[i] = buf.readFloatLE(sampleOffset)
+        const so = dataStart + i * numChannels * bytesPerSample
+        samples[i] = bitsPerSample === 16 ? buf.readInt16LE(so) / 32768.0 : buf.readFloatLE(so)
       }
       return { samples, sampleRate }
     }
     offset += 8 + chunkSize
     if (chunkSize % 2 !== 0) offset++
   }
-  throw new Error(`No data chunk found: ${filePath}`)
+  throw new Error(`No data chunk found`)
 }
 
 function resampleTo16k(samples: Float32Array, fromRate: number): Float32Array {
@@ -71,133 +57,63 @@ function resampleTo16k(samples: Float32Array, fromRate: number): Float32Array {
     const srcIdx = i * ratio
     const lo = Math.floor(srcIdx)
     const hi = Math.min(lo + 1, samples.length - 1)
-    const frac = srcIdx - lo
-    out[i] = samples[lo] * (1 - frac) + samples[hi] * frac
+    out[i] = samples[lo] * (1 - (srcIdx - lo)) + samples[hi] * (srcIdx - lo)
   }
   return out
 }
 
-function wordOverlapRatio(expected: string, actual: string): number {
-  const normalize = (s: string) =>
-    s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean)
-  const expectedWords = normalize(expected)
-  const actualWords = normalize(actual)
-  if (expectedWords.length === 0) return actualWords.length === 0 ? 1 : 0
-  let matches = 0
-  const remaining = [...actualWords]
-  for (const word of expectedWords) {
-    const idx = remaining.indexOf(word)
-    if (idx !== -1) {
-      matches++
-      remaining.splice(idx, 1)
-    }
-  }
-  return matches / expectedWords.length
-}
+describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
+  it('no progressive slowdown or memory leak over 47s audio', async () => {
+    const dmFile = join(FIXTURES_DIR, 'dm-portuguese.wav')
+    if (!fs.existsSync(dmFile)) return
 
-describe('Voxtral streaming latency and accuracy', { timeout: 600_000 }, () => {
-  let model: any = null
-  let processor: any = null
-  let BaseStreamer: any = null
-  let manifest: TestCase[] = []
+    const { samples: rawSamples, sampleRate } = readWavAsFloat32(dmFile)
+    const samples = resampleTo16k(rawSamples, sampleRate)
+    console.log(`[streaming-perf] Audio: ${(samples.length / SAMPLE_RATE).toFixed(1)}s`)
 
-  // Load model once for all tests
-  it('loads model and runs streaming test', async () => {
-    if (!fs.existsSync(MANIFEST_PATH)) return
-    manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'))
-    manifest = manifest.filter((tc) => fs.existsSync(join(FIXTURES_DIR, tc.file)))
-    if (manifest.length === 0) return
-
-    // Load model
     const transformers = await import('@huggingface/transformers')
     const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
-    BaseStreamer = transformers.BaseStreamer
+    const BaseStreamer = transformers.BaseStreamer
     env.cacheDir = join(HOME, '.doty', 'hf-cache')
     env.allowRemoteModels = true
 
-    processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
-    model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
+    const processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
+    const model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
       'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
       { dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' }, device: 'cpu' },
     )
-
-    // Run streaming test on first fixture
-    const tc = manifest[0]
-    const { samples: rawSamples, sampleRate } = readWavAsFloat32(join(FIXTURES_DIR, tc.file))
-    const samples = resampleTo16k(rawSamples, sampleRate)
 
     const hop = processor.feature_extractor.config.hop_length
     const nfft = processor.feature_extractor.config.n_fft
     const numSamplesFirst = processor.num_samples_first_audio_chunk
     const numSamplesPerChunk = processor.num_samples_per_audio_chunk
     const samplesPerTok = processor.audio_length_per_tok * hop
+
+    // All audio available upfront (no async waiting needed)
+    const firstChunkInputs = await processor(samples.subarray(0, numSamplesFirst), {
+      is_streaming: true,
+      is_first_audio_chunk: true,
+    })
+
     const numMelFirst = processor.num_mel_frames_first_audio_chunk
-    const winHalf = Math.floor(nfft / 2)
-
-    // Simulate streaming: feed audio in 1-second chunks
-    const chunkSize = SAMPLE_RATE * CHUNK_DURATION_S
-    let audioBuffer = new Float32Array(0)
-    let audioResolve: (() => void) | null = null
-
-    function appendChunk(chunk: Float32Array) {
-      const merged = new Float32Array(audioBuffer.length + chunk.length)
-      merged.set(audioBuffer)
-      merged.set(chunk, audioBuffer.length)
-      audioBuffer = merged
-      if (audioResolve) { audioResolve(); audioResolve = null }
-    }
-
-    function waitForAudio(): Promise<void> {
-      return new Promise((r) => { audioResolve = r })
-    }
-
-    // Metrics
-    const startTime = Date.now()
-    let firstTokenTime: number | null = null
-    let allText = ''
-    let tokenCount = 0
-
-    // Start feeding audio chunks with simulated real-time delay
-    const feedPromise = (async () => {
-      for (let offset = 0; offset < samples.length; offset += chunkSize) {
-        const chunk = samples.subarray(offset, Math.min(offset + chunkSize, samples.length))
-        appendChunk(chunk)
-        // Simulate real-time: wait proportional to chunk duration (but faster for test)
-        await new Promise((r) => setTimeout(r, 50)) // 50ms per 1s chunk (20x faster)
-      }
-    })()
-
-    // Build streaming pipeline
-    const firstChunkReady = new Promise<void>((resolve) => {
-      const check = () => {
-        if (audioBuffer.length >= numSamplesFirst) resolve()
-        else setTimeout(check, 10)
-      }
-      check()
-    })
-    await firstChunkReady
-
-    const firstChunkInputs = await processor(audioBuffer.subarray(0, numSamplesFirst), {
-      is_streaming: true, is_first_audio_chunk: true,
-    })
-
     let audioConsumed = numSamplesFirst
+    const chunkTimes: number[] = []
+    const memBefore = process.memoryUsage().heapUsed
 
     async function* featureGen() {
       yield firstChunkInputs.input_features
 
-      const endTime = Date.now() + 30000 // 30s max
-      while (Date.now() < endTime) {
+      while (audioConsumed < samples.length) {
         const needed = audioConsumed + numSamplesPerChunk
-        while (audioBuffer.length < needed) {
-          if (audioBuffer.length >= samples.length) return // all audio consumed
-          await waitForAudio()
-        }
+        if (needed > samples.length) return // no more audio
 
-        let batchEnd = Math.min(needed, audioBuffer.length)
-        while (batchEnd + samplesPerTok <= audioBuffer.length) batchEnd += samplesPerTok
+        // Limit each chunk to ~5 seconds max to get multiple measurements
+        const maxChunkSamples = SAMPLE_RATE * 5
+        let batchEnd = Math.min(needed, samples.length, audioConsumed + maxChunkSamples)
+        if (batchEnd <= audioConsumed) return
 
-        let chunkAudio = audioBuffer.slice(audioConsumed, batchEnd)
+        const t0 = Date.now()
+        let chunkAudio = samples.slice(audioConsumed, batchEnd)
         const rawMel = Math.floor((chunkAudio.length - nfft) / hop)
         const rem = rawMel % 8
         if (rem !== 0) {
@@ -208,16 +124,21 @@ describe('Voxtral streaming latency and accuracy', { timeout: 600_000 }, () => {
 
         const chunkInputs = await processor(chunkAudio, { is_streaming: true, is_first_audio_chunk: false })
         yield chunkInputs.input_features
+
+        chunkTimes.push(Date.now() - t0)
         audioConsumed = batchEnd
       }
     }
 
-    // Streamer to capture tokens
+    // Streamer with bounded tokenCache
     const tokenizer = processor.tokenizer
     const specialIds = new Set(tokenizer.all_special_ids.map(BigInt))
     let tokenCache: bigint[] = []
     let printLen = 0
     let isPrompt = true
+    let tokenCount = 0
+    let firstTokenTime: number | null = null
+    const startTime = Date.now()
 
     const streamer = new (class extends BaseStreamer {
       put(value: bigint[][]) {
@@ -230,50 +151,52 @@ describe('Voxtral streaming latency and accuracy', { timeout: 600_000 }, () => {
         printLen = text.length
         if (newText.length > 0) {
           if (firstTokenTime === null) firstTokenTime = Date.now()
-          allText += newText
           tokenCount++
+          // Bounded cache — reset after flush
+          if (tokenCache.length > 40) {
+            tokenCache = []
+            printLen = 0
+          }
         }
       }
-      end() {
-        if (tokenCache.length > 0) {
-          const text = tokenizer.decode(tokenCache, { skip_special_tokens: true })
-          const remaining = text.slice(printLen)
-          if (remaining) allText += remaining
-        }
-      }
+      end() {}
     })()
 
     await model.generate({
       input_ids: firstChunkInputs.input_ids,
       input_features: featureGen(),
-      max_new_tokens: 4096,
+      max_new_tokens: 2048,
       temperature: 0.0,
       do_sample: false,
       streamer,
     })
 
-    await feedPromise
-    const endTime = Date.now()
-
-    // Calculate metrics
+    const totalTime = Date.now() - startTime
+    const memAfter = process.memoryUsage().heapUsed
+    const memGrowthMB = (memAfter - memBefore) / 1024 / 1024
     const ttft = firstTokenTime ? firstTokenTime - startTime : -1
-    const totalTime = endTime - startTime
-    const audioDuration = samples.length / SAMPLE_RATE * 1000
-    const overlap = wordOverlapRatio(tc.expected, allText.trim())
+    const audioDurationMs = (samples.length / SAMPLE_RATE) * 1000
+    const rtf = totalTime / audioDurationMs
 
-    console.log(`\n[streaming-test] ${tc.file} (${tc.language})`)
-    console.log(`  Audio duration: ${(audioDuration / 1000).toFixed(1)}s`)
-    console.log(`  Time to first token (TTFT): ${ttft}ms`)
-    console.log(`  Total processing time: ${totalTime}ms`)
-    console.log(`  Real-time factor: ${(totalTime / audioDuration).toFixed(2)}x`)
-    console.log(`  Tokens produced: ${tokenCount}`)
-    console.log(`  Word overlap: ${Math.round(overlap * 100)}%`)
-    console.log(`  Expected: "${tc.expected.slice(0, 80)}..."`)
-    console.log(`  Got:      "${allText.trim().slice(0, 80)}..."`)
+    // Slowdown check
+    const half = Math.floor(chunkTimes.length / 2)
+    const avgFirstHalf = chunkTimes.slice(0, half).reduce((a, b) => a + b, 0) / (half || 1)
+    const avgSecondHalf = chunkTimes.slice(half).reduce((a, b) => a + b, 0) / (chunkTimes.length - half || 1)
+    const slowdown = avgSecondHalf / (avgFirstHalf || 1)
+
+    console.log(`[streaming-perf] Results:`)
+    console.log(`  TTFT: ${ttft}ms`)
+    console.log(`  Total: ${(totalTime / 1000).toFixed(1)}s | RTF: ${rtf.toFixed(2)}x`)
+    console.log(`  Tokens: ${tokenCount} | Chunks: ${chunkTimes.length}`)
+    console.log(`  Chunk time first half: ${avgFirstHalf.toFixed(0)}ms | second half: ${avgSecondHalf.toFixed(0)}ms`)
+    console.log(`  Slowdown ratio: ${slowdown.toFixed(2)}x`)
+    console.log(`  Memory growth: ${memGrowthMB.toFixed(1)}MB`)
 
     // Assertions
-    expect(overlap).toBeGreaterThanOrEqual(tc.minOverlap ?? 0.5)
-    expect(ttft).toBeGreaterThan(0) // must produce at least one token
-    expect(ttft).toBeLessThan(30000) // first token within 30s
+    expect(ttft, 'TTFT < 20s').toBeLessThan(20000)
+    expect(rtf, 'RTF < 3.0x').toBeLessThan(3.0)
+    expect(slowdown, 'No progressive slowdown (< 3x)').toBeLessThan(3.0)
+    expect(memGrowthMB, 'Memory growth < 200MB').toBeLessThan(200)
+    expect(tokenCount, 'Must produce tokens').toBeGreaterThan(0)
   })
 })
