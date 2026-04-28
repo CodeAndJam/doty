@@ -3,39 +3,48 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
   push:
     branches: [main]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  lint-test-typecheck:
+  ci:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 9
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'pnpm'
 
-      - name: Install dependencies (skip native rebuilds)
+      - name: Install
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Lint (Biome)
-        run: pnpm lint
-
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      - name: Unit tests
-        run: pnpm test -- --exclude electron/qwen-integration.test.ts
+      - name: Lint + Typecheck + Test
+        run: |
+          pnpm lint
+          npx tsc --noEmit
+          pnpm test
