@@ -88,7 +88,7 @@ export default function Transcript({ lines, recording, asrStatus = 'idle' }: Pro
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
+      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 select-text cursor-text">
         {lines.length === 0 ? (
           <p style={{ fontSize: '15px', color: '#3a2e1a', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
             {recording
