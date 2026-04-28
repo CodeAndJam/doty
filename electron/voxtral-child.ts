@@ -231,7 +231,7 @@ async function runStreamingSession() {
     await model.generate({
       input_ids: firstChunkInputs.input_ids,
       input_features: inputFeaturesGenerator(),
-      max_new_tokens: 131072, // ~3 hours of audio (model's max context)
+      max_new_tokens: 4096,
       temperature: 0.0,
       do_sample: false,
       streamer,
@@ -252,7 +252,7 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   const samples = new Float32Array(buffer)
   appendAudio(samples)
 
-  // Start streaming session on first audio chunk
+  // Start streaming session on first audio chunk (or restart if previous ended)
   if (!sessionActive && !sessionStarting) {
     sessionStarting = true
     runStreamingSession()
