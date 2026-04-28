@@ -38,7 +38,11 @@ async function loadModel() {
   process.parentPort.postMessage({ type: 'status', status: 'loading' })
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = require('@huggingface/transformers')
+  const {
+    VoxtralRealtimeForConditionalGeneration,
+    VoxtralRealtimeProcessor,
+    env,
+  } = require('@huggingface/transformers')
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
@@ -102,7 +106,7 @@ async function transcribeBuffer(): Promise<string> {
 
   // Best practice: temperature = 0.0 for deterministic transcription
   // max_new_tokens: 1 token = 80ms, so for N seconds: N * 1000 / 80
-  const maxTokens = Math.ceil((samples.length / SAMPLE_RATE) * 1000 / 80) + 10
+  const maxTokens = Math.ceil(((samples.length / SAMPLE_RATE) * 1000) / 80) + 10
   const outputs = await model.generate({
     input_ids: firstChunk.input_ids,
     input_features: featureGen(),
@@ -136,7 +140,8 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   }
 
   const durationS = audioBuffer.length / SAMPLE_RATE
-  const shouldFlush = hasSpeech && ((silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS)
+  const shouldFlush =
+    hasSpeech && ((silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS)
 
   // Drop buffer if no speech detected and too much silence accumulated
   if (!hasSpeech && silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) {

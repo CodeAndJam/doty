@@ -28,9 +28,14 @@ let nextId = 0
 const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
 let onFlushText: ((text: string) => void) | null = null
+let onAsrStatus: ((status: string) => void) | null = null
 
 export function setOnFlushText(cb: (text: string) => void): void {
   onFlushText = cb
+}
+
+export function setOnAsrStatus(cb: (status: string) => void): void {
+  onAsrStatus = cb
 }
 
 function resolveHotwordsFile(): string | null {
@@ -109,12 +114,15 @@ function getProcess(): AsrProcess {
     asrProcess = createWorkerProcess(modelDir, sttModel)
   }
 
-  asrProcess.onMessage((msg: { type?: string; id?: number; text?: string; error?: string }) => {
+  asrProcess.onMessage((msg: { type?: string; id?: number; text?: string; error?: string; status?: string }) => {
     if (msg.type === 'flush') {
       if (msg.text && onFlushText) onFlushText(msg.text)
       return
     }
-    if (msg.type === 'status') return // ignore status messages
+    if (msg.type === 'status') {
+      if (onAsrStatus) onAsrStatus(msg.status ?? '')
+      return
+    }
 
     const p = pending.get(msg.id!)
     if (!p) return

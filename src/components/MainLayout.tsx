@@ -12,6 +12,7 @@ const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
 
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
+  const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
@@ -154,6 +155,10 @@ export default function MainLayout() {
       runSfxRecommendation()
     })
 
+    const unsubSttStatus = window.doty.onSttStatus((status) => {
+      setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
+    })
+
     // Listen for SFX recommendations from the backend (fallback)
     const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
       setSfxRecommendations(ids)
@@ -170,6 +175,7 @@ export default function MainLayout() {
 
     return () => {
       unsubTranscript()
+      unsubSttStatus()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
@@ -249,9 +255,12 @@ export default function MainLayout() {
             />
             <span
               className="text-xs tracking-widest uppercase font-mono"
-              style={{ color: recording ? '#ef4444' : '#4a8a6a', fontSize: '11px' }}
+              style={{
+                color: recording ? (asrStatus === 'loading' ? '#c8922a' : '#ef4444') : '#4a8a6a',
+                fontSize: '11px',
+              }}
             >
-              {recording ? 'Transcribing' : 'Standby'}
+              {recording ? (asrStatus === 'loading' ? 'Awakening...' : 'Inscribing') : 'Standby'}
             </span>
           </button>
           <button
@@ -292,7 +301,7 @@ export default function MainLayout() {
         {/* Left: Transcript (hidden entirely when collapsed) */}
         {showTranscript && (
           <div className="flex flex-col shrink-0 gap-2 w-72">
-            <Transcript lines={transcripts} recording={recording} />
+            <Transcript lines={transcripts} recording={recording} asrStatus={asrStatus} />
           </div>
         )}
 

@@ -12,6 +12,11 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('stt:transcript', handler)
     return () => ipcRenderer.removeListener('stt:transcript', handler)
   },
+  onSttStatus: (cb: (status: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
+    ipcRenderer.on('stt:status', handler)
+    return () => ipcRenderer.removeListener('stt:status', handler)
+  },
 
   // Music
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),

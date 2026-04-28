@@ -3,9 +3,10 @@ import { useEffect, useRef } from 'react'
 interface Props {
   lines: string[]
   recording: boolean
+  asrStatus?: 'idle' | 'loading' | 'ready'
 }
 
-export default function Transcript({ lines, recording }: Props) {
+export default function Transcript({ lines, recording, asrStatus = 'idle' }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -72,13 +73,16 @@ export default function Transcript({ lines, recording }: Props) {
         {recording && (
           <span
             className="flex items-center gap-1.5"
-            style={{ fontSize: '15px', color: '#4a8a6a', letterSpacing: '0.1em' }}
+            style={{ fontSize: '15px', color: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a', letterSpacing: '0.1em' }}
           >
             <span
               className="w-1 h-1 rounded-full animate-pulse"
-              style={{ background: '#4a8a6a', boxShadow: '0 0 4px rgba(74,138,106,0.9)' }}
+              style={{
+                background: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a',
+                boxShadow: asrStatus === 'loading' ? '0 0 4px rgba(200,146,42,0.9)' : '0 0 4px rgba(74,138,106,0.9)',
+              }}
             />
-            Inscribing
+            {asrStatus === 'loading' ? 'Doty awakens...' : 'Inscribing'}
           </span>
         )}
       </div>
@@ -87,7 +91,11 @@ export default function Transcript({ lines, recording }: Props) {
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
         {lines.length === 0 ? (
           <p style={{ fontSize: '15px', color: '#3a2e1a', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
-            {recording ? 'The construct listens...' : 'Await the spoken word.'}
+            {recording
+              ? asrStatus === 'loading'
+                ? 'The construct stirs to life...'
+                : 'The construct listens...'
+              : 'Await the spoken word.'}
           </p>
         ) : (
           lines.map((line, i) => (

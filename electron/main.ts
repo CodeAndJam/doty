@@ -4,7 +4,14 @@ import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
-import { freeRecognizer, initRecognizer, restartRecognizer, setOnFlushText, transcribeFloat32 } from './asr'
+import {
+  freeRecognizer,
+  initRecognizer,
+  restartRecognizer,
+  setOnAsrStatus,
+  setOnFlushText,
+  transcribeFloat32,
+} from './asr'
 import {
   closeDb,
   getAllTags,
@@ -412,6 +419,9 @@ app.whenReady().then(async () => {
           const file = getSessionTranscriptFile()
           if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
         })
+        setOnAsrStatus((status) => {
+          mainWindow?.webContents.send('stt:status', status)
+        })
       } catch (e) {
         console.error('ASR init error:', e)
       }
@@ -726,7 +736,10 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
       if (!fs.existsSync(model.dir)) {
         const entries = fs.readdirSync(destDir, { withFileTypes: true })
         const candidate = entries.find(
-          (e) => e.isDirectory() && e.name !== model.dir.split('/').pop() && fs.existsSync(join(destDir, e.name, 'tokens.txt')),
+          (e) =>
+            e.isDirectory() &&
+            e.name !== model.dir.split('/').pop() &&
+            fs.existsSync(join(destDir, e.name, 'tokens.txt')),
         )
         if (candidate) {
           fs.renameSync(join(destDir, candidate.name), model.dir)

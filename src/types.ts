@@ -161,6 +161,7 @@ export interface DotyAPI {
   sttStop: () => Promise<{ ok: boolean }>
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
   onTranscript: (cb: (text: string) => void) => () => void
+  onSttStatus: (cb: (status: string) => void) => () => void
 
   // Music
   pickMusicFolder: () => Promise<string | null>
