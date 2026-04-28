@@ -85,7 +85,7 @@ export function createSfxResource(absolutePath: string, volume = 1.0) {
 /**
  * Check if ffmpeg is available (needed for audio transcoding).
  */
-export function checkFfmpeg(): Promise<boolean> {
+function checkFfmpeg(): Promise<boolean> {
   return new Promise((resolve) => {
     exec(`"${ffmpegPath}" -version`, (err) => {
       resolve(!err)

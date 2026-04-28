@@ -30,7 +30,7 @@ export interface MockAudioElement {
   _setBuffered: (ranges: [number, number][]) => void
 }
 
-export function createMockAudio(duration = 180): MockAudioElement {
+function createMockAudio(duration = 180): MockAudioElement {
   const bufferedRanges: [number, number][] = [[0, duration]]
 
   const mock: MockAudioElement = {

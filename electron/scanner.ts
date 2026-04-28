@@ -144,7 +144,7 @@ export function stopScanner() {
   active = 0
 }
 
-export function forceRescan(folder: string, progressCb: ProgressCallback, completeCb: CompleteCallback) {
+function forceRescan(folder: string, progressCb: ProgressCallback, completeCb: CompleteCallback) {
   startScanner(folder, progressCb, completeCb, true)
 }
 

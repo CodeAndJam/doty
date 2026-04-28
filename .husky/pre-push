@@ -1,0 +1,4 @@
+#!/bin/sh
+echo "→ Running tests..."
+pnpm test || exit 1
+echo "✓ Pre-push checks passed."
