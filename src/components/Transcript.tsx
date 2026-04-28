@@ -11,7 +11,7 @@ export default function Transcript({ lines, recording, asrStatus = 'idle' }: Pro
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
+  }, [lines])
 
   return (
     <div
