@@ -1,15 +1,12 @@
 /**
  * voxtral-child.ts
- * Runs as an Electron utilityProcess child with its own V8 heap.
+ * Runs as an Electron utilityProcess with persistent streaming generate() session.
  *
- * Best practices from the model card:
- * - Temperature = 0.0
- * - Streaming architecture: feed audio continuously
- * - 480ms delay (sweet spot of performance and low latency)
- * - One text token = 80ms of audio
- *
- * We accumulate audio and transcribe in segments (VAD-like),
- * since the app sends 1-second chunks from the microphone.
+ * Architecture (matching the WebGPU demo):
+ * - One long-running generate() call per recording session
+ * - Audio chunks fed via async generator that blocks until data arrives
+ * - Tokens emitted incrementally via a streamer callback
+ * - Text flushed to main process as it's produced
  */
 import { join } from 'node:path'
 
@@ -20,17 +17,33 @@ const MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
 let model: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let processor: any = null
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let BaseStreamer: any = null
 
 const SAMPLE_RATE = 16000
-const MIN_SECONDS = 3 // minimum audio to attempt transcription
-const MAX_SECONDS = 20 // flush after this much audio
-const SILENCE_THRESHOLD = 0.015 // RMS below this = silence
-const SPEECH_THRESHOLD = 0.025 // RMS above this = speech detected
-const SILENCE_CHUNKS = 2 // 2 consecutive silent 1s chunks to trigger flush
 
+// Audio buffer fed by incoming IPC messages
 let audioBuffer = new Float32Array(0)
-let silenceCount = 0
-let hasSpeech = false // track if we've seen actual speech in this segment
+let audioResolve: (() => void) | null = null // resolves when new audio arrives
+let sessionActive = false
+
+function appendAudio(samples: Float32Array) {
+  const merged = new Float32Array(audioBuffer.length + samples.length)
+  merged.set(audioBuffer)
+  merged.set(samples, audioBuffer.length)
+  audioBuffer = merged
+  // Wake up the generator if it's waiting for audio
+  if (audioResolve) {
+    audioResolve()
+    audioResolve = null
+  }
+}
+
+function waitForAudio(): Promise<void> {
+  return new Promise((resolve) => {
+    audioResolve = resolve
+  })
+}
 
 async function loadModel() {
   if (model && processor) return
@@ -38,11 +51,10 @@ async function loadModel() {
   process.parentPort.postMessage({ type: 'status', status: 'loading' })
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const {
-    VoxtralRealtimeForConditionalGeneration,
-    VoxtralRealtimeProcessor,
-    env,
-  } = require('@huggingface/transformers')
+  const transformers = require('@huggingface/transformers')
+  const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
+  BaseStreamer = transformers.BaseStreamer
+
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
@@ -56,113 +68,150 @@ async function loadModel() {
   process.parentPort.postMessage({ type: 'status', status: 'ready' })
 }
 
-function rms(samples: Float32Array): number {
-  let sum = 0
-  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
-  return Math.sqrt(sum / samples.length)
-}
-
-async function transcribeBuffer(): Promise<string> {
-  if (audioBuffer.length < SAMPLE_RATE * MIN_SECONDS) return ''
+async function runStreamingSession() {
   await loadModel()
-
-  const samples = audioBuffer
+  sessionActive = true
   audioBuffer = new Float32Array(0)
 
   const hop = processor.feature_extractor.config.hop_length
   const nfft = processor.feature_extractor.config.n_fft
   const numSamplesFirst = processor.num_samples_first_audio_chunk
+  const numSamplesPerChunk = processor.num_samples_per_audio_chunk
+  const samplesPerTok = processor.audio_length_per_tok * hop
+  const numMelFirst = processor.num_mel_frames_first_audio_chunk
+  const winHalf = Math.floor(nfft / 2)
 
-  let audio = samples
-  if (audio.length < numSamplesFirst + nfft + hop * 8) {
-    const padded = new Float32Array(numSamplesFirst + nfft + hop * 8)
-    padded.set(audio)
-    audio = padded
+  // Wait for enough audio for the first chunk
+  while (audioBuffer.length < numSamplesFirst && sessionActive) {
+    await waitForAudio()
   }
+  if (!sessionActive) return
 
-  const firstChunk = await processor(audio.subarray(0, numSamplesFirst), {
+  const firstChunkInputs = await processor(audioBuffer.subarray(0, numSamplesFirst), {
     is_streaming: true,
     is_first_audio_chunk: true,
   })
 
-  const numMelFirst = processor.num_mel_frames_first_audio_chunk
-  const winHalf = Math.floor(nfft / 2)
-  const startIdx = numMelFirst * hop - winHalf
+  let melFrameIdx = numMelFirst
+  let startIdx = melFrameIdx * hop - winHalf
 
-  let secondAudio = audio.slice(startIdx)
-  const rawMel = Math.floor((secondAudio.length - nfft) / hop)
-  const rem = rawMel % 8
-  if (rem !== 0) {
-    const padded = new Float32Array(secondAudio.length + (8 - rem) * hop)
-    padded.set(secondAudio)
-    secondAudio = padded
+  // Async generator that yields features as audio arrives
+  async function* inputFeaturesGenerator() {
+    yield firstChunkInputs.input_features
+
+    while (sessionActive) {
+      // Wait until we have enough audio for the next chunk
+      const endNeeded = startIdx + numSamplesPerChunk
+      while (audioBuffer.length < endNeeded && sessionActive) {
+        await waitForAudio()
+      }
+      if (!sessionActive) return
+
+      // Consume as much available audio as possible (token-aligned)
+      let batchEnd = Math.min(endNeeded, audioBuffer.length)
+      while (batchEnd + samplesPerTok <= audioBuffer.length) {
+        batchEnd += samplesPerTok
+      }
+      if (batchEnd <= startIdx) {
+        await waitForAudio()
+        continue
+      }
+
+      // Pad to align mel_frames % 8 == 0
+      let chunkAudio = audioBuffer.slice(startIdx, batchEnd)
+      const rawMel = Math.floor((chunkAudio.length - nfft) / hop)
+      const rem = rawMel % 8
+      if (rem !== 0) {
+        const padded = new Float32Array(chunkAudio.length + (8 - rem) * hop)
+        padded.set(chunkAudio)
+        chunkAudio = padded
+      }
+
+      const chunkInputs = await processor(chunkAudio, {
+        is_streaming: true,
+        is_first_audio_chunk: false,
+      })
+      yield chunkInputs.input_features
+
+      melFrameIdx += chunkInputs.input_features.dims[2]
+      startIdx = melFrameIdx * hop - winHalf
+    }
   }
 
-  async function* featureGen() {
-    yield firstChunk.input_features
-    const chunk = await processor(secondAudio, { is_streaming: true, is_first_audio_chunk: false })
-    yield chunk.input_features
+  // Streamer that emits text incrementally (like the WebGPU demo)
+  const tokenizer = processor.tokenizer
+  const specialIds = new Set(tokenizer.all_special_ids.map(BigInt))
+  let tokenCache: bigint[] = []
+  let printLen = 0
+  let isPrompt = true
+
+  const streamer = new (class extends BaseStreamer {
+    put(value: bigint[][]) {
+      if (!sessionActive) return
+      if (isPrompt) {
+        isPrompt = false
+        return
+      }
+      const tokens = value[0]
+      if (tokens.length === 1 && specialIds.has(tokens[0])) return
+      tokenCache = tokenCache.concat(tokens)
+      // Decode and emit new text
+      const text = tokenizer.decode(tokenCache, { skip_special_tokens: true })
+      const newText = text.slice(printLen)
+      printLen = text.length
+      if (newText.length > 0) {
+        process.parentPort.postMessage({ type: 'flush', text: newText })
+      }
+    }
+    end() {
+      // Flush remaining
+      if (tokenCache.length > 0) {
+        const text = tokenizer.decode(tokenCache, { skip_special_tokens: true })
+        const newText = text.slice(printLen)
+        if (newText.length > 0) {
+          process.parentPort.postMessage({ type: 'flush', text: newText })
+        }
+      }
+      tokenCache = []
+      printLen = 0
+      isPrompt = true
+    }
+  })()
+
+  try {
+    await model.generate({
+      input_ids: firstChunkInputs.input_ids,
+      input_features: inputFeaturesGenerator(),
+      max_new_tokens: 4096,
+      temperature: 0.0,
+      do_sample: false,
+      streamer,
+    })
+  } catch (err: any) {
+    if (sessionActive) {
+      console.error('[voxtral-child] generate error:', err?.message ?? err)
+    }
   }
 
-  // Best practice: temperature = 0.0 for deterministic transcription
-  // max_new_tokens: 1 token = 80ms, so for N seconds: N * 1000 / 80
-  const maxTokens = Math.ceil(((samples.length / SAMPLE_RATE) * 1000) / 80) + 10
-  const outputs = await model.generate({
-    input_ids: firstChunk.input_ids,
-    input_features: featureGen(),
-    max_new_tokens: maxTokens,
-    temperature: 0.0,
-    do_sample: false,
-  })
-
-  const decoded = processor.tokenizer.batch_decode(outputs, { skip_special_tokens: true })
-  return (decoded[0] ?? '').trim()
+  sessionActive = false
 }
 
+// Handle messages from main process
 process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   const { id, buffer } = e.data as { id: number; buffer: ArrayBuffer }
 
   const samples = new Float32Array(buffer)
+  appendAudio(samples)
 
-  // Append to buffer
-  const merged = new Float32Array(audioBuffer.length + samples.length)
-  merged.set(audioBuffer)
-  merged.set(samples, audioBuffer.length)
-  audioBuffer = merged
-
-  // Detect silence for speech boundary detection
-  const chunkRms = rms(samples)
-  if (chunkRms < SILENCE_THRESHOLD) {
-    silenceCount++
-  } else {
-    silenceCount = 0
-    if (chunkRms >= SPEECH_THRESHOLD) hasSpeech = true
+  // Start streaming session on first audio chunk
+  if (!sessionActive) {
+    // Fire and forget — the session runs until stopped
+    runStreamingSession().catch((err) => {
+      console.error('[voxtral-child] session error:', err)
+      sessionActive = false
+    })
   }
 
-  const durationS = audioBuffer.length / SAMPLE_RATE
-  const shouldFlush =
-    hasSpeech && ((silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS)
-
-  // Drop buffer if no speech detected and too much silence accumulated
-  if (!hasSpeech && silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) {
-    audioBuffer = new Float32Array(0)
-    silenceCount = 0
-  }
-
-  if (shouldFlush) {
-    silenceCount = 0
-    hasSpeech = false
-    try {
-      const text = await transcribeBuffer()
-      if (text) {
-        console.log(`[voxtral-child] transcribed: "${text.slice(0, 100)}"`)
-        process.parentPort.postMessage({ type: 'flush', text })
-      }
-    } catch (err) {
-      console.error('[voxtral-child] transcribe error:', err)
-    }
-  }
-
-  // Respond immediately to keep pending map clean
+  // Respond immediately — text comes via 'flush' messages
   process.parentPort.postMessage({ id, text: '' })
 })
