@@ -26,6 +26,7 @@ const SAMPLE_RATE = 16000
 let audioBuffer = new Float32Array(0)
 let audioResolve: (() => void) | null = null // resolves when new audio arrives
 let sessionActive = false
+let sessionStarting = false
 
 function appendAudio(samples: Float32Array) {
   const merged = new Float32Array(audioBuffer.length + samples.length)
@@ -45,27 +46,33 @@ function waitForAudio(): Promise<void> {
   })
 }
 
+let loadPromise: Promise<void> | null = null
+
 async function loadModel() {
   if (model && processor) return
-  console.log('[voxtral-child] Loading Voxtral model...')
-  process.parentPort.postMessage({ type: 'status', status: 'loading' })
+  if (loadPromise) return loadPromise
+  loadPromise = (async () => {
+    console.log('[voxtral-child] Loading Voxtral model...')
+    process.parentPort.postMessage({ type: 'status', status: 'loading' })
 
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const transformers = require('@huggingface/transformers')
-  const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
-  BaseStreamer = transformers.BaseStreamer
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const transformers = require('@huggingface/transformers')
+    const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
+    BaseStreamer = transformers.BaseStreamer
 
-  env.cacheDir = join(homePath, '.doty', 'hf-cache')
-  env.allowRemoteModels = true
+    env.cacheDir = join(homePath, '.doty', 'hf-cache')
+    env.allowRemoteModels = true
 
-  processor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID)
-  model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
-    dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' },
-    device: 'cpu',
-  })
+    processor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID)
+    model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
+      dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' },
+      device: 'cpu',
+    })
 
-  console.log('[voxtral-child] Model ready')
-  process.parentPort.postMessage({ type: 'status', status: 'ready' })
+    console.log('[voxtral-child] Model ready')
+    process.parentPort.postMessage({ type: 'status', status: 'ready' })
+  })()
+  return loadPromise
 }
 
 async function runStreamingSession() {
@@ -204,12 +211,16 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   appendAudio(samples)
 
   // Start streaming session on first audio chunk
-  if (!sessionActive) {
-    // Fire and forget — the session runs until stopped
-    runStreamingSession().catch((err) => {
-      console.error('[voxtral-child] session error:', err)
-      sessionActive = false
-    })
+  if (!sessionActive && !sessionStarting) {
+    sessionStarting = true
+    runStreamingSession()
+      .catch((err) => {
+        console.error('[voxtral-child] session error:', err)
+      })
+      .finally(() => {
+        sessionActive = false
+        sessionStarting = false
+      })
   }
 
   // Respond immediately — text comes via 'flush' messages
