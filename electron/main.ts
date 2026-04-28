@@ -404,6 +404,16 @@ app.whenReady().then(async () => {
   const ready = isAnySttModelReady()
   mainWindow?.webContents.send('model:status', { ready })
 
+  // Always set up ASR callbacks (process starts lazily on first transcribe)
+  setOnFlushText((text) => {
+    mainWindow?.webContents.send('stt:transcript', text)
+    const file = getSessionTranscriptFile()
+    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+  })
+  setOnAsrStatus((status) => {
+    mainWindow?.webContents.send('stt:status', status)
+  })
+
   if (ready) {
     // Download auxiliary STT models (VAD, denoiser) if not present
     await downloadAuxModels()
@@ -413,15 +423,6 @@ app.whenReady().then(async () => {
     setTimeout(() => {
       try {
         initRecognizer()
-        // Forward VAD flush text to renderer (sentence tails after silence)
-        setOnFlushText((text) => {
-          mainWindow?.webContents.send('stt:transcript', text)
-          const file = getSessionTranscriptFile()
-          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
-        })
-        setOnAsrStatus((status) => {
-          mainWindow?.webContents.send('stt:status', status)
-        })
       } catch (e) {
         console.error('ASR init error:', e)
       }
@@ -671,18 +672,7 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
     // Fire-and-forget: aux models + reranker download in background
     downloadAuxModels().catch(() => {})
     downloadRerankerModel().catch(() => {})
-    setTimeout(() => {
-      try {
-        initRecognizer()
-        setOnFlushText((text) => {
-          mainWindow?.webContents.send('stt:transcript', text)
-          const file = getSessionTranscriptFile()
-          if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
-        })
-      } catch (e) {
-        console.error('ASR init error:', e)
-      }
-    }, 500)
+    // Don't initRecognizer here — it will start on first transcribe-chunk
     return { ok: true }
   }
 
