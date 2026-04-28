@@ -78,8 +78,19 @@ function createVoxtralProcess(): AsrProcess {
   const child = utilityProcess.fork(VOXTRAL_CHILD_PATH, [], {
     serviceName: 'voxtral-asr',
   })
+  let spawned = false
+  const pendingMessages: unknown[] = []
+  child.on('spawn', () => {
+    console.log('[asr] voxtral utilityProcess spawned')
+    spawned = true
+    for (const msg of pendingMessages) child.postMessage(msg)
+    pendingMessages.length = 0
+  })
   return {
-    postMessage: (msg) => child.postMessage(msg),
+    postMessage: (msg) => {
+      if (spawned) child.postMessage(msg)
+      else pendingMessages.push(msg)
+    },
     terminate: () => child.kill(),
     onMessage: (cb) => child.on('message', cb),
     onError: () => {},

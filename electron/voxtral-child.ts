@@ -93,9 +93,11 @@ async function transcribe(samples: Float32Array): Promise<string> {
 
 process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   const { id, buffer } = e.data as { id: number; buffer: ArrayBuffer }
+  console.log(`[voxtral-child] received message id=${id} buffer=${buffer?.byteLength ?? 0} bytes`)
   try {
     const samples = new Float32Array(buffer)
     const text = await transcribe(samples)
+    console.log(`[voxtral-child] transcribed id=${id}: "${text.slice(0, 50)}"`)
     process.parentPort.postMessage({ id, text })
   } catch (err) {
     process.parentPort.postMessage({ id, error: String(err) })
