@@ -174,47 +174,49 @@ describe('ASR STT integration — Voxtral Mini 4B Realtime', { timeout: 600_000 
       const { hop_length } = runtimeProcessor.feature_extractor.config
       const samplesPerTok = runtimeProcessor.audio_length_per_tok * hop_length
 
-      // Pad short audio to minimum required length
+      // Use streaming API with alignment padding.
+      // The ONNX projector requires each chunk's encoder output to be divisible by 4.
+      // Encoder conv has stride 2, so each chunk's mel_frames must be divisible by 8.
+      // First chunk always produces numMelFramesFirst (56) which is div by 8.
+      // We feed all remaining audio as one second chunk, padded to align.
+      // For center=false: mel_frames = floor((len - n_fft) / hop)
+
+      const nfft = runtimeProcessor.feature_extractor.config.n_fft
+
+      // Ensure audio is at least as long as first chunk
       let paddedSamples = samples
-      if (samples.length < numSamplesFirst) {
-        paddedSamples = new Float32Array(numSamplesFirst)
+      if (samples.length < numSamplesFirst + nfft + hop_length) {
+        paddedSamples = new Float32Array(numSamplesFirst + nfft + hop_length * 8)
         paddedSamples.set(samples)
       }
 
-      const firstChunkEnd = Math.min(numSamplesFirst, paddedSamples.length)
-      const firstChunkInputs = await runtimeProcessor(paddedSamples.subarray(0, firstChunkEnd), {
+      const firstChunkInputs = await runtimeProcessor(paddedSamples.subarray(0, numSamplesFirst), {
         is_streaming: true,
         is_first_audio_chunk: true,
       })
 
-      // Build a generator that yields input_features chunks
       const numMelFramesFirst = runtimeProcessor.num_mel_frames_first_audio_chunk
-      const winHalf = Math.floor(runtimeProcessor.feature_extractor.config.n_fft / 2)
+      const winHalf = Math.floor(nfft / 2)
+      const startIdx = numMelFramesFirst * hop_length - winHalf
+
+      // Pad second chunk so its mel_frames are divisible by 8
+      let secondChunkAudio = paddedSamples.slice(startIdx)
+      const rawMelFrames = Math.floor((secondChunkAudio.length - nfft) / hop_length)
+      const rem = rawMelFrames % 8
+      if (rem !== 0) {
+        const extra = (8 - rem) * hop_length
+        const padded = new Float32Array(secondChunkAudio.length + extra)
+        padded.set(secondChunkAudio)
+        secondChunkAudio = padded
+      }
 
       async function* inputFeaturesGenerator() {
         yield firstChunkInputs.input_features
-
-        let melFrameIdx = numMelFramesFirst
-        let startIdx = melFrameIdx * hop_length - winHalf
-
-        while (startIdx < paddedSamples.length) {
-          const endNeeded = startIdx + runtimeProcessor.num_samples_per_audio_chunk
-          let batchEndSample = Math.min(endNeeded, paddedSamples.length)
-          // Extend to consume available samples in token-aligned increments
-          while (batchEndSample + samplesPerTok <= paddedSamples.length) {
-            batchEndSample += samplesPerTok
-          }
-          if (batchEndSample <= startIdx) break
-
-          const chunkInputs = await runtimeProcessor(paddedSamples.slice(startIdx, batchEndSample), {
-            is_streaming: true,
-            is_first_audio_chunk: false,
-          })
-          yield chunkInputs.input_features
-
-          melFrameIdx += chunkInputs.input_features.dims[2]
-          startIdx = melFrameIdx * hop_length - winHalf
-        }
+        const chunkInputs = await runtimeProcessor(secondChunkAudio, {
+          is_streaming: true,
+          is_first_audio_chunk: false,
+        })
+        yield chunkInputs.input_features
       }
 
       const outputs = await (model as any).generate({

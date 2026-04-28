@@ -33,11 +33,7 @@ async function loadModel() {
 
   processor = await VoxtralRealtimeProcessor.from_pretrained(MODEL_ID)
   model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(MODEL_ID, {
-    dtype: {
-      audio_encoder: 'q4f16',
-      embed_tokens: 'q4f16',
-      decoder_model_merged: 'q4f16',
-    },
+    dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' },
     device: 'cpu',
   })
 
@@ -48,43 +44,47 @@ async function loadModel() {
 async function transcribe(samples: Float32Array): Promise<string> {
   await loadModel()
 
-  const { hop_length, n_fft } = processor.feature_extractor.config
-  const samplesPerTok = processor.audio_length_per_tok * hop_length
+  const hop = processor.feature_extractor.config.hop_length
+  const nfft = processor.feature_extractor.config.n_fft
   const numSamplesFirst = processor.num_samples_first_audio_chunk
 
-  const firstChunkEnd = Math.min(numSamplesFirst, samples.length)
-  const firstChunkInputs = await processor(samples.subarray(0, firstChunkEnd), {
+  // Ensure audio is at least as long as first chunk
+  let audio = samples
+  if (audio.length < numSamplesFirst + nfft + hop * 8) {
+    const padded = new Float32Array(numSamplesFirst + nfft + hop * 8)
+    padded.set(audio)
+    audio = padded
+  }
+
+  const firstChunk = await processor(audio.subarray(0, numSamplesFirst), {
     is_streaming: true,
     is_first_audio_chunk: true,
   })
 
-  const numMelFramesFirst = processor.num_mel_frames_first_audio_chunk
-  const winHalf = Math.floor(n_fft / 2)
+  const numMelFirst = processor.num_mel_frames_first_audio_chunk
+  const winHalf = Math.floor(nfft / 2)
+  const startIdx = numMelFirst * hop - winHalf
 
-  async function* inputFeaturesGenerator() {
-    yield firstChunkInputs.input_features
-    let melFrameIdx = numMelFramesFirst
-    let startIdx = melFrameIdx * hop_length - winHalf
-    while (startIdx < samples.length) {
-      const endNeeded = startIdx + processor.num_samples_per_audio_chunk
-      let batchEndSample = Math.min(endNeeded, samples.length)
-      while (batchEndSample + samplesPerTok <= samples.length) {
-        batchEndSample += samplesPerTok
-      }
-      if (batchEndSample <= startIdx) break
-      const chunkInputs = await processor(samples.slice(startIdx, batchEndSample), {
-        is_streaming: true,
-        is_first_audio_chunk: false,
-      })
-      yield chunkInputs.input_features
-      melFrameIdx += chunkInputs.input_features.dims[2]
-      startIdx = melFrameIdx * hop_length - winHalf
-    }
+  // Pad second chunk so mel_frames % 8 == 0 (encoder stride 2 + projector groups of 4)
+  // For center=false: mel_frames = floor((len - n_fft) / hop)
+  let secondAudio = audio.slice(startIdx)
+  const rawMel = Math.floor((secondAudio.length - nfft) / hop)
+  const rem = rawMel % 8
+  if (rem !== 0) {
+    const padded = new Float32Array(secondAudio.length + (8 - rem) * hop)
+    padded.set(secondAudio)
+    secondAudio = padded
+  }
+
+  async function* featureGen() {
+    yield firstChunk.input_features
+    const chunk = await processor(secondAudio, { is_streaming: true, is_first_audio_chunk: false })
+    yield chunk.input_features
   }
 
   const outputs = await model.generate({
-    input_ids: firstChunkInputs.input_ids,
-    input_features: inputFeaturesGenerator(),
+    input_ids: firstChunk.input_ids,
+    input_features: featureGen(),
     max_new_tokens: 4096,
   })
 
