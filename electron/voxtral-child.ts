@@ -1,15 +1,11 @@
 /**
  * voxtral-child.ts
  * Runs as an Electron utilityProcess child with its own V8 heap.
- * This avoids OOM crashes from loading the 4B-parameter Voxtral model
- * in the main process's limited worker thread heap.
- *
- * Uses process.parentPort for IPC (not process.send).
+ * Accumulates audio chunks and transcribes when enough speech is collected.
  */
 import { join } from 'node:path'
 
 const homePath = process.env.HOME ?? process.env.USERPROFILE ?? ''
-
 const MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,18 +13,23 @@ let model: any = null
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let processor: any = null
 
+const SAMPLE_RATE = 16000
+const MIN_SECONDS = 3 // minimum audio to attempt transcription
+const MAX_SECONDS = 15 // flush after this much audio
+const SILENCE_THRESHOLD = 0.01 // RMS below this = silence
+const SILENCE_CHUNKS = 3 // consecutive silent chunks to trigger flush
+
+let audioBuffer = new Float32Array(0)
+let silenceCount = 0
+let lastResponseId = 0
+
 async function loadModel() {
   if (model && processor) return
   console.log('[voxtral-child] Loading Voxtral model...')
   process.parentPort.postMessage({ type: 'status', status: 'loading' })
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const {
-    VoxtralRealtimeForConditionalGeneration,
-    VoxtralRealtimeProcessor,
-    env,
-  } = require('@huggingface/transformers')
-
+  const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = require('@huggingface/transformers')
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
   env.allowRemoteModels = true
 
@@ -42,8 +43,18 @@ async function loadModel() {
   process.parentPort.postMessage({ type: 'status', status: 'ready' })
 }
 
-async function transcribe(samples: Float32Array): Promise<string> {
+function rms(samples: Float32Array): number {
+  let sum = 0
+  for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
+  return Math.sqrt(sum / samples.length)
+}
+
+async function transcribeBuffer(): Promise<string> {
+  if (audioBuffer.length < SAMPLE_RATE * MIN_SECONDS) return ''
   await loadModel()
+
+  const samples = audioBuffer
+  audioBuffer = new Float32Array(0)
 
   const hop = processor.feature_extractor.config.hop_length
   const nfft = processor.feature_extractor.config.n_fft
@@ -65,7 +76,6 @@ async function transcribe(samples: Float32Array): Promise<string> {
   const winHalf = Math.floor(nfft / 2)
   const startIdx = numMelFirst * hop - winHalf
 
-  // Pad second chunk so mel_frames % 8 == 0
   let secondAudio = audio.slice(startIdx)
   const rawMel = Math.floor((secondAudio.length - nfft) / hop)
   const rem = rawMel % 8
@@ -93,13 +103,40 @@ async function transcribe(samples: Float32Array): Promise<string> {
 
 process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   const { id, buffer } = e.data as { id: number; buffer: ArrayBuffer }
-  console.log(`[voxtral-child] received message id=${id} buffer=${buffer?.byteLength ?? 0} bytes`)
-  try {
-    const samples = new Float32Array(buffer)
-    const text = await transcribe(samples)
-    console.log(`[voxtral-child] transcribed id=${id}: "${text.slice(0, 50)}"`)
-    process.parentPort.postMessage({ id, text })
-  } catch (err) {
-    process.parentPort.postMessage({ id, error: String(err) })
+  lastResponseId = id
+
+  const samples = new Float32Array(buffer)
+
+  // Append to buffer
+  const merged = new Float32Array(audioBuffer.length + samples.length)
+  merged.set(audioBuffer)
+  merged.set(samples, audioBuffer.length)
+  audioBuffer = merged
+
+  // Check for silence to detect speech boundaries
+  const chunkRms = rms(samples)
+  if (chunkRms < SILENCE_THRESHOLD) {
+    silenceCount++
+  } else {
+    silenceCount = 0
   }
+
+  const durationS = audioBuffer.length / SAMPLE_RATE
+  const shouldFlush = (silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS
+
+  if (shouldFlush) {
+    silenceCount = 0
+    try {
+      const text = await transcribeBuffer()
+      if (text) {
+        console.log(`[voxtral-child] transcribed: "${text.slice(0, 80)}"`)
+        process.parentPort.postMessage({ type: 'flush', text })
+      }
+    } catch (err) {
+      console.error('[voxtral-child] transcribe error:', err)
+    }
+  }
+
+  // Always respond to keep the pending map clean
+  process.parentPort.postMessage({ id, text: '' })
 })
