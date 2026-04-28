@@ -173,7 +173,17 @@ export interface DotyAPI {
 
   // Model
   modelStatus: () => Promise<{ ready: boolean }>
-  downloadModel: () => Promise<{ ok: boolean }>
+  downloadModel: (modelId?: string) => Promise<{ ok: boolean }>
+  getSttModelList: () => Promise<
+    Array<{
+      id: string
+      label: string
+      description: string
+      size: string
+      downloadMethod: string
+      ready: boolean
+    }>
+  >
   rerankerStatus: () => Promise<{ cached: boolean }>
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>

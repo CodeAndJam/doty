@@ -49,17 +49,10 @@ import {
   isModelReady,
   isRerankerCached,
   isVadReady,
-  isWhisperLargeV3Ready,
-  isWhisperMediumReady,
-  MODEL_DIR,
-  MODEL_URL,
+  STT_MODELS,
   type SttModelType,
   VAD_MODEL_PATH,
   VAD_MODEL_URL,
-  WHISPER_LARGE_V3_DIR,
-  WHISPER_LARGE_V3_URL,
-  WHISPER_MEDIUM_DIR,
-  WHISPER_MEDIUM_URL,
 } from './model-paths'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import { store } from './store'
@@ -582,7 +575,7 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
 
-ipcMain.handle('model:status', () => ({ ready: isModelReady() }))
+ipcMain.handle('model:status', () => ({ ready: STT_MODELS.some((m) => m.isReady()) }))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
@@ -650,9 +643,28 @@ ipcMain.handle('settings:create-default-hotwords', () => {
   }
 })
 
-ipcMain.handle('model:download', async () => {
-  fs.mkdirSync(join(MODEL_DIR, '..'), { recursive: true })
-  const tarPath = join(MODEL_DIR, '..', 'parakeet-v3-int8.tar.bz2')
+ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
+  const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
+
+  if (model.downloadMethod === 'auto') {
+    // Voxtral and similar: auto-downloaded by transformers.js on first use
+    store.set('sttModel', model.id)
+    initRecognizer()
+    setOnFlushText((text) => {
+      mainWindow?.webContents.send('stt:transcript', text)
+      const file = getSessionTranscriptFile()
+      if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+    })
+    mainWindow?.webContents.send('model:status', { ready: true })
+    await downloadAuxModels()
+    downloadRerankerModel().catch(() => {})
+    return { ok: true }
+  }
+
+  // tar.bz2 download + extract
+  fs.mkdirSync(join(model.dir, '..'), { recursive: true })
+  const tarName = `${model.id}.tar.bz2`
+  const tarPath = join(model.dir, '..', tarName)
 
   await new Promise<void>((resolve, reject) => {
     const file = fs.createWriteStream(tarPath)
@@ -683,24 +695,24 @@ ipcMain.handle('model:download', async () => {
         })
         .on('error', reject)
     }
-    get(MODEL_URL)
+    get(model.url)
   })
 
   await new Promise<void>((resolve, reject) => {
-    const destDir = join(MODEL_DIR, '..')
+    const destDir = join(model.dir, '..')
     exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
       if (err) return reject(err)
-      const extracted = join(destDir, 'sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8')
-      if (fs.existsSync(extracted) && extracted !== MODEL_DIR) {
-        fs.renameSync(extracted, MODEL_DIR)
+      try {
+        fs.unlinkSync(tarPath)
+      } catch {
+        /* non-fatal */
       }
-      fs.unlinkSync(tarPath)
       resolve()
     })
   })
 
+  store.set('sttModel', model.id)
   initRecognizer()
-  // Forward VAD flush text to renderer (sentence tails after silence)
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
     const file = getSessionTranscriptFile()
@@ -708,9 +720,7 @@ ipcMain.handle('model:download', async () => {
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 
-  // Download auxiliary STT models (VAD, denoiser)
   await downloadAuxModels()
-  // Pre-download reranker model in main process (worker fetch stalls in Electron)
   downloadRerankerModel().catch(() => {})
 
   return { ok: true }
@@ -729,12 +739,19 @@ ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
 })
 
 ipcMain.handle('stt:get-model-status', () => {
-  return {
-    parakeet: isModelReady(),
-    'whisper-medium': isWhisperMediumReady(),
-    'whisper-large-v3': isWhisperLargeV3Ready(),
-    voxtral: true, // auto-downloaded by transformers.js on first use
-  }
+  return Object.fromEntries(STT_MODELS.map((m) => [m.id, m.isReady()]))
+})
+
+/** Return the model registry for the renderer (without functions) */
+ipcMain.handle('stt:get-model-list', () => {
+  return STT_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    description: m.description,
+    size: m.size,
+    downloadMethod: m.downloadMethod,
+    ready: m.isReady(),
+  }))
 })
 
 ipcMain.handle('stt:download-whisper', async (_e, model: 'whisper-medium' | 'whisper-large-v3') => {

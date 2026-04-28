@@ -28,7 +28,8 @@ contextBridge.exposeInMainWorld('doty', {
 
   // Model
   modelStatus: () => ipcRenderer.invoke('model:status'),
-  downloadModel: () => ipcRenderer.invoke('model:download'),
+  downloadModel: (modelId?: string) => ipcRenderer.invoke('model:download', modelId),
+  getSttModelList: () => ipcRenderer.invoke('stt:get-model-list'),
   rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
