@@ -1,7 +1,15 @@
 /**
  * voxtral-child.ts
  * Runs as an Electron utilityProcess child with its own V8 heap.
- * Accumulates audio chunks and transcribes when enough speech is collected.
+ *
+ * Best practices from the model card:
+ * - Temperature = 0.0
+ * - Streaming architecture: feed audio continuously
+ * - 480ms delay (sweet spot of performance and low latency)
+ * - One text token = 80ms of audio
+ *
+ * We accumulate audio and transcribe in segments (VAD-like),
+ * since the app sends 1-second chunks from the microphone.
  */
 import { join } from 'node:path'
 
@@ -14,14 +22,13 @@ let model: any = null
 let processor: any = null
 
 const SAMPLE_RATE = 16000
-const MIN_SECONDS = 3 // minimum audio to attempt transcription
+const MIN_SECONDS = 2 // minimum audio to attempt transcription
 const MAX_SECONDS = 15 // flush after this much audio
-const SILENCE_THRESHOLD = 0.01 // RMS below this = silence
-const SILENCE_CHUNKS = 3 // consecutive silent chunks to trigger flush
+const SILENCE_THRESHOLD = 0.01
+const SILENCE_CHUNKS = 2 // 2 consecutive silent 1s chunks = 2s silence
 
 let audioBuffer = new Float32Array(0)
 let silenceCount = 0
-let lastResponseId = 0
 
 async function loadModel() {
   if (model && processor) return
@@ -91,10 +98,15 @@ async function transcribeBuffer(): Promise<string> {
     yield chunk.input_features
   }
 
+  // Best practice: temperature = 0.0 for deterministic transcription
+  // max_new_tokens: 1 token = 80ms, so for N seconds: N * 1000 / 80
+  const maxTokens = Math.ceil((samples.length / SAMPLE_RATE) * 1000 / 80) + 10
   const outputs = await model.generate({
     input_ids: firstChunk.input_ids,
     input_features: featureGen(),
-    max_new_tokens: 4096,
+    max_new_tokens: maxTokens,
+    temperature: 0.0,
+    do_sample: false,
   })
 
   const decoded = processor.tokenizer.batch_decode(outputs, { skip_special_tokens: true })
@@ -103,7 +115,6 @@ async function transcribeBuffer(): Promise<string> {
 
 process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   const { id, buffer } = e.data as { id: number; buffer: ArrayBuffer }
-  lastResponseId = id
 
   const samples = new Float32Array(buffer)
 
@@ -113,7 +124,7 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
   merged.set(samples, audioBuffer.length)
   audioBuffer = merged
 
-  // Check for silence to detect speech boundaries
+  // Detect silence for speech boundary detection
   const chunkRms = rms(samples)
   if (chunkRms < SILENCE_THRESHOLD) {
     silenceCount++
@@ -129,7 +140,7 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
     try {
       const text = await transcribeBuffer()
       if (text) {
-        console.log(`[voxtral-child] transcribed: "${text.slice(0, 80)}"`)
+        console.log(`[voxtral-child] transcribed: "${text.slice(0, 100)}"`)
         process.parentPort.postMessage({ type: 'flush', text })
       }
     } catch (err) {
@@ -137,6 +148,6 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
     }
   }
 
-  // Always respond to keep the pending map clean
+  // Respond immediately to keep pending map clean
   process.parentPort.postMessage({ id, text: '' })
 })
