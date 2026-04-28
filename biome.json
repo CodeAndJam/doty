@@ -16,6 +16,12 @@
         "noUnusedVariables": "warn",
         "useExhaustiveDependencies": "warn"
       },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": { "maxAllowedComplexity": 15 }
+        }
+      },
       "style": {
         "noNonNullAssertion": "off",
         "useConst": "error"

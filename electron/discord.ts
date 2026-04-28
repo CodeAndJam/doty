@@ -31,7 +31,7 @@ function vlog(msg: string): void {
 }
 
 /** Enable or disable verbose Discord logging at runtime */
-export function setDiscordVerbose(enabled: boolean): void {
+function setDiscordVerbose(enabled: boolean): void {
   verbose = enabled
   log(`Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
 }
@@ -114,7 +114,7 @@ export function getState(): DiscordState {
 
 // ── Token management (encrypted) ──────────────────────────────────────────────
 
-export function saveToken(token: string): void {
+function saveToken(token: string): void {
   if (safeStorage.isEncryptionAvailable()) {
     const encrypted = safeStorage.encryptString(token)
     store.set('discordToken', encrypted.toString('base64'))
