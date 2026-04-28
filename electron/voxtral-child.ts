@@ -259,16 +259,6 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
       .finally(() => {
         sessionActive = false
         sessionStarting = false
-        // Restart session if audio is still coming in
-        if (audioBuffer.length > 0) {
-          sessionStarting = true
-          runStreamingSession()
-            .catch((err) => console.error('[voxtral-child] restart error:', err))
-            .finally(() => {
-              sessionActive = false
-              sessionStarting = false
-            })
-        }
       })
   }
 
