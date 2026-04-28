@@ -12,25 +12,33 @@ import {
 import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
-const VOXTRAL_WORKER_PATH = join(__dirname, 'voxtral-worker.js')
+const VOXTRAL_CHILD_PATH = join(__dirname, 'voxtral-child.js')
 
-let worker: Worker | null = null
+/** Abstraction over Worker thread and utilityProcess */
+interface AsrProcess {
+  postMessage(msg: unknown, transfer?: ArrayBuffer[]): void
+  terminate(): void
+  onMessage(cb: (msg: any) => void): void
+  onError(cb: (e: Error) => void): void
+  onExit(cb: () => void): void
+}
+
+let asrProcess: AsrProcess | null = null
 let nextId = 0
 const pending = new Map<number, { resolve: (text: string) => void; reject: (e: Error) => void }>()
 
-/** Callback for flushed transcript text (VAD silence flush). Set by main process. */
 let onFlushText: ((text: string) => void) | null = null
 
 export function setOnFlushText(cb: (text: string) => void): void {
   onFlushText = cb
 }
+
 function resolveHotwordsFile(): string | null {
   const custom = store.get('hotwordsFile', '') as string
   if (custom && fs.existsSync(custom)) return custom
   return null
 }
 
-/** Resolve the model directory for the selected STT model */
 function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
   const sttModel = (store.get('sttModel', 'parakeet') as SttModelType) || 'parakeet'
   switch (sttModel) {
@@ -39,41 +47,66 @@ function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
     case 'whisper-large-v3':
       return { modelDir: WHISPER_LARGE_V3_DIR, sttModel }
     case 'voxtral':
-      return { modelDir: '', sttModel } // model dir managed by transformers.js cache
+      return { modelDir: '', sttModel }
     default:
       return { modelDir: MODEL_DIR, sttModel: 'parakeet' }
   }
 }
 
-function getWorker(): Worker {
-  if (worker) return worker
+function createWorkerProcess(modelDir: string, sttModel: SttModelType): AsrProcess {
+  const w = new Worker(WORKER_PATH, {
+    workerData: {
+      modelDir,
+      sttModel,
+      vadModelPath: VAD_MODEL_PATH,
+      hotwordsFile: resolveHotwordsFile(),
+      denoiserModelPath: DENOISER_MODEL_PATH,
+    },
+  })
+  return {
+    postMessage: (msg, transfer) => w.postMessage(msg, transfer ?? []),
+    terminate: () => w.terminate(),
+    onMessage: (cb) => w.on('message', cb),
+    onError: (cb) => w.on('error', cb),
+    onExit: (cb) => w.on('exit', cb),
+  }
+}
+
+function createVoxtralProcess(): AsrProcess {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { utilityProcess } = require('electron')
+  const child = utilityProcess.fork(VOXTRAL_CHILD_PATH, [], {
+    serviceName: 'voxtral-asr',
+  })
+  return {
+    postMessage: (msg, transfer) => child.postMessage(msg, transfer),
+    terminate: () => child.kill(),
+    onMessage: (cb) => child.on('message', cb),
+    onError: (cb) =>
+      child.on('spawn', () => {
+        // utilityProcess doesn't have 'error' event like Worker; handle via exit
+      }),
+    onExit: (cb) => child.on('exit', cb),
+  }
+}
+
+function getProcess(): AsrProcess {
+  if (asrProcess) return asrProcess
 
   const { modelDir, sttModel } = resolveModelDir()
 
   if (sttModel === 'voxtral') {
-    // Voxtral uses transformers.js, not sherpa-onnx
-    const homePath = require('electron').app.getPath('home')
-    worker = new Worker(VOXTRAL_WORKER_PATH, {
-      workerData: { homePath },
-    })
+    asrProcess = createVoxtralProcess()
   } else {
-    worker = new Worker(WORKER_PATH, {
-      workerData: {
-        modelDir,
-        sttModel,
-        vadModelPath: VAD_MODEL_PATH,
-        hotwordsFile: resolveHotwordsFile(),
-        denoiserModelPath: DENOISER_MODEL_PATH,
-      },
-    })
+    asrProcess = createWorkerProcess(modelDir, sttModel)
   }
 
-  worker.on('message', (msg: { type?: string; id?: number; text?: string; error?: string }) => {
-    // Handle VAD flush messages (no pending promise, forward directly)
+  asrProcess.onMessage((msg: { type?: string; id?: number; text?: string; error?: string }) => {
     if (msg.type === 'flush') {
       if (msg.text && onFlushText) onFlushText(msg.text)
       return
     }
+    if (msg.type === 'status') return // ignore status messages
 
     const p = pending.get(msg.id!)
     if (!p) return
@@ -82,44 +115,43 @@ function getWorker(): Worker {
     else p.resolve(msg.text ?? '')
   })
 
-  worker.on('error', (e) => {
+  asrProcess.onError((e) => {
     for (const p of pending.values()) p.reject(e)
     pending.clear()
-    worker = null
+    asrProcess = null
   })
 
-  worker.on('exit', () => {
-    worker = null
+  asrProcess.onExit(() => {
+    asrProcess = null
   })
 
-  return worker
+  return asrProcess
 }
 
 export function initRecognizer(): void {
-  getWorker() // warm up
+  getProcess()
 }
 
 export function transcribeFloat32(samples: Float32Array, sampleRate = 16000): Promise<string> {
   return new Promise((resolve, reject) => {
     const id = nextId++
     pending.set(id, { resolve, reject })
-    const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
-    getWorker().postMessage({ id, buffer: buf, sampleRate }, [buf as ArrayBuffer])
+    const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
+    getProcess().postMessage({ id, buffer: buf, sampleRate }, [buf])
   })
 }
 
-/** Restart the worker to pick up new hotwords config */
 export function restartRecognizer(): void {
-  if (worker) {
-    worker.terminate()
-    worker = null
+  if (asrProcess) {
+    asrProcess.terminate()
+    asrProcess = null
     pending.clear()
   }
-  getWorker()
+  getProcess()
 }
 
 export function freeRecognizer(): void {
-  worker?.terminate()
-  worker = null
+  asrProcess?.terminate()
+  asrProcess = null
   pending.clear()
 }
