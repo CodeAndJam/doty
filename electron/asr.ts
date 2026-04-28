@@ -12,6 +12,7 @@ import {
 import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
+const VOXTRAL_WORKER_PATH = join(__dirname, 'voxtral-worker.js')
 
 let worker: Worker | null = null
 let nextId = 0
@@ -37,6 +38,8 @@ function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
       return { modelDir: WHISPER_MEDIUM_DIR, sttModel }
     case 'whisper-large-v3':
       return { modelDir: WHISPER_LARGE_V3_DIR, sttModel }
+    case 'voxtral':
+      return { modelDir: '', sttModel } // model dir managed by transformers.js cache
     default:
       return { modelDir: MODEL_DIR, sttModel: 'parakeet' }
   }
@@ -47,15 +50,24 @@ function getWorker(): Worker {
 
   const { modelDir, sttModel } = resolveModelDir()
 
-  worker = new Worker(WORKER_PATH, {
-    workerData: {
-      modelDir,
-      sttModel,
-      vadModelPath: VAD_MODEL_PATH,
-      hotwordsFile: resolveHotwordsFile(),
-      denoiserModelPath: DENOISER_MODEL_PATH,
-    },
-  })
+  if (sttModel === 'voxtral') {
+    // Voxtral uses transformers.js, not sherpa-onnx
+    const appPath = require('node:path').resolve(__dirname, '..')
+    const homePath = require('electron').app.getPath('home')
+    worker = new Worker(VOXTRAL_WORKER_PATH, {
+      workerData: { appPath, homePath },
+    })
+  } else {
+    worker = new Worker(WORKER_PATH, {
+      workerData: {
+        modelDir,
+        sttModel,
+        vadModelPath: VAD_MODEL_PATH,
+        hotwordsFile: resolveHotwordsFile(),
+        denoiserModelPath: DENOISER_MODEL_PATH,
+      },
+    })
+  }
 
   worker.on('message', (msg: { type?: string; id?: number; text?: string; error?: string }) => {
     // Handle VAD flush messages (no pending promise, forward directly)

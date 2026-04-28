@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 // ── STT model types ───────────────────────────────────────────────────────────
-export type SttModelType = 'parakeet' | 'whisper-medium' | 'whisper-large-v3'
+export type SttModelType = 'parakeet' | 'whisper-medium' | 'whisper-large-v3' | 'voxtral'
 
 // ── Parakeet TDT v3 (default) ─────────────────────────────────────────────────
 export const MODEL_DIR = join(app.getPath('home'), '.doty', 'models', 'parakeet-tdt-0.6b-v3-int8')
@@ -19,6 +19,11 @@ export const WHISPER_MEDIUM_URL =
 export const WHISPER_LARGE_V3_DIR = join(app.getPath('home'), '.doty', 'models', 'sherpa-onnx-whisper-large-v3')
 export const WHISPER_LARGE_V3_URL =
   'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-large-v3.tar.bz2'
+
+// ── Voxtral Mini 4B Realtime (multilingual, ~2GB q4f16 ONNX) ─────────────────
+// Uses @huggingface/transformers (not sherpa-onnx). Model auto-downloaded to HF cache.
+export const VOXTRAL_MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
+export const VOXTRAL_CACHE_DIR = join(app.getPath('home'), '.doty', 'hf-cache')
 
 // Silero VAD v4 model: ~/.doty/models/silero_vad.onnx
 // v4 has better accuracy on overlapping speech and lower false-positive rates
@@ -62,6 +67,8 @@ export function getSttModelInfo(type: SttModelType): { dir: string; url: string;
       return { dir: WHISPER_MEDIUM_DIR, url: WHISPER_MEDIUM_URL, isReady: isWhisperMediumReady }
     case 'whisper-large-v3':
       return { dir: WHISPER_LARGE_V3_DIR, url: WHISPER_LARGE_V3_URL, isReady: isWhisperLargeV3Ready }
+    case 'voxtral':
+      return { dir: VOXTRAL_CACHE_DIR, url: '', isReady: () => true } // auto-downloaded by transformers.js
     default:
       return { dir: MODEL_DIR, url: MODEL_URL, isReady: isModelReady }
   }

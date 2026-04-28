@@ -733,6 +733,7 @@ ipcMain.handle('stt:get-model-status', () => {
     parakeet: isModelReady(),
     'whisper-medium': isWhisperMediumReady(),
     'whisper-large-v3': isWhisperLargeV3Ready(),
+    voxtral: true, // auto-downloaded by transformers.js on first use
   }
 })
 
