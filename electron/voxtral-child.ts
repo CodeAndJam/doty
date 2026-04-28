@@ -22,13 +22,15 @@ let model: any = null
 let processor: any = null
 
 const SAMPLE_RATE = 16000
-const MIN_SECONDS = 2 // minimum audio to attempt transcription
+const MIN_SECONDS = 3 // minimum audio to attempt transcription
 const MAX_SECONDS = 15 // flush after this much audio
-const SILENCE_THRESHOLD = 0.01
-const SILENCE_CHUNKS = 2 // 2 consecutive silent 1s chunks = 2s silence
+const SILENCE_THRESHOLD = 0.02 // RMS below this = silence (tuned for real mic)
+const SPEECH_THRESHOLD = 0.03 // RMS above this = speech detected
+const SILENCE_CHUNKS = 3 // 3 consecutive silent 1s chunks to trigger flush
 
 let audioBuffer = new Float32Array(0)
 let silenceCount = 0
+let hasSpeech = false // track if we've seen actual speech in this segment
 
 async function loadModel() {
   if (model && processor) return
@@ -130,13 +132,21 @@ process.parentPort.on('message', async (e: Electron.MessageEvent) => {
     silenceCount++
   } else {
     silenceCount = 0
+    if (chunkRms >= SPEECH_THRESHOLD) hasSpeech = true
   }
 
   const durationS = audioBuffer.length / SAMPLE_RATE
-  const shouldFlush = (silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS
+  const shouldFlush = hasSpeech && ((silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) || durationS >= MAX_SECONDS)
+
+  // Drop buffer if no speech detected and too much silence accumulated
+  if (!hasSpeech && silenceCount >= SILENCE_CHUNKS && durationS >= MIN_SECONDS) {
+    audioBuffer = new Float32Array(0)
+    silenceCount = 0
+  }
 
   if (shouldFlush) {
     silenceCount = 0
+    hasSpeech = false
     try {
       const text = await transcribeBuffer()
       if (text) {
