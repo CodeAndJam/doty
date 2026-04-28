@@ -25,9 +25,7 @@ async function loadModel() {
   parentPort!.postMessage({ type: 'status', status: 'loading' })
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const transformers = require(
-    join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs'),
-  )
+  const transformers = require(join(appPath, 'node_modules/@huggingface/transformers/dist/transformers.node.cjs'))
   const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = transformers
 
   env.cacheDir = join(homePath, '.doty', 'hf-cache')
@@ -55,10 +53,10 @@ async function transcribe(samples: Float32Array): Promise<string> {
   const numSamplesFirst = processor.num_samples_first_audio_chunk
 
   const firstChunkEnd = Math.min(numSamplesFirst, samples.length)
-  const firstChunkInputs = await processor(
-    samples.subarray(0, firstChunkEnd),
-    { is_streaming: true, is_first_audio_chunk: true },
-  )
+  const firstChunkInputs = await processor(samples.subarray(0, firstChunkEnd), {
+    is_streaming: true,
+    is_first_audio_chunk: true,
+  })
 
   const numMelFramesFirst = processor.num_mel_frames_first_audio_chunk
   const winHalf = Math.floor(n_fft / 2)
@@ -74,10 +72,10 @@ async function transcribe(samples: Float32Array): Promise<string> {
         batchEndSample += samplesPerTok
       }
       if (batchEndSample <= startIdx) break
-      const chunkInputs = await processor(
-        samples.slice(startIdx, batchEndSample),
-        { is_streaming: true, is_first_audio_chunk: false },
-      )
+      const chunkInputs = await processor(samples.slice(startIdx, batchEndSample), {
+        is_streaming: true,
+        is_first_audio_chunk: false,
+      })
       yield chunkInputs.input_features
       melFrameIdx += chunkInputs.input_features.dims[2]
       startIdx = melFrameIdx * hop_length - winHalf

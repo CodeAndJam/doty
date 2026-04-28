@@ -130,11 +130,9 @@ describe('ASR STT integration — Voxtral Mini 4B Realtime', { timeout: 600_000 
     if (manifest.length === 0) return
 
     try {
-      const {
-        VoxtralRealtimeForConditionalGeneration,
-        VoxtralRealtimeProcessor,
-        env,
-      } = await import('@huggingface/transformers')
+      const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = await import(
+        '@huggingface/transformers'
+      )
 
       env.cacheDir = join(HOME, '.doty', 'hf-cache')
       env.allowRemoteModels = true
@@ -184,10 +182,10 @@ describe('ASR STT integration — Voxtral Mini 4B Realtime', { timeout: 600_000 
       }
 
       const firstChunkEnd = Math.min(numSamplesFirst, paddedSamples.length)
-      const firstChunkInputs = await runtimeProcessor(
-        paddedSamples.subarray(0, firstChunkEnd),
-        { is_streaming: true, is_first_audio_chunk: true },
-      )
+      const firstChunkInputs = await runtimeProcessor(paddedSamples.subarray(0, firstChunkEnd), {
+        is_streaming: true,
+        is_first_audio_chunk: true,
+      })
 
       // Build a generator that yields input_features chunks
       const numMelFramesFirst = runtimeProcessor.num_mel_frames_first_audio_chunk
@@ -208,10 +206,10 @@ describe('ASR STT integration — Voxtral Mini 4B Realtime', { timeout: 600_000 
           }
           if (batchEndSample <= startIdx) break
 
-          const chunkInputs = await runtimeProcessor(
-            paddedSamples.slice(startIdx, batchEndSample),
-            { is_streaming: true, is_first_audio_chunk: false },
-          )
+          const chunkInputs = await runtimeProcessor(paddedSamples.slice(startIdx, batchEndSample), {
+            is_streaming: true,
+            is_first_audio_chunk: false,
+          })
           yield chunkInputs.input_features
 
           melFrameIdx += chunkInputs.input_features.dims[2]
