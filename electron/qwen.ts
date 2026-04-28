@@ -16,12 +16,12 @@ let _onStatus: ((status: 'loading' | 'ready') => void) | null = null
 let _rerankerPromise: Promise<ScoreFn> | null = null
 
 /** Register a callback to receive model load status updates. */
-export function onQwenStatus(cb: (status: 'loading' | 'ready') => void) {
+function onQwenStatus(cb: (status: 'loading' | 'ready') => void) {
   _onStatus = cb
 }
 
 /** No-op — kept for API compatibility with main.ts */
-export function killQwenChild() {
+function killQwenChild() {
   /* nothing to kill */
 }
 

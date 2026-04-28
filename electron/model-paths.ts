@@ -77,27 +77,27 @@ export const STT_MODELS: SttModelInfo[] = [
 ]
 
 /** Look up a model by id */
-export function getSttModel(id: SttModelType): SttModelInfo {
+function getSttModel(id: SttModelType): SttModelInfo {
   return STT_MODELS.find((m) => m.id === id) ?? STT_MODELS[0]
 }
 
 // ── Legacy exports (used by asr.ts, main.ts) ─────────────────────────────────
 export const MODEL_DIR = getSttModel('parakeet').dir
-export const MODEL_URL = getSttModel('parakeet').url
+const MODEL_URL = getSttModel('parakeet').url
 export const WHISPER_MEDIUM_DIR = getSttModel('whisper-medium').dir
-export const WHISPER_MEDIUM_URL = getSttModel('whisper-medium').url
+const WHISPER_MEDIUM_URL = getSttModel('whisper-medium').url
 export const WHISPER_LARGE_V3_DIR = getSttModel('whisper-large-v3').dir
-export const WHISPER_LARGE_V3_URL = getSttModel('whisper-large-v3').url
-export const VOXTRAL_MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
-export const VOXTRAL_CACHE_DIR = getSttModel('voxtral').dir
+const WHISPER_LARGE_V3_URL = getSttModel('whisper-large-v3').url
+const VOXTRAL_MODEL_ID = 'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX'
+const VOXTRAL_CACHE_DIR = getSttModel('voxtral').dir
 
-export function isModelReady(): boolean {
+function isModelReady(): boolean {
   return getSttModel('parakeet').isReady()
 }
-export function isWhisperMediumReady(): boolean {
+function isWhisperMediumReady(): boolean {
   return getSttModel('whisper-medium').isReady()
 }
-export function isWhisperLargeV3Ready(): boolean {
+function isWhisperLargeV3Ready(): boolean {
   return getSttModel('whisper-large-v3').isReady()
 }
 
