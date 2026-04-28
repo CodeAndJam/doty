@@ -606,6 +606,7 @@ let _rerankerScorer: ((pairs: Array<{ text: string; text_pair: string }>) => Pro
 let _rerankerLoading: Promise<void> | null = null
 
 ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
+  if (!pairs || pairs.length === 0) return []
   if (!_rerankerScorer) {
     if (!_rerankerLoading) {
       _rerankerLoading = (async () => {

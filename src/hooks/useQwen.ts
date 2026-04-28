@@ -52,8 +52,8 @@ export function useQwen() {
       _currentStatus = status as Status
       setModelStatus(status as Status)
     })
-    // Trigger initial load by calling score with empty array (will load model)
-    window.doty.rerankerScore([]).then(() => {
+    // Trigger model load with a dummy pair
+    window.doty.rerankerScore([{ text: 'test', text_pair: 'test' }]).then(() => {
       _currentStatus = 'ready'
       setModelStatus('ready')
     }).catch(() => {
