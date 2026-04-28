@@ -79,13 +79,10 @@ function createVoxtralProcess(): AsrProcess {
     serviceName: 'voxtral-asr',
   })
   return {
-    postMessage: (msg, transfer) => child.postMessage(msg, transfer),
+    postMessage: (msg) => child.postMessage(msg),
     terminate: () => child.kill(),
     onMessage: (cb) => child.on('message', cb),
-    onError: (cb) =>
-      child.on('spawn', () => {
-        // utilityProcess doesn't have 'error' event like Worker; handle via exit
-      }),
+    onError: () => {},
     onExit: (cb) => child.on('exit', cb),
   }
 }
