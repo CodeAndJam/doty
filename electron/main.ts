@@ -46,7 +46,6 @@ import {
   DENOISER_MODEL_URL,
   getSttModelInfo,
   isDenoiserReady,
-  isModelReady,
   isRerankerCached,
   isVadReady,
   STT_MODELS,
@@ -395,7 +394,7 @@ app.whenReady().then(async () => {
   registerMusicProtocol()
   createWindow()
 
-  const ready = isModelReady()
+  const ready = isAnySttModelReady()
   mainWindow?.webContents.send('model:status', { ready })
 
   if (ready) {
@@ -575,7 +574,15 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
 
-ipcMain.handle('model:status', () => ({ ready: STT_MODELS.some((m) => m.isReady()) }))
+/** Check if the user has a usable STT model: they must have selected one and it must be ready */
+function isAnySttModelReady(): boolean {
+  const selected = store.get('sttModel', '') as string
+  if (!selected) return false // fresh install — no model selected yet
+  const model = STT_MODELS.find((m) => m.id === selected)
+  return model ? model.isReady() : false
+}
+
+ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
