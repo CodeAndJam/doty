@@ -56,12 +56,18 @@ describe('Reranker model integration', { timeout: 120_000 }, () => {
     const scoreTime = Date.now() - t1
 
     console.log(`[reranker-test] Scored ${pairs.length} pairs in ${scoreTime}ms`)
-    console.log(`[reranker-test] Scores:`, scores.map((s, i) => `${pairs[i].text_pair.slice(0, 30)}... = ${s.toFixed(3)}`))
+    console.log(
+      `[reranker-test] Scores:`,
+      scores.map((s, i) => `${pairs[i].text_pair.slice(0, 30)}... = ${s.toFixed(3)}`),
+    )
 
     // Assertions
     expect(loadCount, 'Model loaded exactly once').toBe(1)
     expect(scores.length, 'One score per pair').toBe(pairs.length)
-    expect(scores.every((s) => typeof s === 'number' && !Number.isNaN(s)), 'All scores are valid numbers').toBe(true)
+    expect(
+      scores.every((s) => typeof s === 'number' && !Number.isNaN(s)),
+      'All scores are valid numbers',
+    ).toBe(true)
     expect(loadTime, 'Load time < 30s').toBeLessThan(30000)
     expect(scoreTime, 'Score time < 5s for 3 pairs').toBeLessThan(5000)
 

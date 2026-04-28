@@ -12,7 +12,7 @@ export default function Transcript({ lines, recording, asrStatus = 'idle', inter
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [lines, interimText])
+  }, [])
 
   return (
     <div

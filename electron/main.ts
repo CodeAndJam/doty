@@ -621,7 +621,10 @@ ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pa
           AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
         ])
         _rerankerScorer = async (p) => {
-          const inputs = (tokenizer as any)(p.map((x) => x.text), { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true })
+          const inputs = (tokenizer as any)(
+            p.map((x) => x.text),
+            { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true },
+          )
           const { logits } = await (model as any)(inputs)
           return Array.from(logits.data as Float32Array)
         }

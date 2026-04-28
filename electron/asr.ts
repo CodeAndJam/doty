@@ -107,7 +107,10 @@ function createVoxtralProcess(): AsrProcess {
       if (spawned) child.postMessage(msg)
       else pendingMessages.push(msg)
     },
-    terminate: () => { killed = true; child.kill() },
+    terminate: () => {
+      killed = true
+      child.kill()
+    },
     onMessage: (cb) => child.on('message', cb),
     onError: () => {},
     onExit: (cb) => child.on('exit', cb),

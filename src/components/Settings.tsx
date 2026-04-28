@@ -162,7 +162,6 @@ export default function Settings({
       unsubComplete()
       unsubWhisper()
     }
-    // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only effect, refreshTrackCount is stable
   }, [refreshTrackCount])
 
   // Escape key to close

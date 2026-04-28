@@ -77,7 +77,9 @@ describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
     env.cacheDir = join(HOME, '.doty', 'hf-cache')
     env.allowRemoteModels = true
 
-    const processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
+    const processor = await VoxtralRealtimeProcessor.from_pretrained(
+      'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
+    )
     const model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
       'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
       { dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' }, device: 'cpu' },
@@ -87,7 +89,7 @@ describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
     const nfft = processor.feature_extractor.config.n_fft
     const numSamplesFirst = processor.num_samples_first_audio_chunk
     const numSamplesPerChunk = processor.num_samples_per_audio_chunk
-    const samplesPerTok = processor.audio_length_per_tok * hop
+    const _samplesPerTok = processor.audio_length_per_tok * hop
 
     // All audio available upfront (no async waiting needed)
     const firstChunkInputs = await processor(samples.subarray(0, numSamplesFirst), {
@@ -95,7 +97,7 @@ describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
       is_first_audio_chunk: true,
     })
 
-    const numMelFirst = processor.num_mel_frames_first_audio_chunk
+    const _numMelFirst = processor.num_mel_frames_first_audio_chunk
     let audioConsumed = numSamplesFirst
     const chunkTimes: number[] = []
     const memBefore = process.memoryUsage().heapUsed
@@ -109,7 +111,7 @@ describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
 
         // Limit each chunk to ~5 seconds max to get multiple measurements
         const maxChunkSamples = SAMPLE_RATE * 5
-        let batchEnd = Math.min(needed, samples.length, audioConsumed + maxChunkSamples)
+        const batchEnd = Math.min(needed, samples.length, audioConsumed + maxChunkSamples)
         if (batchEnd <= audioConsumed) return
 
         const t0 = Date.now()
@@ -142,7 +144,10 @@ describe('Voxtral streaming performance', { timeout: 600_000 }, () => {
 
     const streamer = new (class extends BaseStreamer {
       put(value: bigint[][]) {
-        if (isPrompt) { isPrompt = false; return }
+        if (isPrompt) {
+          isPrompt = false
+          return
+        }
         const tokens = value[0]
         if (tokens.length === 1 && specialIds.has(tokens[0])) return
         tokenCache = tokenCache.concat(tokens)

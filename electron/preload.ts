@@ -45,7 +45,9 @@ contextBridge.exposeInMainWorld('doty', {
   onRerankerStatus: (cb: (status: string) => void) => {
     const handler = (_e: any, status: string) => cb(status)
     ipcRenderer.on('reranker:ipc-status', handler)
-    return () => { ipcRenderer.removeListener('reranker:ipc-status', handler) }
+    return () => {
+      ipcRenderer.removeListener('reranker:ipc-status', handler)
+    }
   },
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),

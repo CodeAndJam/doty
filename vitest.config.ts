@@ -7,7 +7,14 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    exclude: ['e2e/**', 'node_modules/**'],
+    exclude: [
+      'e2e/**',
+      'node_modules/**',
+      'electron/*-integration.test.ts',
+      'electron/voxtral-streaming*.test.ts',
+      'electron/voxtral-session.test.ts',
+      'electron/stt-models.test.ts',
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

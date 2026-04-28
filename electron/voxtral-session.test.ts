@@ -85,7 +85,9 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
     let modelLoadCount = 0
     let generateCallCount = 0
 
-    const processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
+    const processor = await VoxtralRealtimeProcessor.from_pretrained(
+      'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
+    )
     const model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
       'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
       { dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' }, device: 'cpu' },
@@ -100,7 +102,7 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
     const nfft = processor.feature_extractor.config.n_fft
     const numSamplesFirst = processor.num_samples_first_audio_chunk
     const numSamplesPerChunk = processor.num_samples_per_audio_chunk
-    const samplesPerTok = processor.audio_length_per_tok * hop
+    const _samplesPerTok = processor.audio_length_per_tok * hop
 
     // Simulate the streaming with audio arriving in real-time
     let audioBuffer = new Float32Array(0)
@@ -112,11 +114,16 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
       merged.set(audioBuffer)
       merged.set(chunk, audioBuffer.length)
       audioBuffer = merged
-      if (audioResolve) { audioResolve(); audioResolve = null }
+      if (audioResolve) {
+        audioResolve()
+        audioResolve = null
+      }
     }
     function waitForAudio(): Promise<void> {
       if (allFed) return Promise.resolve()
-      return new Promise((r) => { audioResolve = r })
+      return new Promise((r) => {
+        audioResolve = r
+      })
     }
 
     // Feed audio at 10x real-time
@@ -127,7 +134,10 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
         await new Promise((r) => setTimeout(r, 100))
       }
       allFed = true
-      if (audioResolve) { audioResolve(); audioResolve = null }
+      if (audioResolve) {
+        audioResolve()
+        audioResolve = null
+      }
     })()
 
     // Run session (may restart if generate ends early)
@@ -145,10 +155,10 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
         await waitForAudio()
       }
 
-      const firstChunkInputs = await processor(
-        audioBuffer.subarray(audioConsumed, audioConsumed + numSamplesFirst),
-        { is_streaming: true, is_first_audio_chunk: true },
-      )
+      const firstChunkInputs = await processor(audioBuffer.subarray(audioConsumed, audioConsumed + numSamplesFirst), {
+        is_streaming: true,
+        is_first_audio_chunk: true,
+      })
       audioConsumed += numSamplesFirst
 
       async function* featureGen() {
@@ -163,7 +173,7 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
               return
             }
           }
-          let batchEnd = Math.min(audioBuffer.length, audioConsumed + SAMPLE_RATE * 5)
+          const batchEnd = Math.min(audioBuffer.length, audioConsumed + SAMPLE_RATE * 5)
           if (batchEnd <= audioConsumed) return
 
           let chunkAudio = audioBuffer.slice(audioConsumed, batchEnd)
@@ -190,7 +200,10 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
 
       const streamer = new (class extends BaseStreamer {
         put(value: bigint[][]) {
-          if (isPrompt) { isPrompt = false; return }
+          if (isPrompt) {
+            isPrompt = false
+            return
+          }
           const tokens = value[0]
           if (tokens.length === 1 && specialIds.has(tokens[0])) return
           tokenCache = tokenCache.concat(tokens)
@@ -199,9 +212,15 @@ describe('Voxtral session: model loads once over 90s', { timeout: 900_000 }, () 
             totalTokens++
             printLen = text.length
           }
-          if (tokenCache.length > 40) { tokenCache = []; printLen = 0 }
+          if (tokenCache.length > 40) {
+            tokenCache = []
+            printLen = 0
+          }
         }
-        end() { tokenCache = []; printLen = 0 }
+        end() {
+          tokenCache = []
+          printLen = 0
+        }
       })()
 
       await model.generate({

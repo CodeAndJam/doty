@@ -76,7 +76,9 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
     env.cacheDir = join(HOME, '.doty', 'hf-cache')
     env.allowRemoteModels = true
 
-    const processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
+    const processor = await VoxtralRealtimeProcessor.from_pretrained(
+      'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
+    )
     const model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
       'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
       { dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' }, device: 'cpu' },
@@ -86,7 +88,7 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
     const nfft = processor.feature_extractor.config.n_fft
     const numSamplesFirst = processor.num_samples_first_audio_chunk
     const numSamplesPerChunk = processor.num_samples_per_audio_chunk
-    const samplesPerTok = processor.audio_length_per_tok * hop
+    const _samplesPerTok = processor.audio_length_per_tok * hop
 
     // === Simulate the voxtral-child streaming architecture ===
     let audioBuffer = new Float32Array(0)
@@ -98,12 +100,17 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
       merged.set(audioBuffer)
       merged.set(chunk, audioBuffer.length)
       audioBuffer = merged
-      if (audioResolve) { audioResolve(); audioResolve = null }
+      if (audioResolve) {
+        audioResolve()
+        audioResolve = null
+      }
     }
 
     function waitForAudio(): Promise<void> {
       if (allAudioFed) return Promise.resolve()
-      return new Promise((r) => { audioResolve = r })
+      return new Promise((r) => {
+        audioResolve = r
+      })
     }
 
     // Metrics
@@ -126,7 +133,10 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
       }
       allAudioFed = true
       // Wake up generator if waiting
-      if (audioResolve) { audioResolve(); audioResolve = null }
+      if (audioResolve) {
+        audioResolve()
+        audioResolve = null
+      }
     })()
 
     // Wait for first chunk to be available
@@ -156,7 +166,7 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
           }
         }
 
-        let batchEnd = Math.min(audioBuffer.length, audioConsumed + SAMPLE_RATE * 5) // max 5s per chunk
+        const batchEnd = Math.min(audioBuffer.length, audioConsumed + SAMPLE_RATE * 5) // max 5s per chunk
         if (batchEnd <= audioConsumed) return
 
         const t0 = Date.now()
@@ -193,7 +203,10 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
 
     const streamer = new (class extends BaseStreamer {
       put(value: bigint[][]) {
-        if (isPrompt) { isPrompt = false; return }
+        if (isPrompt) {
+          isPrompt = false
+          return
+        }
         const tokens = value[0]
         if (tokens.length === 1 && specialIds.has(tokens[0])) return
         tokenCache = tokenCache.concat(tokens)
@@ -205,7 +218,10 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
           allText += newText
           tokenCount++
           tokenTimestamps.push(Date.now() - startTime)
-          if (tokenCache.length > 40) { tokenCache = []; printLen = 0 }
+          if (tokenCache.length > 40) {
+            tokenCache = []
+            printLen = 0
+          }
         }
       }
       end() {
@@ -236,12 +252,14 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
     const halfIdx = Math.floor(tokenTimestamps.length / 2)
     const firstHalfTokens = tokenTimestamps.slice(0, halfIdx)
     const secondHalfTokens = tokenTimestamps.slice(halfIdx)
-    const avgGapFirst = firstHalfTokens.length > 1
-      ? (firstHalfTokens[firstHalfTokens.length - 1] - firstHalfTokens[0]) / firstHalfTokens.length
-      : 0
-    const avgGapSecond = secondHalfTokens.length > 1
-      ? (secondHalfTokens[secondHalfTokens.length - 1] - secondHalfTokens[0]) / secondHalfTokens.length
-      : 0
+    const avgGapFirst =
+      firstHalfTokens.length > 1
+        ? (firstHalfTokens[firstHalfTokens.length - 1] - firstHalfTokens[0]) / firstHalfTokens.length
+        : 0
+    const avgGapSecond =
+      secondHalfTokens.length > 1
+        ? (secondHalfTokens[secondHalfTokens.length - 1] - secondHalfTokens[0]) / secondHalfTokens.length
+        : 0
     const tokenSlowdown = avgGapSecond / (avgGapFirst || 1)
 
     // Chunk processing stability
@@ -251,11 +269,15 @@ describe('Voxtral true streaming (real-time audio delivery)', { timeout: 600_000
     const chunkSlowdown = avgChunkSecond / (avgChunkFirst || 1)
 
     console.log(`\n[realtime-test] Results:`)
-    console.log(`  Audio: ${(audioDurationMs / 1000).toFixed(1)}s | Feed rate: ${FEED_DELAY}ms/chunk (${(1000 / FEED_DELAY).toFixed(0)}x realtime)`)
+    console.log(
+      `  Audio: ${(audioDurationMs / 1000).toFixed(1)}s | Feed rate: ${FEED_DELAY}ms/chunk (${(1000 / FEED_DELAY).toFixed(0)}x realtime)`,
+    )
     console.log(`  TTFT: ${ttft}ms`)
     console.log(`  Total: ${(totalTime / 1000).toFixed(1)}s | RTF: ${(totalTime / audioDurationMs).toFixed(2)}x`)
     console.log(`  Tokens: ${tokenCount} | Chunks: ${chunkTimes.length}`)
-    console.log(`  Token rate: first half ${avgGapFirst.toFixed(0)}ms/tok, second half ${avgGapSecond.toFixed(0)}ms/tok`)
+    console.log(
+      `  Token rate: first half ${avgGapFirst.toFixed(0)}ms/tok, second half ${avgGapSecond.toFixed(0)}ms/tok`,
+    )
     console.log(`  Token slowdown: ${tokenSlowdown.toFixed(2)}x`)
     console.log(`  Chunk time: first half ${avgChunkFirst.toFixed(0)}ms, second half ${avgChunkSecond.toFixed(0)}ms`)
     console.log(`  Chunk slowdown: ${chunkSlowdown.toFixed(2)}x`)

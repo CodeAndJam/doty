@@ -42,7 +42,7 @@ const MODELS = [
 ] as const
 
 const VAD_MODEL_PATH = join(HOME, '.doty', 'models', 'silero_vad.onnx')
-const DENOISER_MODEL_PATH = join(HOME, '.doty', 'models', 'gtcrn_simple.onnx')
+const _DENOISER_MODEL_PATH = join(HOME, '.doty', 'models', 'gtcrn_simple.onnx')
 
 interface TestCase {
   file: string
@@ -81,7 +81,12 @@ function readWavAsFloat32(filePath: string): { samples: Float32Array; sampleRate
 }
 
 function wordOverlap(expected: string, actual: string): number {
-  const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean)
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .split(/\s+/)
+      .filter(Boolean)
   const exp = norm(expected)
   const act = norm(actual)
   if (exp.length === 0) return act.length === 0 ? 1 : 0
@@ -89,7 +94,10 @@ function wordOverlap(expected: string, actual: string): number {
   const remaining = [...act]
   for (const w of exp) {
     const idx = remaining.indexOf(w)
-    if (idx !== -1) { matches++; remaining.splice(idx, 1) }
+    if (idx !== -1) {
+      matches++
+      remaining.splice(idx, 1)
+    }
   }
   return matches / exp.length
 }
@@ -189,11 +197,15 @@ describe('STT models transcription', { timeout: 600_000 }, () => {
       return
     }
 
-    const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = await import('@huggingface/transformers')
+    const { VoxtralRealtimeForConditionalGeneration, VoxtralRealtimeProcessor, env } = await import(
+      '@huggingface/transformers'
+    )
     env.cacheDir = join(HOME, '.doty', 'hf-cache')
     env.allowRemoteModels = true
 
-    const processor = await VoxtralRealtimeProcessor.from_pretrained('onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX')
+    const processor = await VoxtralRealtimeProcessor.from_pretrained(
+      'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
+    )
     const model = await VoxtralRealtimeForConditionalGeneration.from_pretrained(
       'onnx-community/Voxtral-Mini-4B-Realtime-2602-ONNX',
       { dtype: { audio_encoder: 'q4f16', embed_tokens: 'q4f16', decoder_model_merged: 'q4f16' }, device: 'cpu' },
@@ -218,7 +230,8 @@ describe('STT models transcription', { timeout: 600_000 }, () => {
     const numSamplesFirst = processor.num_samples_first_audio_chunk
 
     const firstInputs = await processor(audio.subarray(0, numSamplesFirst), {
-      is_streaming: true, is_first_audio_chunk: true,
+      is_streaming: true,
+      is_first_audio_chunk: true,
     })
 
     // Process remaining audio as second chunk

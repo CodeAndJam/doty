@@ -53,13 +53,16 @@ export function useQwen() {
       setModelStatus(status as Status)
     })
     // Trigger model load with a dummy pair
-    window.doty.rerankerScore([{ text: 'test', text_pair: 'test' }]).then(() => {
-      _currentStatus = 'ready'
-      setModelStatus('ready')
-    }).catch(() => {
-      _currentStatus = 'error'
-      setModelStatus('error')
-    })
+    window.doty
+      .rerankerScore([{ text: 'test', text_pair: 'test' }])
+      .then(() => {
+        _currentStatus = 'ready'
+        setModelStatus('ready')
+      })
+      .catch(() => {
+        _currentStatus = 'error'
+        setModelStatus('error')
+      })
     return unsub
   }, [])
 

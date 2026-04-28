@@ -86,7 +86,7 @@ async function runStreamingSession() {
   const numSamplesPerChunk = processor.num_samples_per_audio_chunk
   const samplesPerTok = processor.audio_length_per_tok * hop
   const numMelFirst = processor.num_mel_frames_first_audio_chunk
-  const winHalf = Math.floor(nfft / 2)
+  const _winHalf = Math.floor(nfft / 2)
 
   // Wait for enough audio for the first chunk
   while (audioBuffer.length < numSamplesFirst && sessionActive) {
@@ -99,8 +99,7 @@ async function runStreamingSession() {
     is_first_audio_chunk: true,
   })
 
-  let melFrameIdx = numMelFirst
-  let startIdx = melFrameIdx * hop - winHalf
+  let _melFrameIdx = numMelFirst
 
   // Async generator that yields features as audio arrives
   async function* inputFeaturesGenerator() {
@@ -144,7 +143,7 @@ async function runStreamingSession() {
       })
       yield chunkInputs.input_features
 
-      melFrameIdx += chunkInputs.input_features.dims[2]
+      _melFrameIdx += chunkInputs.input_features.dims[2]
       audioConsumed = batchEnd
 
       // Trim consumed audio to prevent unbounded memory growth

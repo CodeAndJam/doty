@@ -172,7 +172,7 @@ describe('ASR STT integration — Voxtral Mini 4B Realtime', { timeout: 600_000 
       const runtimeProcessor = processor as any
       const numSamplesFirst = runtimeProcessor.num_samples_first_audio_chunk
       const { hop_length } = runtimeProcessor.feature_extractor.config
-      const samplesPerTok = runtimeProcessor.audio_length_per_tok * hop_length
+      const _samplesPerTok = runtimeProcessor.audio_length_per_tok * hop_length
 
       // Use streaming API with alignment padding.
       // The ONNX projector requires each chunk's encoder output to be divisible by 4.
