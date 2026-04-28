@@ -151,6 +151,21 @@ async function runStreamingSession() {
   let tokenCache: bigint[] = []
   let printLen = 0
   let isPrompt = true
+  let textBuffer = ''
+  let flushTimer: ReturnType<typeof setTimeout> | null = null
+
+  function flushText() {
+    if (textBuffer.length > 0) {
+      process.parentPort.postMessage({ type: 'flush', text: textBuffer })
+      textBuffer = ''
+    }
+    flushTimer = null
+  }
+
+  function scheduleFlush() {
+    if (flushTimer) clearTimeout(flushTimer)
+    flushTimer = setTimeout(flushText, 300)
+  }
 
   const streamer = new (class extends BaseStreamer {
     put(value: bigint[][]) {
@@ -162,23 +177,28 @@ async function runStreamingSession() {
       const tokens = value[0]
       if (tokens.length === 1 && specialIds.has(tokens[0])) return
       tokenCache = tokenCache.concat(tokens)
-      // Decode and emit new text
       const text = tokenizer.decode(tokenCache, { skip_special_tokens: true })
       const newText = text.slice(printLen)
       printLen = text.length
       if (newText.length > 0) {
-        process.parentPort.postMessage({ type: 'flush', text: newText })
+        textBuffer += newText
+        // Flush on sentence-ending punctuation
+        if (/[.!?]\s*$/.test(textBuffer)) {
+          if (flushTimer) clearTimeout(flushTimer)
+          flushText()
+        } else {
+          scheduleFlush()
+        }
       }
     }
     end() {
-      // Flush remaining
       if (tokenCache.length > 0) {
         const text = tokenizer.decode(tokenCache, { skip_special_tokens: true })
         const newText = text.slice(printLen)
-        if (newText.length > 0) {
-          process.parentPort.postMessage({ type: 'flush', text: newText })
-        }
+        if (newText.length > 0) textBuffer += newText
       }
+      if (flushTimer) clearTimeout(flushTimer)
+      flushText()
       tokenCache = []
       printLen = 0
       isPrompt = true
