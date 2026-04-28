@@ -187,6 +187,8 @@ export interface DotyAPI {
     }>
   >
   rerankerStatus: () => Promise<{ cached: boolean }>
+  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
+  onRerankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void

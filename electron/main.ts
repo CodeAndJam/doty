@@ -601,6 +601,38 @@ ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
+// Reranker scoring via IPC — replaces broken WASM worker
+let _rerankerScorer: ((pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>) | null = null
+let _rerankerLoading: Promise<void> | null = null
+
+ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
+  if (!_rerankerScorer) {
+    if (!_rerankerLoading) {
+      _rerankerLoading = (async () => {
+        const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers')
+        env.cacheDir = join(app.getPath('home'), '.doty', 'hf-cache')
+        env.allowRemoteModels = true
+        const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
+        console.log('[reranker-ipc] loading model...')
+        mainWindow?.webContents.send('reranker:ipc-status', 'loading')
+        const [tokenizer, model] = await Promise.all([
+          AutoTokenizer.from_pretrained(MODEL_ID),
+          AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
+        ])
+        _rerankerScorer = async (p) => {
+          const inputs = (tokenizer as any)(p.map((x) => x.text), { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true })
+          const { logits } = await (model as any)(inputs)
+          return Array.from(logits.data as Float32Array)
+        }
+        console.log('[reranker-ipc] model ready')
+        mainWindow?.webContents.send('reranker:ipc-status', 'ready')
+      })()
+    }
+    await _rerankerLoading
+  }
+  return await _rerankerScorer!(pairs)
+})
+
 ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
 
 ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {

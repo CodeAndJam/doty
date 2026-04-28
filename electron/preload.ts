@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('doty', {
   downloadModel: (modelId?: string) => ipcRenderer.invoke('model:download', modelId),
   getSttModelList: () => ipcRenderer.invoke('stt:get-model-list'),
   rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
+  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => ipcRenderer.invoke('reranker:score', pairs),
+  onRerankerStatus: (cb: (status: string) => void) => {
+    const handler = (_e: any, status: string) => cb(status)
+    ipcRenderer.on('reranker:ipc-status', handler)
+    return () => { ipcRenderer.removeListener('reranker:ipc-status', handler) }
+  },
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
   onModelProgress: (cb: (p: ProgressPayload) => void) => {
