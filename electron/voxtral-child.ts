@@ -169,6 +169,9 @@ async function runStreamingSession() {
       // Send as final (locked-in) text
       process.parentPort.postMessage({ type: 'flush', text: textBuffer })
       textBuffer = ''
+      // Reset token cache to prevent unbounded memory growth
+      tokenCache = []
+      printLen = 0
     }
     flushTimer = null
   }
