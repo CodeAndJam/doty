@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.1](https://github.com/CodeAndJam/doty/compare/v2.2.0...v2.2.1) (2026-04-29)
+
+
+### Bug Fixes
+
+* **ci:** resolve pnpm version conflict in build-dmg ([#64](https://github.com/CodeAndJam/doty/issues/64)) ([942655e](https://github.com/CodeAndJam/doty/commit/942655e6dfe52f4b47e3ac5445fedda8515d352b))
+
 ## [2.2.0](https://github.com/CodeAndJam/doty/compare/v2.1.1...v2.2.0) (2026-04-28)
 
 
