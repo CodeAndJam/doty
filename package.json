@@ -56,6 +56,9 @@
       "category": "public.app-category.productivity",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "notarize": true,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Doty needs microphone access to transcribe your tabletop RPG sessions and recommend matching music in real time."
       },
