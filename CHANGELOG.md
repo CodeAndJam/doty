@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/CodeAndJam/doty/compare/v2.2.1...v2.3.0) (2026-06-08)
+
+
+### Features
+
+* **permissions:** add macOS microphone permission handling ([#67](https://github.com/CodeAndJam/doty/issues/67)) ([c264cb6](https://github.com/CodeAndJam/doty/commit/c264cb6a08dc026614ddc111e378a5ff8419861d))
+
 ## [2.2.1](https://github.com/CodeAndJam/doty/compare/v2.2.0...v2.2.1) (2026-04-29)
 
 
