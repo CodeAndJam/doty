@@ -3,6 +3,11 @@ import { contextBridge, ipcRenderer } from 'electron'
 export type ProgressPayload = { percent: number; downloadedMB: number; totalMB: number }
 
 contextBridge.exposeInMainWorld('doty', {
+  // Microphone Permission
+  micCheckPermission: () => ipcRenderer.invoke('mic:check-permission'),
+  micRequestPermission: () => ipcRenderer.invoke('mic:request-permission'),
+  micOpenSettings: () => ipcRenderer.invoke('mic:open-settings'),
+
   // STT
   sttStart: () => ipcRenderer.invoke('stt:start'),
   sttStop: () => ipcRenderer.invoke('stt:stop'),

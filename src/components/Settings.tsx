@@ -62,6 +62,7 @@ export default function Settings({
   const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([])
   const [selectedMic, setSelectedMic] = useState<string>(micDeviceId ?? '')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>(speakerDeviceId ?? '')
+  const [micPermissionDenied, setMicPermissionDenied] = useState(false)
   const [showQwenLogs, setShowQwenLogs] = useState(false)
   const [qwenLogs, setQwenLogs] = useState<string[]>([])
   const [hotwordsFile, setHotwordsFile] = useState('')
@@ -140,6 +141,10 @@ export default function Settings({
         setWhisperProgress(0)
         window.doty.getSttModelStatus().then(setSttModelStatus)
       }
+    })
+
+    window.doty.micCheckPermission().then((status: string) => {
+      setMicPermissionDenied(status === 'denied' || status === 'restricted')
     })
 
     navigator.mediaDevices
@@ -339,6 +344,19 @@ export default function Settings({
                 </option>
               ))}
             </select>
+          )}
+          {micPermissionDenied && (
+            <p className="mt-1 text-xs" style={{ color: '#b43c28' }}>
+              ⚠ Microphone permission denied —{' '}
+              <button
+                type="button"
+                onClick={() => window.doty.micOpenSettings()}
+                className="underline"
+                style={{ color: '#c8922a' }}
+              >
+                Open System Settings
+              </button>
+            </p>
           )}
         </div>
 

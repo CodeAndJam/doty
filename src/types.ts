@@ -155,7 +155,14 @@ export interface DiscordState {
   error: string | null
 }
 
+export type MicPermission = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
+
 export interface DotyAPI {
+  // Microphone Permission
+  micCheckPermission: () => Promise<MicPermission>
+  micRequestPermission: () => Promise<boolean>
+  micOpenSettings: () => Promise<void>
+
   // STT
   sttStart: () => Promise<{ ok: boolean }>
   sttStop: () => Promise<{ ok: boolean }>
