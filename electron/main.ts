@@ -458,6 +458,25 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 
+// ── IPC: Microphone Permission ────────────────────────────────────────────────
+
+ipcMain.handle('mic:check-permission', () => {
+  if (process.platform !== 'darwin') return 'granted'
+  const { systemPreferences } = require('electron')
+  return systemPreferences.getMediaAccessStatus('microphone')
+})
+
+ipcMain.handle('mic:request-permission', async () => {
+  if (process.platform !== 'darwin') return true
+  const { systemPreferences } = require('electron')
+  return systemPreferences.askForMediaAccess('microphone')
+})
+
+ipcMain.handle('mic:open-settings', () => {
+  const { shell } = require('electron')
+  shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone')
+})
+
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {

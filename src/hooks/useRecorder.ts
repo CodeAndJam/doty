@@ -1,4 +1,16 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
+import type { MicPermission } from '../types'
+
+export type { MicPermission }
+
+async function ensureMicPermission(): Promise<MicPermission> {
+  const status: MicPermission = await window.doty.micCheckPermission()
+  if (status === 'not-determined') {
+    const granted = await window.doty.micRequestPermission()
+    return granted ? 'granted' : 'denied'
+  }
+  return status
+}
 
 export function useRecorder(deviceId?: string) {
   const contextRef = useRef<AudioContext | null>(null)
@@ -6,9 +18,15 @@ export function useRecorder(deviceId?: string) {
   const workletRef = useRef<AudioWorkletNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const activeRef = useRef(false)
+  const [micPermission, setMicPermission] = useState<MicPermission>('unknown')
 
   const start = useCallback(async () => {
     if (activeRef.current) return
+
+    const permission = await ensureMicPermission()
+    setMicPermission(permission)
+    if (permission !== 'granted') return
+
     activeRef.current = true
 
     const audioConstraints: MediaTrackConstraints = {
@@ -67,5 +85,5 @@ export function useRecorder(deviceId?: string) {
     streamRef.current = null
   }, [])
 
-  return { start, stop }
+  return { start, stop, micPermission }
 }

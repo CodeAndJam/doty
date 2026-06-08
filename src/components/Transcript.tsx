@@ -1,13 +1,15 @@
 import { useEffect, useRef } from 'react'
+import type { MicPermission } from '../types'
 
 interface Props {
   lines: string[]
   recording: boolean
   asrStatus?: 'idle' | 'loading' | 'ready'
   interimText?: string
+  micPermission?: MicPermission
 }
 
-export default function Transcript({ lines, recording, asrStatus = 'idle', interimText = '' }: Props) {
+export default function Transcript({ lines, recording, asrStatus = 'idle', interimText = '', micPermission }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -87,6 +89,27 @@ export default function Transcript({ lines, recording, asrStatus = 'idle', inter
           </span>
         )}
       </div>
+
+      {/* Permission banner */}
+      {(micPermission === 'denied' || micPermission === 'restricted') && (
+        <div
+          className="mx-3 mt-2 px-3 py-2 rounded text-sm"
+          style={{ background: 'rgba(180,60,40,0.15)', border: '1px solid rgba(180,60,40,0.4)', color: '#e8a87c' }}
+        >
+          <p className="font-medium mb-1">⚠ Microphone access denied</p>
+          <p className="text-xs opacity-80 mb-2">
+            Doty needs microphone permission to transcribe. Open System Settings to grant access.
+          </p>
+          <button
+            type="button"
+            onClick={() => window.doty.micOpenSettings()}
+            className="text-xs underline opacity-90 hover:opacity-100"
+            style={{ color: '#c8922a' }}
+          >
+            Open System Settings →
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 select-text cursor-text">

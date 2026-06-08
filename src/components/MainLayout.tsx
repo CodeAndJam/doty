@@ -37,7 +37,7 @@ export default function MainLayout() {
   const recommendCountRef = useRef(recommendCount)
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
-  const { start, stop } = useRecorder(micDeviceId)
+  const { start, stop, micPermission } = useRecorder(micDeviceId)
   const { recommend, modelStatus, downloadProgress, lastRanker } = useQwen()
   const recommendRef = useRef(recommend)
 
@@ -308,7 +308,13 @@ export default function MainLayout() {
         {/* Left: Transcript (hidden entirely when collapsed) */}
         {showTranscript && (
           <div className="flex flex-col shrink-0 gap-2 w-72">
-            <Transcript lines={transcripts} recording={recording} asrStatus={asrStatus} interimText={interimText} />
+            <Transcript
+              lines={transcripts}
+              recording={recording}
+              asrStatus={asrStatus}
+              interimText={interimText}
+              micPermission={micPermission}
+            />
           </div>
         )}
 
