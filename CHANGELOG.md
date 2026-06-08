@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.1](https://github.com/CodeAndJam/doty/compare/v2.3.0...v2.3.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* **build:** disable hardenedRuntime to fix adhoc signing crash ([#70](https://github.com/CodeAndJam/doty/issues/70)) ([e50ee66](https://github.com/CodeAndJam/doty/commit/e50ee66ef38df894a828b7c9b1732ff44748edf0))
+
 ## [2.3.0](https://github.com/CodeAndJam/doty/compare/v2.2.1...v2.3.0) (2026-06-08)
 
 
