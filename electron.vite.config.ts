@@ -18,6 +18,7 @@ export default defineConfig({
           'voxtral-worker': resolve(__dirname, 'electron/voxtral-worker.ts'),
           'voxtral-child': resolve(__dirname, 'electron/voxtral-child.ts'),
           'voxmlx-child': resolve(__dirname, 'electron/voxmlx-child.ts'),
+          'reprocess-worker': resolve(__dirname, 'electron/reprocess-worker.ts'),
         },
       },
     },

@@ -9,6 +9,11 @@ const sessionProps = {
   onNewSession: () => {},
   onSwitchSession: () => {},
   onRenameSession: () => {},
+  onReprocess: () => {},
+  onReprocessCancel: () => {},
+  reprocessProgress: null,
+  reprocessingFile: null,
+  availableModels: [],
 }
 
 describe('Transcript', () => {

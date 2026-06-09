@@ -35,6 +35,16 @@ export default function MainLayout() {
   const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
+  const [reprocessProgress, setReprocessProgress] = useState<number | null>(null)
+  const [reprocessingFile, setReprocessingFile] = useState<string | null>(null)
+  const [sttModelList, setSttModelList] = useState<Array<{ id: string; label: string; ready: boolean }>>([])
+
+  // Load STT model list for reprocess picker
+  useEffect(() => {
+    window.doty
+      .getSttModelList()
+      .then((list) => setSttModelList(list.map((m) => ({ id: m.id, label: m.label, ready: m.ready }))))
+  }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
@@ -84,6 +94,29 @@ export default function MainLayout() {
     }
     loadSessions()
   }, [])
+
+  // Subscribe to reprocess events
+  useEffect(() => {
+    const unsubProgress = window.doty.onReprocessProgress((p) => setReprocessProgress(p.percent))
+    const unsubDone = window.doty.onReprocessDone(async (r) => {
+      setReprocessProgress(null)
+      setReprocessingFile(null)
+      // Reload the session if it's the active one
+      if (r.file === activeSession) {
+        const cues = await window.doty.sessionLoad(r.file)
+        setTranscripts(cues.map((c) => c.text))
+      }
+    })
+    const unsubError = window.doty.onReprocessError(() => {
+      setReprocessProgress(null)
+      setReprocessingFile(null)
+    })
+    return () => {
+      unsubProgress()
+      unsubDone()
+      unsubError()
+    }
+  }, [activeSession])
 
   // Check if reranker model is already cached on mount
   useEffect(() => {
@@ -361,6 +394,19 @@ export default function MainLayout() {
                 await window.doty.sessionRename(file, name)
                 setSessions((prev) => prev.map((s) => (s.file === file ? { ...s, name } : s)))
               }}
+              onReprocess={async (file, modelId) => {
+                setReprocessingFile(file)
+                setReprocessProgress(0)
+                await window.doty.reprocessStart(file, modelId)
+              }}
+              onReprocessCancel={async () => {
+                await window.doty.reprocessCancel()
+                setReprocessingFile(null)
+                setReprocessProgress(null)
+              }}
+              reprocessProgress={reprocessProgress}
+              reprocessingFile={reprocessingFile}
+              availableModels={sttModelList}
             />
           </div>
         )}

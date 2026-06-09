@@ -223,6 +223,13 @@ export interface DotyAPI {
   sessionRename: (file: string, newName: string) => Promise<void>
   sessionGetLast: () => Promise<string | null>
 
+  // Reprocess
+  reprocessStart: (sessionFile: string, modelId: string) => Promise<{ ok: boolean; reason?: string }>
+  reprocessCancel: () => Promise<{ ok: boolean }>
+  onReprocessProgress: (cb: (p: { percent: number }) => void) => () => void
+  onReprocessDone: (cb: (r: { file: string; cueCount: number }) => void) => () => void
+  onReprocessError: (cb: (e: { message: string }) => void) => () => void
+
   // Hotwords
   getHotwordsFile: () => Promise<string>
   setHotwordsFile: (path: string) => Promise<{ ok: boolean }>

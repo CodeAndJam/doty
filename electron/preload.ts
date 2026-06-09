@@ -95,6 +95,25 @@ contextBridge.exposeInMainWorld('doty', {
   sessionRename: (file: string, newName: string) => ipcRenderer.invoke('session:rename', file, newName),
   sessionGetLast: () => ipcRenderer.invoke('session:get-last'),
 
+  // Reprocess
+  reprocessStart: (sessionFile: string, modelId: string) => ipcRenderer.invoke('reprocess:start', sessionFile, modelId),
+  reprocessCancel: () => ipcRenderer.invoke('reprocess:cancel'),
+  onReprocessProgress: (cb: (p: { percent: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: { percent: number }) => cb(p)
+    ipcRenderer.on('reprocess:progress', handler)
+    return () => ipcRenderer.removeListener('reprocess:progress', handler)
+  },
+  onReprocessDone: (cb: (r: { file: string; cueCount: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, r: { file: string; cueCount: number }) => cb(r)
+    ipcRenderer.on('reprocess:done', handler)
+    return () => ipcRenderer.removeListener('reprocess:done', handler)
+  },
+  onReprocessError: (cb: (e: { message: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, e: { message: string }) => cb(e)
+    ipcRenderer.on('reprocess:error', handler)
+    return () => ipcRenderer.removeListener('reprocess:error', handler)
+  },
+
   // Hotwords
   getHotwordsFile: () => ipcRenderer.invoke('settings:get-hotwords-file'),
   setHotwordsFile: (path: string) => ipcRenderer.invoke('settings:set-hotwords-file', path),

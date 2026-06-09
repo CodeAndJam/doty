@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import {
   flushRecognizer,
@@ -192,9 +193,64 @@ function listMusicFiles(dir: string, root?: string): string[] {
 
 let mainWindow: BrowserWindow | null = null
 let sessionStartTime: number | null = null
+let sessionWavFd: number | null = null
+let sessionWavBytes = 0
 
 function getActiveSessionFile(): string | null {
   return sessionOps.getLastSession()
+}
+
+function getSessionWavPath(): string | null {
+  const vtt = getActiveSessionFile()
+  if (!vtt) return null
+  return vtt.replace(/\.vtt$/, '.wav')
+}
+
+function startWavRecording(): void {
+  const wavPath = getSessionWavPath()
+  if (!wavPath) return
+  // Write a placeholder 44-byte WAV header (updated on stop)
+  const header = Buffer.alloc(44)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(0, 4) // placeholder file size
+  header.write('WAVE', 8)
+  header.write('fmt ', 12)
+  header.writeUInt32LE(16, 16) // PCM format chunk size
+  header.writeUInt16LE(1, 20) // PCM format
+  header.writeUInt16LE(1, 22) // mono
+  header.writeUInt32LE(16000, 24) // sample rate
+  header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
+  header.writeUInt16LE(2, 32) // block align
+  header.writeUInt16LE(16, 34) // bits per sample
+  header.write('data', 36)
+  header.writeUInt32LE(0, 40) // placeholder data size
+  fs.writeFileSync(wavPath, header)
+  sessionWavFd = fs.openSync(wavPath, 'r+')
+  sessionWavBytes = 0
+}
+
+function appendWavChunk(samples: Float32Array): void {
+  if (sessionWavFd === null) return
+  const int16 = Buffer.alloc(samples.length * 2)
+  for (let i = 0; i < samples.length; i++) {
+    int16.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
+  }
+  fs.appendFileSync(sessionWavFd, int16)
+  sessionWavBytes += int16.length
+}
+
+function finalizeWavRecording(): void {
+  if (sessionWavFd === null) return
+  // Update RIFF size and data size in the header
+  const fileSizeBuf = Buffer.alloc(4)
+  fileSizeBuf.writeUInt32LE(36 + sessionWavBytes)
+  fs.writeSync(sessionWavFd, fileSizeBuf, 0, 4, 4)
+  const dataSizeBuf = Buffer.alloc(4)
+  dataSizeBuf.writeUInt32LE(sessionWavBytes)
+  fs.writeSync(sessionWavFd, dataSizeBuf, 0, 4, 40)
+  fs.closeSync(sessionWavFd)
+  sessionWavFd = null
+  sessionWavBytes = 0
 }
 
 function launchScanner(folder: string, force = false) {
@@ -480,10 +536,12 @@ ipcMain.handle('mic:open-settings', () => {
 
 ipcMain.handle('stt:start', () => {
   sessionStartTime = Date.now()
+  startWavRecording()
   return { ok: true }
 })
 ipcMain.handle('stt:stop', () => {
   flushRecognizer()
+  finalizeWavRecording()
   return { ok: true }
 })
 
@@ -493,12 +551,8 @@ ipcMain.handle('stt:stop', () => {
 ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
   try {
     const samples = new Float32Array(buffer)
+    appendWavChunk(samples)
     const text = await transcribeFloat32(samples, 16000)
-    if (text) {
-      mainWindow?.webContents.send('stt:transcript', text)
-      const file = getSessionTranscriptFile()
-      if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
-    }
     return { text }
   } catch (e) {
     console.error('Transcribe error:', e)
@@ -629,6 +683,80 @@ ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
 
 ipcMain.handle('session:get-last', () => {
   return sessionOps.getLastSession()
+})
+
+// ── IPC: Reprocess ────────────────────────────────────────────────────────────
+
+let reprocessWorker: NodeWorker | null = null
+
+ipcMain.handle('reprocess:start', (_e, sessionFile: string, modelId: string) => {
+  if (reprocessWorker) return { ok: false, reason: 'already running' }
+  const wavPath = sessionFile.replace(/\.vtt$/, '.wav')
+  if (!fs.existsSync(wavPath)) return { ok: false, reason: 'no WAV file' }
+
+  const model = STT_MODELS.find((m) => m.id === modelId)
+  if (!model) return { ok: false, reason: 'unknown model' }
+
+  const hotwordsFile = store.get('hotwordsFile', '') as string
+  const workerPath = join(__dirname, 'reprocess-worker.js')
+
+  reprocessWorker = new NodeWorker(workerPath, {
+    workerData: {
+      wavPath,
+      modelDir: model.dir,
+      sttModel: model.id,
+      vadModelPath: VAD_MODEL_PATH,
+      hotwordsFile: hotwordsFile && fs.existsSync(hotwordsFile) ? hotwordsFile : null,
+      denoiserModelPath: DENOISER_MODEL_PATH,
+    },
+  })
+
+  const cues: Array<{ start: string; end: string; text: string }> = []
+
+  reprocessWorker.on('message', (msg) => {
+    if (msg.type === 'progress') {
+      mainWindow?.webContents.send('reprocess:progress', { percent: msg.percent })
+    } else if (msg.type === 'cue') {
+      cues.push({ start: msg.start, end: msg.end, text: msg.text })
+    } else if (msg.type === 'done') {
+      // Overwrite VTT with new cues, preserving NOTE block
+      sessionOps.rewriteSessionCues(sessionFile, cues)
+      mainWindow?.webContents.send('reprocess:done', { file: sessionFile, cueCount: cues.length })
+      reprocessWorker = null
+    } else if (msg.type === 'error') {
+      mainWindow?.webContents.send('reprocess:error', { message: msg.message })
+      reprocessWorker = null
+    }
+  })
+
+  reprocessWorker.on('error', (e) => {
+    mainWindow?.webContents.send('reprocess:error', { message: String(e) })
+    reprocessWorker = null
+  })
+
+  reprocessWorker.on('exit', () => {
+    reprocessWorker = null
+  })
+
+  // Send the work message to start processing
+  reprocessWorker.postMessage({
+    wavPath,
+    modelDir: model.dir,
+    sttModel: model.id,
+    vadModelPath: VAD_MODEL_PATH,
+    hotwordsFile: hotwordsFile && fs.existsSync(hotwordsFile) ? hotwordsFile : null,
+    denoiserModelPath: DENOISER_MODEL_PATH,
+  })
+
+  return { ok: true }
+})
+
+ipcMain.handle('reprocess:cancel', () => {
+  if (reprocessWorker) {
+    reprocessWorker.terminate()
+    reprocessWorker = null
+  }
+  return { ok: true }
 })
 
 // ── IPC: Model download ───────────────────────────────────────────────────────

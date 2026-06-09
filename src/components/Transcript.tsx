@@ -19,6 +19,11 @@ interface Props {
   onNewSession: () => void
   onSwitchSession: (file: string) => void
   onRenameSession: (file: string, name: string) => void
+  onReprocess: (file: string, modelId: string) => void
+  onReprocessCancel: () => void
+  reprocessProgress: number | null
+  reprocessingFile: string | null
+  availableModels: Array<{ id: string; label: string; ready: boolean }>
 }
 
 export default function Transcript({
@@ -33,6 +38,11 @@ export default function Transcript({
   onNewSession,
   onSwitchSession,
   onRenameSession,
+  onReprocess,
+  onReprocessCancel,
+  reprocessProgress,
+  reprocessingFile,
+  availableModels,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showDropdown, setShowDropdown] = useState(false)
@@ -55,6 +65,7 @@ export default function Transcript({
   }, [sessionStartTime, recording])
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [reprocessPicker, setReprocessPicker] = useState<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -188,6 +199,46 @@ export default function Transcript({
                       >
                         ✎
                       </button>
+                      {reprocessingFile === s.file ? (
+                        <button
+                          type="button"
+                          className="text-xs"
+                          style={{ color: '#b43c28' }}
+                          onClick={onReprocessCancel}
+                          title="Cancel reprocess"
+                        >
+                          ✕ {reprocessProgress ?? 0}%
+                        </button>
+                      ) : reprocessPicker === s.file ? (
+                        <div className="flex flex-col gap-0.5">
+                          {availableModels
+                            .filter((m) => m.ready)
+                            .map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                className="text-[10px] px-1 rounded hover:bg-[#2e2416] text-left"
+                                style={{ color: '#c8b07a' }}
+                                onClick={() => {
+                                  onReprocess(s.file, m.id)
+                                  setReprocessPicker(null)
+                                }}
+                              >
+                                {m.label}
+                              </button>
+                            ))}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="text-xs opacity-50 hover:opacity-100"
+                          style={{ color: '#4a8a6a' }}
+                          onClick={() => setReprocessPicker(s.file)}
+                          title="Reprocess with better model"
+                        >
+                          🔄
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
