@@ -32,6 +32,9 @@ export default function MainLayout() {
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
+  const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
+  const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
@@ -56,6 +59,30 @@ export default function MainLayout() {
   useEffect(() => {
     window.doty.getRecommendationCount().then(setRecommendCount)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
+  }, [])
+
+  // Load sessions and restore last active session on mount
+  useEffect(() => {
+    async function loadSessions() {
+      const list = await window.doty.sessionList()
+      setSessions(list)
+      const last = await window.doty.sessionGetLast()
+      if (last) {
+        setActiveSession(last)
+        const cues = await window.doty.sessionLoad(last)
+        setTranscripts(cues.map((c) => c.text))
+      } else if (list.length === 0) {
+        // Auto-create first session
+        const s = await window.doty.sessionCreate()
+        setSessions([s])
+        setActiveSession(s.file)
+      } else {
+        setActiveSession(list[0].file)
+        const cues = await window.doty.sessionLoad(list[0].file)
+        setTranscripts(cues.map((c) => c.text))
+      }
+    }
+    loadSessions()
   }, [])
 
   // Check if reranker model is already cached on mount
@@ -219,10 +246,12 @@ export default function MainLayout() {
       stop()
       await window.doty.sttStop()
       setRecording(false)
+      setSessionStartTime(null)
     } else {
       await window.doty.sttStart()
       await start()
       setRecording(true)
+      setSessionStartTime(Date.now())
     }
   }
 
@@ -314,6 +343,24 @@ export default function MainLayout() {
               asrStatus={asrStatus}
               interimText={interimText}
               micPermission={micPermission}
+              sessions={sessions}
+              activeSession={activeSession}
+              sessionStartTime={sessionStartTime}
+              onNewSession={async () => {
+                const s = await window.doty.sessionCreate()
+                setSessions((prev) => [s, ...prev])
+                setActiveSession(s.file)
+                setTranscripts([])
+              }}
+              onSwitchSession={async (file) => {
+                setActiveSession(file)
+                const cues = await window.doty.sessionLoad(file)
+                setTranscripts(cues.map((c) => c.text))
+              }}
+              onRenameSession={async (file, name) => {
+                await window.doty.sessionRename(file, name)
+                setSessions((prev) => prev.map((s) => (s.file === file ? { ...s, name } : s)))
+              }}
             />
           </div>
         )}

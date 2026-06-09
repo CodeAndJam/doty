@@ -1,5 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { MicPermission } from '../types'
+
+interface SessionMeta {
+  file: string
+  name: string
+  created: string
+}
 
 interface Props {
   lines: string[]
@@ -7,14 +13,63 @@ interface Props {
   asrStatus?: 'idle' | 'loading' | 'ready'
   interimText?: string
   micPermission?: MicPermission
+  sessions: SessionMeta[]
+  activeSession: string | null
+  sessionStartTime: number | null
+  onNewSession: () => void
+  onSwitchSession: (file: string) => void
+  onRenameSession: (file: string, name: string) => void
 }
 
-export default function Transcript({ lines, recording, asrStatus = 'idle', interimText = '', micPermission }: Props) {
+export default function Transcript({
+  lines,
+  recording,
+  asrStatus = 'idle',
+  interimText = '',
+  micPermission,
+  sessions,
+  activeSession,
+  sessionStartTime,
+  onNewSession,
+  onSwitchSession,
+  onRenameSession,
+}: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [showDropdown, setShowDropdown] = useState(false)
+  const [elapsed, setElapsed] = useState('')
+
+  useEffect(() => {
+    if (!sessionStartTime || !recording) {
+      setElapsed('')
+      return
+    }
+    const tick = () => {
+      const s = Math.floor((Date.now() - sessionStartTime) / 1000)
+      const m = Math.floor(s / 60)
+      const sec = s % 60
+      setElapsed(`${m}:${String(sec).padStart(2, '0')}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [sessionStartTime, recording])
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
+
+  useEffect(() => {
+    if (!showDropdown) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-session-dropdown]')) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showDropdown])
 
   return (
     <div
@@ -62,32 +117,100 @@ export default function Transcript({ lines, recording, asrStatus = 'idle', inter
           borderBottom: '1px solid rgba(46,36,22,0.8)',
         }}
       >
-        <span
-          style={{
-            fontFamily: "'Cinzel', serif",
-            fontSize: '15px',
-            letterSpacing: '0.25em',
-            color: '#6b4e15',
-            textTransform: 'uppercase',
-          }}
-        >
-          Scribe's Record
-        </span>
-        {recording && (
-          <span
-            className="flex items-center gap-1.5"
-            style={{ fontSize: '15px', color: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a', letterSpacing: '0.1em' }}
+        <div className="relative" data-session-dropdown>
+          <button
+            type="button"
+            onClick={() => setShowDropdown(!showDropdown)}
+            className="flex items-center gap-1"
+            style={{
+              fontFamily: "'Cinzel', serif",
+              fontSize: '13px',
+              letterSpacing: '0.15em',
+              color: '#6b4e15',
+              textTransform: 'uppercase',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+            }}
           >
-            <span
-              className="w-1 h-1 rounded-full animate-pulse"
-              style={{
-                background: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a',
-                boxShadow: asrStatus === 'loading' ? '0 0 4px rgba(200,146,42,0.9)' : '0 0 4px rgba(74,138,106,0.9)',
-              }}
-            />
-            {asrStatus === 'loading' ? 'Doty awakens...' : 'Inscribing'}
-          </span>
-        )}
+            {sessions.find((s) => s.file === activeSession)?.name || 'No Session'}
+            <span style={{ fontSize: '10px' }}>▼</span>
+          </button>
+          {showDropdown && (
+            <div
+              className="absolute top-full left-0 mt-1 z-50 rounded shadow-lg py-1 max-h-48 overflow-y-auto"
+              style={{ background: '#1a1408', border: '1px solid #2e2416', minWidth: '180px' }}
+            >
+              {sessions.map((s) => (
+                <div key={s.file} className="flex items-center px-3 py-1.5 hover:bg-[#2e2416] gap-2">
+                  {renaming === s.file ? (
+                    <input
+                      className="flex-1 bg-transparent text-xs outline-none"
+                      style={{ color: '#c8b07a' }}
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          onRenameSession(s.file, renameValue)
+                          setRenaming(null)
+                        }
+                        if (e.key === 'Escape') setRenaming(null)
+                      }}
+                      onBlur={() => {
+                        if (renameValue) onRenameSession(s.file, renameValue)
+                        setRenaming(null)
+                      }}
+                      // biome-ignore lint/a11y/noAutofocus: rename input needs immediate focus
+                      autoFocus
+                    />
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        className="flex-1 text-left text-xs truncate"
+                        style={{ color: s.file === activeSession ? '#c8922a' : '#c8b07a' }}
+                        onClick={() => {
+                          onSwitchSession(s.file)
+                          setShowDropdown(false)
+                        }}
+                      >
+                        {s.name}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs opacity-50 hover:opacity-100"
+                        style={{ color: '#6b4e15' }}
+                        onClick={() => {
+                          setRenaming(s.file)
+                          setRenameValue(s.name)
+                        }}
+                        title="Rename"
+                      >
+                        ✎
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {elapsed && (
+            <span className="text-xs tabular-nums" style={{ color: '#4a8a6a' }}>
+              {elapsed}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onNewSession}
+            className="text-sm px-1.5 rounded hover:bg-[#2e2416]"
+            style={{ color: '#6b4e15' }}
+            title="New session"
+          >
+            +
+          </button>
+        </div>
       </div>
 
       {/* Permission banner */}

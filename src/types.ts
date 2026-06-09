@@ -216,6 +216,13 @@ export interface DotyAPI {
   pickTranscriptFolder: () => Promise<string | null>
   saveTranscript: (text: string) => Promise<{ ok: boolean; file?: string; reason?: string }>
 
+  // Sessions
+  sessionCreate: (name?: string) => Promise<{ file: string; name: string; created: string }>
+  sessionList: () => Promise<Array<{ file: string; name: string; created: string }>>
+  sessionLoad: (file: string) => Promise<Array<{ start: string; end: string; text: string }>>
+  sessionRename: (file: string, newName: string) => Promise<void>
+  sessionGetLast: () => Promise<string | null>
+
   // Hotwords
   getHotwordsFile: () => Promise<string>
   setHotwordsFile: (path: string) => Promise<{ ok: boolean }>

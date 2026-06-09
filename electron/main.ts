@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import {
+  flushRecognizer,
   freeRecognizer,
   initRecognizer,
   restartRecognizer,
@@ -62,6 +63,7 @@ import {
   VAD_MODEL_URL,
 } from './model-paths'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import * as sessionOps from './sessions'
 import { store } from './store'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -189,17 +191,10 @@ function listMusicFiles(dir: string, root?: string): string[] {
 }
 
 let mainWindow: BrowserWindow | null = null
-let sessionTranscriptFile: string | null = null
+let sessionStartTime: number | null = null
 
-function getSessionTranscriptFile(): string | null {
-  const folder = store.get('transcriptFolder', '') as string
-  if (!folder) return null
-  if (!sessionTranscriptFile) {
-    fs.mkdirSync(folder, { recursive: true })
-    const ts = new Date().toISOString().replace(/[:.]/g, '-')
-    sessionTranscriptFile = join(folder, `transcript-${ts}.txt`)
-  }
-  return sessionTranscriptFile
+function getActiveSessionFile(): string | null {
+  return sessionOps.getLastSession()
 }
 
 function launchScanner(folder: string, force = false) {
@@ -408,8 +403,12 @@ app.whenReady().then(async () => {
   // Always set up ASR callbacks (process starts lazily on first transcribe)
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
-    const file = getSessionTranscriptFile()
-    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
   })
   setOnInterimText((text) => {
     mainWindow?.webContents.send('stt:interim', text)
@@ -480,10 +479,13 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
-  sessionTranscriptFile = null
+  sessionStartTime = Date.now()
   return { ok: true }
 })
-ipcMain.handle('stt:stop', () => ({ ok: true }))
+ipcMain.handle('stt:stop', () => {
+  flushRecognizer()
+  return { ok: true }
+})
 
 // Renderer sends 1s PCM segments as Float32Array buffers.
 // The ASR worker uses Silero VAD to detect speech boundaries, then
@@ -604,6 +606,29 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
   } catch (e) {
     return { ok: false, reason: String(e) }
   }
+})
+
+// ── IPC: Sessions ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('session:create', (_e, name?: string) => {
+  return sessionOps.createSession(name)
+})
+
+ipcMain.handle('session:list', () => {
+  return sessionOps.listSessions()
+})
+
+ipcMain.handle('session:load', (_e, file: string) => {
+  sessionOps.setLastSession(file)
+  return sessionOps.loadSession(file)
+})
+
+ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
+  sessionOps.renameSession(file, newName)
+})
+
+ipcMain.handle('session:get-last', () => {
+  return sessionOps.getLastSession()
 })
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
@@ -729,6 +754,39 @@ ipcMain.handle('settings:create-default-hotwords', () => {
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
+  if (model.downloadMethod === 'pip') {
+    // Create venv and install voxmlx automatically
+    const venvDir = join(app.getPath('home'), '.doty', 'voxmlx-env')
+    const venvPy = join(venvDir, 'bin', 'python3')
+    const steps = [
+      { label: 'Creating Python environment...', cmd: `python3 -m venv "${venvDir}"` },
+      { label: 'Installing voxmlx (MLX)...', cmd: `"${venvPy}" -m pip install --upgrade voxmlx` },
+    ]
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        mainWindow?.webContents.send('stt:download-progress', {
+          model: model.id,
+          percent: Math.round(((i + 0.5) / steps.length) * 100),
+        })
+        await new Promise<void>((resolve, reject) => {
+          exec(steps[i].cmd, { timeout: 300000 }, (err) => {
+            if (err) reject(new Error(`${steps[i].label} failed: ${err.message}`))
+            else resolve()
+          })
+        })
+      }
+      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 100, done: true })
+      store.set('sttModel', model.id)
+      mainWindow?.webContents.send('model:status', { ready: true })
+      downloadAuxModels().catch(() => {})
+      downloadRerankerModel().catch(() => {})
+      return { ok: true }
+    } catch (e) {
+      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 0, done: true })
+      return { ok: false, reason: String(e) }
+    }
+  }
+
   if (model.downloadMethod === 'auto') {
     // Voxtral and similar: auto-downloaded by transformers.js on first use.
     // Don't block — return immediately so the UI transitions to the main screen.
@@ -808,8 +866,12 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   initRecognizer()
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
-    const file = getSessionTranscriptFile()
-    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 

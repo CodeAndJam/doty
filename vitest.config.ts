@@ -13,6 +13,7 @@ export default defineConfig({
       'electron/*-integration.test.ts',
       'electron/voxtral-streaming*.test.ts',
       'electron/voxtral-session.test.ts',
+      'electron/voxtral-latency.test.ts',
       'electron/stt-models.test.ts',
     ],
     coverage: {

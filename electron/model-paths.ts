@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 
 // ── STT model types ───────────────────────────────────────────────────────────
-export type SttModelType = 'parakeet' | 'whisper-medium' | 'whisper-large-v3' | 'voxtral'
+export type SttModelType = 'parakeet' | 'whisper-medium' | 'whisper-large-v3' | 'voxtral' | 'voxmlx'
 
 // ── STT Model Registry (single source of truth) ──────────────────────────────
 // All model metadata lives here. The UI, download logic, and readiness checks
@@ -16,8 +16,8 @@ export interface SttModelInfo {
   size: string
   dir: string
   url: string
-  /** 'tar' = download + extract tar.bz2, 'auto' = handled by transformers.js */
-  downloadMethod: 'tar' | 'auto'
+  /** 'tar' = download + extract tar.bz2, 'auto' = handled by transformers.js, 'pip' = create venv + pip install */
+  downloadMethod: 'tar' | 'auto' | 'pip'
   isReady: () => boolean
 }
 
@@ -73,6 +73,26 @@ export const STT_MODELS: SttModelInfo[] = [
     url: '',
     downloadMethod: 'auto',
     isReady: () => true, // auto-downloaded by transformers.js on first use
+  },
+  {
+    id: 'voxmlx',
+    label: 'Voxtral MLX (GPU)',
+    description: 'Voxtral 4B via MLX — uses Apple Silicon GPU. Auto-installs Python env.',
+    size: '~3 GB',
+    dir: join(HOME_DIR, '.doty', 'voxmlx-env'),
+    url: '',
+    downloadMethod: 'pip',
+    isReady: () => {
+      try {
+        const { execSync } = require('node:child_process')
+        const venvPy = join(HOME_DIR, '.doty', 'voxmlx-env', 'bin', 'python3')
+        if (!fs.existsSync(venvPy)) return false
+        execSync(`${venvPy} -c "import voxmlx"`, { stdio: 'ignore' })
+        return true
+      } catch {
+        return false
+      }
+    },
   },
 ]
 

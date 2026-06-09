@@ -88,6 +88,13 @@ contextBridge.exposeInMainWorld('doty', {
   pickTranscriptFolder: () => ipcRenderer.invoke('transcript:pick-folder'),
   saveTranscript: (text: string) => ipcRenderer.invoke('transcript:save', text),
 
+  // Sessions
+  sessionCreate: (name?: string) => ipcRenderer.invoke('session:create', name),
+  sessionList: () => ipcRenderer.invoke('session:list'),
+  sessionLoad: (file: string) => ipcRenderer.invoke('session:load', file),
+  sessionRename: (file: string, newName: string) => ipcRenderer.invoke('session:rename', file, newName),
+  sessionGetLast: () => ipcRenderer.invoke('session:get-last'),
+
   // Hotwords
   getHotwordsFile: () => ipcRenderer.invoke('settings:get-hotwords-file'),
   setHotwordsFile: (path: string) => ipcRenderer.invoke('settings:set-hotwords-file', path),

@@ -760,7 +760,32 @@ export default function Settings({
                       <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
                         {m.label}
                       </span>
-                      <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginLeft: '8px' }}>
+                      {m.id === 'voxmlx' && (
+                        <span
+                          className="ml-1.5 px-1 rounded text-[10px]"
+                          style={{ background: 'rgba(74,138,106,0.15)', color: '#4a8a6a' }}
+                        >
+                          GPU
+                        </span>
+                      )}
+                      {m.id === 'voxtral' && (
+                        <span
+                          className="ml-1.5 px-1 rounded text-[10px]"
+                          style={{ background: 'rgba(180,60,40,0.15)', color: '#b43c28' }}
+                        >
+                          ~7GB RAM
+                        </span>
+                      )}
+                      {(m.id === 'parakeet' || m.id?.startsWith('whisper')) && (
+                        <span
+                          className="ml-1.5 px-1 rounded text-[10px]"
+                          style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
+                        >
+                          CPU · {m.size}
+                        </span>
+                      )}
+                      <br />
+                      <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
                         {m.description}
                       </span>
                     </div>
