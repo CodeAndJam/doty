@@ -1,5 +1,6 @@
 import { join } from 'node:path'
 import type { TrackMetadata } from './analyzer'
+import { prefilterCandidates } from './prefilter'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ScoreFn = (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
@@ -121,8 +122,8 @@ export class QwenManager {
       const recentTranscript = transcript.slice(-600).trim()
       if (!recentTranscript) return files.slice(0, count)
 
-      // Limit to 100 tracks
-      const candidates = files.slice(0, 100)
+      // Limit to 100 tracks using keyword pre-filter
+      const candidates = prefilterCandidates(recentTranscript, files, tagsMap, 100)
 
       // Build (transcript, track_description) pairs
       const pairs = candidates.map((f) => ({

@@ -93,6 +93,7 @@ contextBridge.exposeInMainWorld('doty', {
   sessionList: () => ipcRenderer.invoke('session:list'),
   sessionLoad: (file: string) => ipcRenderer.invoke('session:load', file),
   sessionRename: (file: string, newName: string) => ipcRenderer.invoke('session:rename', file, newName),
+  sessionDelete: (file: string) => ipcRenderer.invoke('session:delete', file),
   sessionGetLast: () => ipcRenderer.invoke('session:get-last'),
 
   // Reprocess

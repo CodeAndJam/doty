@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import fsPromises from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { app } from 'electron'
 import { store } from './store'
@@ -130,4 +131,46 @@ export function rewriteSessionCues(file: string, cues: Array<{ start: string; en
   const header = noteEnd > 0 ? content.slice(0, noteEnd + 2) : 'WEBVTT\n\n'
   const body = cues.map((c) => `${c.start} --> ${c.end}\n${c.text}\n`).join('\n')
   fs.writeFileSync(file, header + body, 'utf-8')
+}
+
+export async function loadSessionAsync(file: string): Promise<VttCue[]> {
+  try {
+    const content = await fsPromises.readFile(file, 'utf-8')
+    return parseVttCues(content)
+  } catch {
+    return []
+  }
+}
+
+function parseVttCues(content: string): VttCue[] {
+  const cues: VttCue[] = []
+  const lines = content.split('\n')
+  let i = 0
+  while (i < lines.length && !lines[i].includes('-->')) i++
+  while (i < lines.length) {
+    const line = lines[i]
+    if (line.includes('-->')) {
+      const [start, end] = line.split('-->').map((s) => s.trim())
+      const textLines: string[] = []
+      i++
+      while (i < lines.length && lines[i].trim() !== '') {
+        textLines.push(lines[i])
+        i++
+      }
+      cues.push({ start, end, text: textLines.join('\n') })
+    } else {
+      i++
+    }
+  }
+  return cues
+}
+
+export function deleteSession(file: string): void {
+  try {
+    if (fs.existsSync(file)) fs.unlinkSync(file)
+    const wavPath = file.replace(/\.vtt$/, '.wav')
+    if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+  } catch {
+    /* non-fatal */
+  }
 }

@@ -221,6 +221,7 @@ export interface DotyAPI {
   sessionList: () => Promise<Array<{ file: string; name: string; created: string }>>
   sessionLoad: (file: string) => Promise<Array<{ start: string; end: string; text: string }>>
   sessionRename: (file: string, newName: string) => Promise<void>
+  sessionDelete: (file: string) => Promise<{ ok: boolean }>
   sessionGetLast: () => Promise<string | null>
 
   // Reprocess

@@ -12,7 +12,7 @@ const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
 
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
-  const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready'>('idle')
+  const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready' | 'crashed'>('idle')
   const [transcripts, setTranscripts] = useState<string[]>([])
   const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
@@ -47,6 +47,7 @@ export default function MainLayout() {
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
@@ -218,11 +219,17 @@ export default function MainLayout() {
     })
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
-      setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
+      if (status === 'crashed') {
+        setAsrStatus('crashed')
+        setRecording(false)
+      } else {
+        setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
+      }
     })
 
     const unsubInterim = window.doty.onSttInterim((text) => {
-      setInterimText(text)
+      if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
+      interimDebounceRef.current = setTimeout(() => setInterimText(text), 300)
     })
 
     // Listen for SFX recommendations from the backend (fallback)
@@ -236,6 +243,11 @@ export default function MainLayout() {
         e.preventDefault()
         setShowSettings(true)
       }
+      // Cmd+Shift+T toggles transcription
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
+        e.preventDefault()
+        toggleRecording()
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
 
@@ -247,6 +259,7 @@ export default function MainLayout() {
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
+      if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
   }, [runRecommendation, runSfxRecommendation])
 
@@ -325,11 +338,24 @@ export default function MainLayout() {
             <span
               className="text-xs tracking-widest uppercase font-mono"
               style={{
-                color: recording ? (asrStatus === 'loading' ? '#c8922a' : '#ef4444') : '#4a8a6a',
+                color:
+                  asrStatus === 'crashed'
+                    ? '#f59e0b'
+                    : recording
+                      ? asrStatus === 'loading'
+                        ? '#c8922a'
+                        : '#ef4444'
+                      : '#4a8a6a',
                 fontSize: '11px',
               }}
             >
-              {recording ? (asrStatus === 'loading' ? 'Awakening...' : 'Inscribing') : 'Standby'}
+              {asrStatus === 'crashed'
+                ? 'Crashed — click to restart'
+                : recording
+                  ? asrStatus === 'loading'
+                    ? 'Awakening...'
+                    : 'Inscribing'
+                  : 'Standby'}
             </span>
           </button>
           <button
@@ -393,6 +419,21 @@ export default function MainLayout() {
               onRenameSession={async (file, name) => {
                 await window.doty.sessionRename(file, name)
                 setSessions((prev) => prev.map((s) => (s.file === file ? { ...s, name } : s)))
+              }}
+              onDeleteSession={async (file) => {
+                await window.doty.sessionDelete(file)
+                setSessions((prev) => prev.filter((s) => s.file !== file))
+                if (activeSession === file) {
+                  const remaining = sessions.filter((s) => s.file !== file)
+                  if (remaining.length > 0) {
+                    setActiveSession(remaining[0].file)
+                    const cues = await window.doty.sessionLoad(remaining[0].file)
+                    setTranscripts(cues.map((c) => c.text))
+                  } else {
+                    setActiveSession(null)
+                    setTranscripts([])
+                  }
+                }
               }}
               onReprocess={async (file, modelId) => {
                 setReprocessingFile(file)
