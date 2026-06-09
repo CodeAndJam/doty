@@ -121,3 +121,13 @@ export function getLastSession(): string | null {
 export function setLastSession(file: string): void {
   store.set('lastSession', file)
 }
+
+export function rewriteSessionCues(file: string, cues: Array<{ start: string; end: string; text: string }>): void {
+  if (!fs.existsSync(file)) return
+  const content = fs.readFileSync(file, 'utf-8')
+  // Preserve WEBVTT header and NOTE block
+  const noteEnd = content.indexOf('\n\n', content.indexOf('NOTE'))
+  const header = noteEnd > 0 ? content.slice(0, noteEnd + 2) : 'WEBVTT\n\n'
+  const body = cues.map((c) => `${c.start} --> ${c.end}\n${c.text}\n`).join('\n')
+  fs.writeFileSync(file, header + body, 'utf-8')
+}
