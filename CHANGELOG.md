@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/CodeAndJam/doty/compare/v2.3.1...v2.4.0) (2026-06-09)
+
+
+### Features
+
+* **sessions:** add VTT-based transcript sessions with latency fix ([#72](https://github.com/CodeAndJam/doty/issues/72)) ([5893630](https://github.com/CodeAndJam/doty/commit/5893630652757b4e807f7ebcb53d51e4e5843037))
+
 ## [2.3.1](https://github.com/CodeAndJam/doty/compare/v2.3.0...v2.3.1) (2026-06-08)
 
 
