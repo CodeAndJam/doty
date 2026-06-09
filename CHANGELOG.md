@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.0](https://github.com/CodeAndJam/doty/compare/v2.4.0...v2.5.0) (2026-06-09)
+
+
+### Features
+
+* add 10 UX and performance improvements ([#76](https://github.com/CodeAndJam/doty/issues/76)) ([1f1bdfb](https://github.com/CodeAndJam/doty/commit/1f1bdfb415ecb8cd9f062182ce26568fe805189b))
+* **sessions:** add WAV recording and offline reprocess ([#74](https://github.com/CodeAndJam/doty/issues/74)) ([8bac8f8](https://github.com/CodeAndJam/doty/commit/8bac8f8d7b9ab5a6d0ea2e0a036c97ae91466429))
+
 ## [2.4.0](https://github.com/CodeAndJam/doty/compare/v2.3.1...v2.4.0) (2026-06-09)
 
 
