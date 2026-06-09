@@ -117,9 +117,15 @@ async function runStreamingSession() {
       }
       if (!sessionActive) return
 
-      // Consume as much available audio as possible (token-aligned)
-      let batchEnd = Math.min(needed, audioBuffer.length)
-      while (batchEnd + samplesPerTok <= audioBuffer.length) {
+      // Skip stale audio if backlog exceeds 1.5 seconds (prevents latency spiral)
+      const backlog = audioBuffer.length - audioConsumed
+      if (backlog > SAMPLE_RATE * 1.5) {
+        audioConsumed = audioBuffer.length - SAMPLE_RATE * 0.5 // keep latest 0.5s
+      }
+
+      // Feed fixed-size chunks to keep latency bounded (cap at 1s)
+      let batchEnd = Math.min(audioConsumed + numSamplesPerChunk, audioBuffer.length)
+      while (batchEnd + samplesPerTok <= Math.min(audioConsumed + SAMPLE_RATE, audioBuffer.length)) {
         batchEnd += samplesPerTok
       }
       if (batchEnd <= audioConsumed) {
@@ -209,6 +215,11 @@ async function runStreamingSession() {
           flushText()
         } else {
           scheduleFlush()
+        }
+        // Cap token cache to prevent O(n²) decode cost
+        if (tokenCache.length > 20) {
+          tokenCache = []
+          printLen = 0
         }
       }
     }

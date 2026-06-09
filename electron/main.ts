@@ -62,6 +62,7 @@ import {
   VAD_MODEL_URL,
 } from './model-paths'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import * as sessionOps from './sessions'
 import { store } from './store'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -189,17 +190,10 @@ function listMusicFiles(dir: string, root?: string): string[] {
 }
 
 let mainWindow: BrowserWindow | null = null
-let sessionTranscriptFile: string | null = null
+let sessionStartTime: number | null = null
 
-function getSessionTranscriptFile(): string | null {
-  const folder = store.get('transcriptFolder', '') as string
-  if (!folder) return null
-  if (!sessionTranscriptFile) {
-    fs.mkdirSync(folder, { recursive: true })
-    const ts = new Date().toISOString().replace(/[:.]/g, '-')
-    sessionTranscriptFile = join(folder, `transcript-${ts}.txt`)
-  }
-  return sessionTranscriptFile
+function getActiveSessionFile(): string | null {
+  return sessionOps.getLastSession()
 }
 
 function launchScanner(folder: string, force = false) {
@@ -408,8 +402,12 @@ app.whenReady().then(async () => {
   // Always set up ASR callbacks (process starts lazily on first transcribe)
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
-    const file = getSessionTranscriptFile()
-    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
   })
   setOnInterimText((text) => {
     mainWindow?.webContents.send('stt:interim', text)
@@ -480,7 +478,7 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
-  sessionTranscriptFile = null
+  sessionStartTime = Date.now()
   return { ok: true }
 })
 ipcMain.handle('stt:stop', () => ({ ok: true }))
@@ -604,6 +602,29 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
   } catch (e) {
     return { ok: false, reason: String(e) }
   }
+})
+
+// ── IPC: Sessions ─────────────────────────────────────────────────────────────
+
+ipcMain.handle('session:create', (_e, name?: string) => {
+  return sessionOps.createSession(name)
+})
+
+ipcMain.handle('session:list', () => {
+  return sessionOps.listSessions()
+})
+
+ipcMain.handle('session:load', (_e, file: string) => {
+  sessionOps.setLastSession(file)
+  return sessionOps.loadSession(file)
+})
+
+ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
+  sessionOps.renameSession(file, newName)
+})
+
+ipcMain.handle('session:get-last', () => {
+  return sessionOps.getLastSession()
 })
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
@@ -808,8 +829,12 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   initRecognizer()
   setOnFlushText((text) => {
     mainWindow?.webContents.send('stt:transcript', text)
-    const file = getSessionTranscriptFile()
-    if (file) fs.appendFileSync(file, `${text}\n`, 'utf-8')
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
   })
   mainWindow?.webContents.send('model:status', { ready: true })
 
