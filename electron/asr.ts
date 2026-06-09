@@ -13,6 +13,7 @@ import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'asr-worker.js')
 const VOXTRAL_CHILD_PATH = join(__dirname, 'voxtral-child.js')
+const VOXMLX_CHILD_PATH = join(__dirname, 'voxmlx-child.js')
 
 /** Abstraction over Worker thread and utilityProcess */
 interface AsrProcess {
@@ -58,6 +59,8 @@ function resolveModelDir(): { modelDir: string; sttModel: SttModelType } {
     case 'whisper-large-v3':
       return { modelDir: WHISPER_LARGE_V3_DIR, sttModel }
     case 'voxtral':
+      return { modelDir: '', sttModel }
+    case 'voxmlx':
       return { modelDir: '', sttModel }
     default:
       return { modelDir: MODEL_DIR, sttModel: 'parakeet' }
@@ -117,6 +120,40 @@ function createVoxtralProcess(): AsrProcess {
   }
 }
 
+function createVoxmlxProcess(): AsrProcess {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { utilityProcess } = require('electron')
+  const child = utilityProcess.fork(VOXMLX_CHILD_PATH, [], {
+    serviceName: 'voxmlx-asr',
+  })
+  let spawned = false
+  let killed = false
+  const pendingMessages: unknown[] = []
+  child.on('spawn', () => {
+    console.log('[asr] voxmlx utilityProcess spawned')
+    spawned = true
+    for (const msg of pendingMessages) child.postMessage(msg)
+    pendingMessages.length = 0
+  })
+  child.on('exit', (code: number) => {
+    console.log(`[asr] voxmlx process exited with code ${code}`)
+  })
+  return {
+    postMessage: (msg) => {
+      if (killed) return
+      if (spawned) child.postMessage(msg)
+      else pendingMessages.push(msg)
+    },
+    terminate: () => {
+      killed = true
+      child.kill()
+    },
+    onMessage: (cb) => child.on('message', cb),
+    onError: () => {},
+    onExit: (cb) => child.on('exit', cb),
+  }
+}
+
 function getProcess(): AsrProcess {
   if (asrProcess) return asrProcess
   if (asrProcessDead) {
@@ -128,6 +165,8 @@ function getProcess(): AsrProcess {
 
   if (sttModel === 'voxtral') {
     asrProcess = createVoxtralProcess()
+  } else if (sttModel === 'voxmlx') {
+    asrProcess = createVoxmlxProcess()
   } else {
     asrProcess = createWorkerProcess(modelDir, sttModel)
   }
@@ -159,7 +198,7 @@ function getProcess(): AsrProcess {
     asrProcess = null
   })
 
-  const isVoxtral = sttModel === 'voxtral'
+  const isVoxtral = sttModel === 'voxtral' || sttModel === 'voxmlx'
 
   asrProcess.onExit(() => {
     asrProcess = null

@@ -41,6 +41,17 @@ export default function Transcript({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [])
 
+  useEffect(() => {
+    if (!showDropdown) return
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-session-dropdown]')) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showDropdown])
+
   return (
     <div
       className="flex-1 overflow-hidden flex flex-col relative"
@@ -87,7 +98,7 @@ export default function Transcript({
           borderBottom: '1px solid rgba(46,36,22,0.8)',
         }}
       >
-        <div className="relative">
+        <div className="relative" data-session-dropdown>
           <button
             type="button"
             onClick={() => setShowDropdown(!showDropdown)}
