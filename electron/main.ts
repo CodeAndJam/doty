@@ -750,6 +750,39 @@ ipcMain.handle('settings:create-default-hotwords', () => {
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
+  if (model.downloadMethod === 'pip') {
+    // Create venv and install voxmlx automatically
+    const venvDir = join(app.getPath('home'), '.doty', 'voxmlx-env')
+    const venvPy = join(venvDir, 'bin', 'python3')
+    const steps = [
+      { label: 'Creating Python environment...', cmd: `python3 -m venv "${venvDir}"` },
+      { label: 'Installing voxmlx (MLX)...', cmd: `"${venvPy}" -m pip install --upgrade voxmlx` },
+    ]
+    try {
+      for (let i = 0; i < steps.length; i++) {
+        mainWindow?.webContents.send('stt:download-progress', {
+          model: model.id,
+          percent: Math.round(((i + 0.5) / steps.length) * 100),
+        })
+        await new Promise<void>((resolve, reject) => {
+          exec(steps[i].cmd, { timeout: 300000 }, (err) => {
+            if (err) reject(new Error(`${steps[i].label} failed: ${err.message}`))
+            else resolve()
+          })
+        })
+      }
+      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 100, done: true })
+      store.set('sttModel', model.id)
+      mainWindow?.webContents.send('model:status', { ready: true })
+      downloadAuxModels().catch(() => {})
+      downloadRerankerModel().catch(() => {})
+      return { ok: true }
+    } catch (e) {
+      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 0, done: true })
+      return { ok: false, reason: String(e) }
+    }
+  }
+
   if (model.downloadMethod === 'auto') {
     // Voxtral and similar: auto-downloaded by transformers.js on first use.
     // Don't block — return immediately so the UI transitions to the main screen.

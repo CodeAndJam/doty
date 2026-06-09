@@ -16,8 +16,8 @@ export interface SttModelInfo {
   size: string
   dir: string
   url: string
-  /** 'tar' = download + extract tar.bz2, 'auto' = handled by transformers.js */
-  downloadMethod: 'tar' | 'auto'
+  /** 'tar' = download + extract tar.bz2, 'auto' = handled by transformers.js, 'pip' = create venv + pip install */
+  downloadMethod: 'tar' | 'auto' | 'pip'
   isReady: () => boolean
 }
 
@@ -77,17 +77,17 @@ export const STT_MODELS: SttModelInfo[] = [
   {
     id: 'voxmlx',
     label: 'Voxtral MLX (GPU)',
-    description: 'Voxtral 4B via MLX — uses Apple Silicon GPU. Requires: pip install voxmlx',
+    description: 'Voxtral 4B via MLX — uses Apple Silicon GPU. Auto-installs Python env.',
     size: '~3 GB',
-    dir: join(HOME_DIR, '.doty', 'hf-cache'),
+    dir: join(HOME_DIR, '.doty', 'voxmlx-env'),
     url: '',
-    downloadMethod: 'auto',
+    downloadMethod: 'pip',
     isReady: () => {
       try {
         const { execSync } = require('node:child_process')
         const venvPy = join(HOME_DIR, '.doty', 'voxmlx-env', 'bin', 'python3')
-        const py = fs.existsSync(venvPy) ? venvPy : 'python3'
-        execSync(`${py} -c "import voxmlx"`, { stdio: 'ignore' })
+        if (!fs.existsSync(venvPy)) return false
+        execSync(`${venvPy} -c "import voxmlx"`, { stdio: 'ignore' })
         return true
       } catch {
         return false
