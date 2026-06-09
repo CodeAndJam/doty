@@ -238,6 +238,12 @@ export function restartRecognizer(): void {
   getProcess()
 }
 
+export function flushRecognizer(): void {
+  if (asrProcess) {
+    asrProcess.postMessage({ type: 'flush' })
+  }
+}
+
 export function freeRecognizer(): void {
   asrProcess?.terminate()
   asrProcess = null

@@ -15,6 +15,7 @@ interface Props {
   micPermission?: MicPermission
   sessions: SessionMeta[]
   activeSession: string | null
+  sessionStartTime: number | null
   onNewSession: () => void
   onSwitchSession: (file: string) => void
   onRenameSession: (file: string, name: string) => void
@@ -28,12 +29,30 @@ export default function Transcript({
   micPermission,
   sessions,
   activeSession,
+  sessionStartTime,
   onNewSession,
   onSwitchSession,
   onRenameSession,
 }: Props) {
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [elapsed, setElapsed] = useState('')
+
+  useEffect(() => {
+    if (!sessionStartTime || !recording) {
+      setElapsed('')
+      return
+    }
+    const tick = () => {
+      const s = Math.floor((Date.now() - sessionStartTime) / 1000)
+      const m = Math.floor(s / 60)
+      const sec = s % 60
+      setElapsed(`${m}:${String(sec).padStart(2, '0')}`)
+    }
+    tick()
+    const id = setInterval(tick, 1000)
+    return () => clearInterval(id)
+  }, [sessionStartTime, recording])
   const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
 
@@ -177,23 +196,9 @@ export default function Transcript({
           )}
         </div>
         <div className="flex items-center gap-2">
-          {recording && (
-            <span
-              className="flex items-center gap-1.5"
-              style={{
-                fontSize: '13px',
-                color: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a',
-                letterSpacing: '0.1em',
-              }}
-            >
-              <span
-                className="w-1 h-1 rounded-full animate-pulse"
-                style={{
-                  background: asrStatus === 'loading' ? '#c8922a' : '#4a8a6a',
-                  boxShadow: asrStatus === 'loading' ? '0 0 4px rgba(200,146,42,0.9)' : '0 0 4px rgba(74,138,106,0.9)',
-                }}
-              />
-              {asrStatus === 'loading' ? 'Awakening...' : 'Inscribing'}
+          {elapsed && (
+            <span className="text-xs tabular-nums" style={{ color: '#4a8a6a' }}>
+              {elapsed}
             </span>
           )}
           <button

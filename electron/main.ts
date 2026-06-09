@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import {
+  flushRecognizer,
   freeRecognizer,
   initRecognizer,
   restartRecognizer,
@@ -481,7 +482,10 @@ ipcMain.handle('stt:start', () => {
   sessionStartTime = Date.now()
   return { ok: true }
 })
-ipcMain.handle('stt:stop', () => ({ ok: true }))
+ipcMain.handle('stt:stop', () => {
+  flushRecognizer()
+  return { ok: true }
+})
 
 // Renderer sends 1s PCM segments as Float32Array buffers.
 // The ASR worker uses Silero VAD to detect speech boundaries, then

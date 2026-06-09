@@ -17,6 +17,7 @@ export default defineConfig({
           'qwen-child': resolve(__dirname, 'electron/qwen-child.ts'),
           'voxtral-worker': resolve(__dirname, 'electron/voxtral-worker.ts'),
           'voxtral-child': resolve(__dirname, 'electron/voxtral-child.ts'),
+          'voxmlx-child': resolve(__dirname, 'electron/voxmlx-child.ts'),
         },
       },
     },

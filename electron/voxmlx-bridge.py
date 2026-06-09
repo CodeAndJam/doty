@@ -139,12 +139,16 @@ def main():
 
     # Main loop
     try:
-        while not stdin_done or len(pending_audio) >= SAMPLES_PER_TOKEN:
-            # Drain audio from reader
+        while True:
+            # Drain audio from reader FIRST (before checking exit condition)
             with audio_lock:
                 if len(audio_inbox) > 0:
                     pending_audio = np.append(pending_audio, audio_inbox)
                     audio_inbox = np.zeros(0, dtype=np.float32)
+
+            # Exit condition: stdin closed AND no pending audio AND no embeds to decode
+            if stdin_done and len(pending_audio) < SAMPLES_PER_TOKEN and audio_embeds is None:
+                break
 
             if first_cycle and len(pending_audio) < SAMPLES_PER_TOKEN:
                 time.sleep(0.02)

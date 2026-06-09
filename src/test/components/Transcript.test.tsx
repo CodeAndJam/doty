@@ -5,6 +5,7 @@ import Transcript from '../../components/Transcript'
 const sessionProps = {
   sessions: [],
   activeSession: null,
+  sessionStartTime: null,
   onNewSession: () => {},
   onSwitchSession: () => {},
   onRenameSession: () => {},
@@ -27,9 +28,9 @@ describe('Transcript', () => {
     expect(screen.getByText('Second line')).toBeInTheDocument()
   })
 
-  it('shows Inscribing indicator when recording', () => {
+  it('does not show recording indicator in transcript panel', () => {
     render(<Transcript lines={[]} recording={true} {...sessionProps} />)
-    expect(screen.getByText('Inscribing')).toBeInTheDocument()
+    expect(screen.queryByText('Inscribing')).not.toBeInTheDocument()
   })
 
   it('does not show Inscribing indicator when not recording', () => {

@@ -34,6 +34,7 @@ export default function MainLayout() {
   const transcriptBufferRef = useRef('')
   const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
@@ -245,10 +246,12 @@ export default function MainLayout() {
       stop()
       await window.doty.sttStop()
       setRecording(false)
+      setSessionStartTime(null)
     } else {
       await window.doty.sttStart()
       await start()
       setRecording(true)
+      setSessionStartTime(Date.now())
     }
   }
 
@@ -342,6 +345,7 @@ export default function MainLayout() {
               micPermission={micPermission}
               sessions={sessions}
               activeSession={activeSession}
+              sessionStartTime={sessionStartTime}
               onNewSession={async () => {
                 const s = await window.doty.sessionCreate()
                 setSessions((prev) => [s, ...prev])
