@@ -66,6 +66,7 @@ import {
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import * as sessionOps from './sessions'
 import { store } from './store'
+import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
 /** Download a file from a URL (follows redirects). Ensures parent dir exists. */
@@ -195,6 +196,7 @@ let mainWindow: BrowserWindow | null = null
 let sessionStartTime: number | null = null
 let sessionWavFd: number | null = null
 let sessionWavBytes = 0
+let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
 
 function getActiveSessionFile(): string | null {
   return sessionOps.getLastSession()
@@ -227,6 +229,10 @@ function startWavRecording(): void {
   fs.writeFileSync(wavPath, header)
   sessionWavFd = fs.openSync(wavPath, 'r+')
   sessionWavBytes = 0
+  // Update WAV header every 30s for crash resilience
+  wavHeaderInterval = setInterval(() => {
+    if (sessionWavFd !== null) updateWavHeader(sessionWavFd, sessionWavBytes)
+  }, 30000)
 }
 
 function appendWavChunk(samples: Float32Array): void {
@@ -240,14 +246,13 @@ function appendWavChunk(samples: Float32Array): void {
 }
 
 function finalizeWavRecording(): void {
+  if (wavHeaderInterval) {
+    clearInterval(wavHeaderInterval)
+    wavHeaderInterval = null
+  }
   if (sessionWavFd === null) return
   // Update RIFF size and data size in the header
-  const fileSizeBuf = Buffer.alloc(4)
-  fileSizeBuf.writeUInt32LE(36 + sessionWavBytes)
-  fs.writeSync(sessionWavFd, fileSizeBuf, 0, 4, 4)
-  const dataSizeBuf = Buffer.alloc(4)
-  dataSizeBuf.writeUInt32LE(sessionWavBytes)
-  fs.writeSync(sessionWavFd, dataSizeBuf, 0, 4, 40)
+  updateWavHeader(sessionWavFd, sessionWavBytes)
   fs.closeSync(sessionWavFd)
   sessionWavFd = null
   sessionWavBytes = 0
@@ -479,13 +484,23 @@ app.whenReady().then(async () => {
     // Pre-download reranker model in main process (worker fetch stalls in Electron)
     downloadRerankerModel().catch(() => {})
 
-    setTimeout(() => {
+    const sttModel = store.get('sttModel', '') as string
+    if (sttModel === 'voxmlx') {
+      // Pre-load MLX bridge immediately for faster first transcription
       try {
         initRecognizer()
       } catch (e) {
-        console.error('ASR init error:', e)
+        console.error('MLX preload error:', e)
       }
-    }, 2000)
+    } else {
+      setTimeout(() => {
+        try {
+          initRecognizer()
+        } catch (e) {
+          console.error('ASR init error:', e)
+        }
+      }, 2000)
+    }
   }
 
   const musicFolder = store.get('musicFolder', '') as string
@@ -672,13 +687,18 @@ ipcMain.handle('session:list', () => {
   return sessionOps.listSessions()
 })
 
-ipcMain.handle('session:load', (_e, file: string) => {
+ipcMain.handle('session:load', async (_e, file: string) => {
   sessionOps.setLastSession(file)
-  return sessionOps.loadSession(file)
+  return sessionOps.loadSessionAsync(file)
 })
 
 ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
   sessionOps.renameSession(file, newName)
+})
+
+ipcMain.handle('session:delete', (_e, file: string) => {
+  sessionOps.deleteSession(file)
+  return { ok: true }
 })
 
 ipcMain.handle('session:get-last', () => {

@@ -205,6 +205,7 @@ function getProcess(): AsrProcess {
     if (isVoxtral) {
       console.warn('[asr] voxtral process exited — will not auto-respawn')
       asrProcessDead = true
+      if (onAsrStatus) onAsrStatus('crashed')
     }
   })
 

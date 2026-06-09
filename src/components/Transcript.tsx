@@ -10,7 +10,7 @@ interface SessionMeta {
 interface Props {
   lines: string[]
   recording: boolean
-  asrStatus?: 'idle' | 'loading' | 'ready'
+  asrStatus?: 'idle' | 'loading' | 'ready' | 'crashed'
   interimText?: string
   micPermission?: MicPermission
   sessions: SessionMeta[]
@@ -19,6 +19,7 @@ interface Props {
   onNewSession: () => void
   onSwitchSession: (file: string) => void
   onRenameSession: (file: string, name: string) => void
+  onDeleteSession: (file: string) => void
   onReprocess: (file: string, modelId: string) => void
   onReprocessCancel: () => void
   reprocessProgress: number | null
@@ -38,6 +39,7 @@ export default function Transcript({
   onNewSession,
   onSwitchSession,
   onRenameSession,
+  onDeleteSession,
   onReprocess,
   onReprocessCancel,
   reprocessProgress,
@@ -239,6 +241,19 @@ export default function Transcript({
                           🔄
                         </button>
                       )}
+                      <button
+                        type="button"
+                        className="text-xs opacity-50 hover:opacity-100"
+                        style={{ color: '#b43c28' }}
+                        onClick={() => {
+                          if (window.confirm(`Delete session "${s.name}"?`)) {
+                            onDeleteSession(s.file)
+                          }
+                        }}
+                        title="Delete session"
+                      >
+                        🗑
+                      </button>
                     </>
                   )}
                 </div>
@@ -247,6 +262,11 @@ export default function Transcript({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {recording && (
+            <span className="text-xs" style={{ color: '#ef4444' }} data-testid="recording-indicator">
+              🔴
+            </span>
+          )}
           {elapsed && (
             <span className="text-xs tabular-nums" style={{ color: '#4a8a6a' }}>
               {elapsed}

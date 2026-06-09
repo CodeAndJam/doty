@@ -9,6 +9,7 @@ const sessionProps = {
   onNewSession: () => {},
   onSwitchSession: () => {},
   onRenameSession: () => {},
+  onDeleteSession: () => {},
   onReprocess: () => {},
   onReprocessCancel: () => {},
   reprocessProgress: null,
@@ -41,6 +42,16 @@ describe('Transcript', () => {
   it('does not show Inscribing indicator when not recording', () => {
     render(<Transcript lines={[]} recording={false} {...sessionProps} />)
     expect(screen.queryByText('Inscribing')).not.toBeInTheDocument()
+  })
+
+  it('shows recording indicator when recording', () => {
+    render(<Transcript lines={[]} recording={true} {...sessionProps} />)
+    expect(screen.getByTestId('recording-indicator')).toBeInTheDocument()
+  })
+
+  it('does not show recording indicator when not recording', () => {
+    render(<Transcript lines={[]} recording={false} {...sessionProps} />)
+    expect(screen.queryByTestId('recording-indicator')).not.toBeInTheDocument()
   })
 
   it('renders multiple lines correctly', () => {
