@@ -13,11 +13,12 @@ let worker: Worker | null = null
 let workerReady = false
 let streaming = false
 
-let onFlushText: ((text: string) => void) | null = null
+let onFlushText: ((text: string, elapsedMs: number) => void) | null = null
 let onInterimText: ((text: string) => void) | null = null
 let onAsrStatus: ((status: string) => void) | null = null
+let onParagraphBreak: (() => void) | null = null
 
-export function setOnFlushText(cb: (text: string) => void): void {
+export function setOnFlushText(cb: (text: string, elapsedMs: number) => void): void {
   onFlushText = cb
 }
 export function setOnInterimText(cb: (text: string) => void): void {
@@ -25,6 +26,9 @@ export function setOnInterimText(cb: (text: string) => void): void {
 }
 export function setOnAsrStatus(cb: (status: string) => void): void {
   onAsrStatus = cb
+}
+export function setOnParagraphBreak(cb: () => void): void {
+  onParagraphBreak = cb
 }
 
 function ensureWorker(): Worker {
@@ -48,7 +52,10 @@ function ensureWorker(): Worker {
         break
       case 'flush':
         // Finalized segment text (delta since previous flush) — append to session
-        if (msg.text && onFlushText) onFlushText(msg.text)
+        if (msg.text && onFlushText) onFlushText(msg.text, msg.elapsedMs ?? 0)
+        break
+      case 'paragraph-break':
+        if (onParagraphBreak) onParagraphBreak()
         break
       case 'status':
         if (onAsrStatus) onAsrStatus(msg.status)

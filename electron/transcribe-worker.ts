@@ -30,9 +30,13 @@ let stream: any = null
 
 // Silence timeout: if no new committed text for N ms, emit flush with delta
 const SILENCE_FLUSH_MS = 2000
+const PARAGRAPH_SILENCE_MS = 5000 // longer silence = new paragraph
 let lastCommitted = ''
 let lastFlushed = '' // track what was already sent as flush
 let silenceTimer: ReturnType<typeof setTimeout> | null = null
+let paragraphTimer: ReturnType<typeof setTimeout> | null = null
+let streamStartTime = 0 // Date.now() when stream began
+let _lastFeedTime = 0 // last time audio was fed (for paragraph detection)
 
 function sendMsg(msg: Record<string, unknown>) {
   parentPort!.postMessage(msg)
@@ -43,20 +47,28 @@ function clearSilenceTimer() {
     clearTimeout(silenceTimer)
     silenceTimer = null
   }
+  if (paragraphTimer) {
+    clearTimeout(paragraphTimer)
+    paragraphTimer = null
+  }
 }
 
 function scheduleSilenceFlush() {
   clearSilenceTimer()
   silenceTimer = setTimeout(() => {
     if (stream && lastCommitted && lastCommitted !== lastFlushed) {
-      // Only send the new portion since last flush
       const delta = lastCommitted.slice(lastFlushed.length).trim()
       if (delta) {
-        sendMsg({ type: 'flush', text: delta })
+        const elapsedMs = Date.now() - streamStartTime
+        sendMsg({ type: 'flush', text: delta, elapsedMs })
         lastFlushed = lastCommitted
       }
     }
   }, SILENCE_FLUSH_MS)
+  // Schedule paragraph break on longer silence
+  paragraphTimer = setTimeout(() => {
+    sendMsg({ type: 'paragraph-break', elapsedMs: Date.now() - streamStartTime })
+  }, PARAGRAPH_SILENCE_MS)
 }
 
 async function loadLib() {
@@ -121,6 +133,8 @@ async function startStream() {
   stream = await session.stream({ commitPolicy: 'stable_prefix' })
   lastCommitted = ''
   lastFlushed = ''
+  streamStartTime = Date.now()
+  _lastFeedTime = Date.now()
   sendMsg({ type: 'status', status: 'streaming' })
 }
 
@@ -131,17 +145,17 @@ async function feedChunk(buffer: ArrayBuffer) {
   }
   const samples = new Float32Array(buffer)
   await stream.feed(samples)
+  _lastFeedTime = Date.now()
   const { committed, tentative } = stream.text
 
-  // Only send update if text changed
   if (committed !== lastCommitted || tentative) {
     if (committed !== lastCommitted) {
       lastCommitted = committed
       scheduleSilenceFlush()
     }
-    // Send the *delta* since last flush as interim — this is what the user sees streaming in
     const delta = committed.slice(lastFlushed.length)
-    sendMsg({ type: 'text', committed: delta, tentative })
+    const elapsedMs = Date.now() - streamStartTime
+    sendMsg({ type: 'text', committed: delta, tentative, elapsedMs })
   }
 }
 
@@ -153,15 +167,16 @@ async function finalizeStream() {
   clearSilenceTimer()
   await stream.finalize()
   const { committed } = stream.text
-  // Only send the new portion since last flush
   const delta = committed.slice(lastFlushed.length).trim()
   if (delta) {
-    sendMsg({ type: 'flush', text: delta })
+    const elapsedMs = Date.now() - streamStartTime
+    sendMsg({ type: 'flush', text: delta, elapsedMs })
   }
   stream.reset()
   stream = null
   lastCommitted = ''
   lastFlushed = ''
+  streamStartTime = 0
   sendMsg({ type: 'status', status: 'idle' })
 }
 

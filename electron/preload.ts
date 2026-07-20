@@ -12,8 +12,8 @@ contextBridge.exposeInMainWorld('doty', {
   sttStart: () => ipcRenderer.invoke('stt:start'),
   sttStop: () => ipcRenderer.invoke('stt:stop'),
   sttTranscribeChunk: (buffer: ArrayBuffer) => ipcRenderer.invoke('stt:transcribe-chunk', buffer),
-  onTranscript: (cb: (text: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
+  onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: { text: string; elapsedMs: number }) => cb(data)
     ipcRenderer.on('stt:transcript', handler)
     return () => ipcRenderer.removeListener('stt:transcript', handler)
   },
@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('doty', {
     const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
     ipcRenderer.on('stt:interim', handler)
     return () => ipcRenderer.removeListener('stt:interim', handler)
+  },
+  onParagraphBreak: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('stt:paragraph-break', handler)
+    return () => ipcRenderer.removeListener('stt:paragraph-break', handler)
   },
   onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, info: { id: string; label: string }) => cb(info)

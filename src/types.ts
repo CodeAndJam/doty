@@ -167,9 +167,10 @@ export interface DotyAPI {
   sttStart: () => Promise<{ ok: boolean }>
   sttStop: () => Promise<{ ok: boolean }>
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
-  onTranscript: (cb: (text: string) => void) => () => void
+  onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => () => void
   onSttStatus: (cb: (status: string) => void) => () => void
   onSttInterim: (cb: (text: string) => void) => () => void
+  onParagraphBreak: (cb: () => void) => () => void
   onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => () => void
 
   // Music

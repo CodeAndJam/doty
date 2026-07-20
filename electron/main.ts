@@ -13,6 +13,7 @@ import {
   setOnAsrStatus,
   setOnFlushText,
   setOnInterimText,
+  setOnParagraphBreak,
   startStream,
 } from './asr'
 import {
@@ -455,8 +456,8 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   // Always set up ASR callbacks (process starts lazily on first transcribe)
-  setOnFlushText((text) => {
-    mainWindow?.webContents.send('stt:transcript', text)
+  setOnFlushText((text, elapsedMs) => {
+    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
     const file = getActiveSessionFile()
     if (file) {
       if (!sessionStartTime) sessionStartTime = Date.now()
@@ -469,6 +470,9 @@ app.whenReady().then(async () => {
   })
   setOnAsrStatus((status) => {
     mainWindow?.webContents.send('stt:status', status)
+  })
+  setOnParagraphBreak(() => {
+    mainWindow?.webContents.send('stt:paragraph-break')
   })
 
   if (ready) {
