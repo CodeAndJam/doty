@@ -173,6 +173,23 @@ export interface DotyAPI {
   onParagraphBreak: (cb: () => void) => () => void
   onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => () => void
 
+  // Scene Interpreter (LLM)
+  getLlmModelList: () => Promise<
+    Array<{ id: string; label: string; description: string; size: string; ready: boolean }>
+  >
+  getLlmModel: () => Promise<string>
+  setLlmModel: (modelId: string) => Promise<{ ok: boolean }>
+  downloadLlm: (modelId: string) => Promise<{ ok: boolean; reason?: string }>
+  downloadEmbeddingModel: () => Promise<{ ok: boolean; reason?: string }>
+  getEmbeddingStatus: () => Promise<{ ready: boolean; label: string; size: string }>
+  getEmbeddingProgress: () => Promise<{ embedded: number; total: number; percent: number }>
+  onSceneUpdate: (
+    cb: (scene: { scene: string; mood: string; intensity: number; keywords: string[] }) => void,
+  ) => () => void
+  onLlmStatus: (cb: (status: string) => void) => () => void
+  onLlmDownloadProgress: (cb: (p: { percent: number; downloadedMB: number; totalMB: number }) => void) => () => void
+  onEmbeddingProgress: (cb: (stats: { embedded: number; total: number; percent: number }) => void) => () => void
+
   // Music
   pickMusicFolder: () => Promise<string | null>
   getMusicFolder: () => Promise<string>

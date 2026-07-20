@@ -16,6 +16,12 @@ export default function MainLayout() {
   const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready' | 'crashed'>('idle')
   const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([])
   const [interimText, setInterimText] = useState('')
+  const [currentScene, setCurrentScene] = useState<{
+    scene: string
+    mood: string
+    intensity: number
+    keywords: string[]
+  } | null>(null)
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -249,6 +255,11 @@ export default function MainLayout() {
       })
     })
 
+    // Listen for scene interpreter updates
+    const unsubScene = window.doty.onSceneUpdate((scene) => {
+      setCurrentScene(scene)
+    })
+
     // Listen for SFX recommendations from the backend (fallback)
     const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
       setSfxRecommendations(ids)
@@ -274,6 +285,7 @@ export default function MainLayout() {
       unsubInterim()
       unsubModelSwitch()
       unsubParagraphBreak()
+      unsubScene()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
@@ -478,6 +490,7 @@ export default function MainLayout() {
                 const md = `# Session Transcript\n\n${lines.join('\n\n')}\n`
                 navigator.clipboard.writeText(md)
               }}
+              currentScene={currentScene}
               availableModels={sttModelList}
             />
           </div>

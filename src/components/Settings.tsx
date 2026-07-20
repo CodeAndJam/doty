@@ -88,6 +88,19 @@ export default function Settings({
   >([])
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
+  const [llmModel, setLlmModel] = useState('')
+  const [llmModelList, setLlmModelList] = useState<
+    Array<{ id: string; label: string; description: string; size: string; ready: boolean }>
+  >([])
+  const [llmModelReady, setLlmModelReady] = useState(false)
+  const [llmDownloading, setLlmDownloading] = useState<string | null>(null)
+  const [llmDownloadProgress, setLlmDownloadProgress] = useState(0)
+  const [embeddingStatus, setEmbeddingStatus] = useState<{ ready: boolean; label: string; size: string } | null>(null)
+  const [embeddingProgress, setEmbeddingProgress] = useState<{
+    embedded: number
+    total: number
+    percent: number
+  } | null>(null)
   const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -125,6 +138,13 @@ export default function Settings({
     window.doty.getSttModel().then(setSttModel)
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
+    window.doty.getLlmModelList().then((list) => {
+      setLlmModelList(list)
+      setLlmModelReady(list.some((m) => m.ready))
+    })
+    window.doty.getLlmModel().then(setLlmModel)
+    window.doty.getEmbeddingStatus().then(setEmbeddingStatus)
+    window.doty.getEmbeddingProgress().then(setEmbeddingProgress)
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
@@ -152,6 +172,22 @@ export default function Settings({
       }
     })
 
+    const unsubLlmProgress = window.doty.onLlmDownloadProgress((p) => {
+      setLlmDownloadProgress(p.percent)
+      if (p.percent >= 100) {
+        setLlmDownloading(null)
+        setLlmDownloadProgress(0)
+        window.doty.getLlmModelList().then((list) => {
+          setLlmModelList(list)
+          setLlmModelReady(list.some((m) => m.ready))
+        })
+      }
+    })
+
+    const unsubEmbeddingProgress = window.doty.onEmbeddingProgress((stats) => {
+      setEmbeddingProgress(stats)
+    })
+
     window.doty.micCheckPermission().then((status: string) => {
       setMicPermissionDenied(status === 'denied' || status === 'restricted')
     })
@@ -175,6 +211,8 @@ export default function Settings({
       unsubProgress()
       unsubComplete()
       unsubWhisper()
+      unsubLlmProgress()
+      unsubEmbeddingProgress()
     }
   }, [refreshTrackCount])
 
@@ -916,6 +954,197 @@ export default function Settings({
                   ))
                 )}
                 <div ref={logEndRef} />
+              </div>
+            )}
+          </div>
+
+          {/* Scene Interpreter (LLM) */}
+          <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+            <div className="flex items-center gap-3">
+              <div
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  flexShrink: 0,
+                  background: llmModelReady ? '#4a8a6a' : '#3a2e1a',
+                  boxShadow: llmModelReady ? '0 0 6px rgba(74,138,106,0.6)' : 'none',
+                }}
+              />
+              <div className="flex-1 min-w-0">
+                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                  Scene Interpreter
+                </p>
+                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                  {llmModelReady ? 'Attuned' : 'Not yet summoned'}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5 mt-3">
+              {llmModelList.map((m) => {
+                const isActive = llmModel === m.id
+                const isDownloading = llmDownloading === m.id
+                return (
+                  <div
+                    key={m.id}
+                    className="flex items-center gap-2"
+                    style={{
+                      padding: '6px 8px',
+                      background: isActive ? 'rgba(200,146,42,0.06)' : 'transparent',
+                      border: isActive ? '1px solid rgba(200,146,42,0.2)' : '1px solid transparent',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      disabled={!m.ready || isDownloading}
+                      onClick={async () => {
+                        if (m.ready && !isActive) {
+                          const r = await window.doty.setLlmModel(m.id)
+                          if (r.ok) setLlmModel(m.id)
+                        }
+                      }}
+                      style={{
+                        width: '14px',
+                        height: '14px',
+                        borderRadius: '50%',
+                        border: `1px solid ${isActive ? '#c8922a' : '#3a2e1a'}`,
+                        background: 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: m.ready && !isActive ? 'pointer' : 'default',
+                        flexShrink: 0,
+                        padding: 0,
+                      }}
+                    >
+                      {isActive && (
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8922a' }} />
+                      )}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                        {m.label}
+                      </span>
+                      <span
+                        className="ml-1.5 px-1 rounded text-[10px]"
+                        style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
+                      >
+                        {m.size}
+                      </span>
+                      <br />
+                      <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                        {m.description}
+                      </span>
+                    </div>
+                    {isDownloading ? (
+                      <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                        {llmDownloadProgress}%
+                      </span>
+                    ) : m.ready ? (
+                      <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
+                        ready
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setLlmDownloading(m.id)
+                          setLlmDownloadProgress(0)
+                          await window.doty.downloadLlm(m.id)
+                          setLlmDownloading(null)
+                          window.doty.getLlmModelList().then(setLlmModelList)
+                        }}
+                        style={{
+                          fontSize: '11px',
+                          color: '#c8922a',
+                          fontFamily: 'monospace',
+                          background: 'none',
+                          border: '1px solid rgba(200,146,42,0.3)',
+                          padding: '2px 8px',
+                          cursor: 'pointer',
+                          flexShrink: 0,
+                        }}
+                      >
+                        download
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Embedding model */}
+            <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                    Embedding Model
+                  </span>
+                  <span
+                    className="ml-1.5 px-1 rounded text-[10px]"
+                    style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
+                  >
+                    {embeddingStatus?.size ?? '487 MB'}
+                  </span>
+                </div>
+                {embeddingStatus?.ready ? (
+                  <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace' }}>ready</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await window.doty.downloadEmbeddingModel()
+                      setEmbeddingStatus(await window.doty.getEmbeddingStatus())
+                    }}
+                    style={{
+                      fontSize: '11px',
+                      color: '#c8922a',
+                      fontFamily: 'monospace',
+                      background: 'none',
+                      border: '1px solid rgba(200,146,42,0.3)',
+                      padding: '2px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    download
+                  </button>
+                )}
+              </div>
+              <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '2px' }}>
+                nomic-embed-text-v2 (multilingual)
+              </p>
+            </div>
+
+            {/* Embedding progress */}
+            {embeddingProgress && embeddingProgress.total > 0 && (
+              <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
+                <div className="flex items-center justify-between">
+                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
+                    Library indexing: {embeddingProgress.embedded}/{embeddingProgress.total} tracks
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
+                    {embeddingProgress.percent}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    height: '3px',
+                    background: '#1a1408',
+                    marginTop: '4px',
+                    borderRadius: '2px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <div
+                    style={{
+                      height: '100%',
+                      width: `${embeddingProgress.percent}%`,
+                      background: '#4a8a6a',
+                      transition: 'width 0.5s',
+                    }}
+                  />
+                </div>
               </div>
             )}
           </div>

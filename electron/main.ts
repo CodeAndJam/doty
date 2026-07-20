@@ -861,6 +861,88 @@ ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {
   return { ok: true }
 })
 
+// ── IPC: Scene Interpreter (LLM) ──────────────────────────────────────────────
+
+ipcMain.handle('llm:get-model-list', () => {
+  return LLM_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    description: m.description,
+    size: m.size,
+    ready: m.isReady(),
+  }))
+})
+
+ipcMain.handle('llm:get-model', () => {
+  return store.get('llmModel', 'qwen3-0.6b') as string
+})
+
+ipcMain.handle('llm:set-model', (_e, modelId: LlmModelType) => {
+  const current = store.get('llmModel', '') as string
+  if (current === modelId) return { ok: true }
+  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
+  store.set('llmModel', modelId)
+  // Reload the scene model
+  loadSceneModel(getLlmModelPath(modelId))
+  return { ok: true }
+})
+
+ipcMain.handle('llm:download', async (_e, modelId: LlmModelType) => {
+  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (modelInfo.isReady()) {
+    store.set('llmModel', modelId)
+    loadSceneModel(getLlmModelPath(modelId))
+    return { ok: true }
+  }
+  const { MODELS_DIR } = require('./model-paths')
+  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  try {
+    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
+      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
+    })
+    store.set('llmModel', modelId)
+    loadSceneModel(getLlmModelPath(modelId))
+    startInterpreting()
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
+})
+
+ipcMain.handle('llm:download-embedding', async () => {
+  if (EMBEDDING_MODEL.isReady()) {
+    loadEmbeddingModel(getEmbeddingModelPath())
+    return { ok: true }
+  }
+  const { MODELS_DIR } = require('./model-paths')
+  const destPath = join(MODELS_DIR, EMBEDDING_MODEL.ggufFile)
+  try {
+    await downloadFile(EMBEDDING_MODEL.url, destPath, (percent, downloadedMB, totalMB) => {
+      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
+    })
+    loadEmbeddingModel(getEmbeddingModelPath())
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
+})
+
+ipcMain.handle('llm:get-embedding-status', () => ({
+  ready: EMBEDDING_MODEL.isReady(),
+  label: EMBEDDING_MODEL.label,
+  size: EMBEDDING_MODEL.size,
+}))
+
+ipcMain.handle('embedding:get-progress', () => {
+  const { getEmbeddingStats } = require('./track-vectors')
+  const musicFolder = store.get('musicFolder', '') as string
+  const total = musicFolder ? listMusicFiles(musicFolder).length : 0
+  return getEmbeddingStats(total)
+})
+
 // ── IPC: Hotwords (legacy stubs — transcribe-cpp doesn't use hotwords) ────────
 
 ipcMain.handle('settings:get-hotwords-file', () => '')

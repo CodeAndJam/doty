@@ -32,6 +32,7 @@ interface Props {
   onDeleteSession: (file: string) => void
   onCopyTranscript: () => void
   onExportTranscript: () => void
+  currentScene?: { scene: string; mood: string; intensity: number; keywords: string[] } | null
   availableModels: Array<{ id: string; label: string; ready: boolean }>
 }
 
@@ -57,6 +58,7 @@ export default function Transcript({
   onDeleteSession,
   onCopyTranscript,
   onExportTranscript,
+  currentScene,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -390,6 +392,57 @@ export default function Transcript({
               </div>
             )
           })
+        )}
+
+        {/* Scene interpretation indicator */}
+        {currentScene && recording && (
+          <div
+            style={{
+              margin: '8px 0',
+              padding: '4px 10px',
+              background: 'rgba(46,36,22,0.3)',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: '#5a4a2a',
+                fontFamily: 'monospace',
+              }}
+            >
+              {currentScene.mood}
+            </span>
+            <div style={{ flex: 1, height: '3px', background: '#1a1408', borderRadius: '2px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round(currentScene.intensity * 100)}%`,
+                  background:
+                    currentScene.intensity > 0.7 ? '#b43c28' : currentScene.intensity > 0.4 ? '#c8922a' : '#4a8a6a',
+                  transition: 'width 1s ease, background 1s ease',
+                }}
+              />
+            </div>
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#3a2e1a',
+                fontFamily: 'monospace',
+                maxWidth: '120px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {currentScene.keywords.slice(0, 3).join(' · ')}
+            </span>
+          </div>
         )}
 
         {/* Live interim text with cursor */}
