@@ -18,6 +18,16 @@ export interface LlmModelInfo {
 const HOME_DIR = app.getPath('home')
 const MODELS_DIR = join(HOME_DIR, '.doty', 'models')
 
+/** Check file exists and is non-empty (catches interrupted downloads) */
+function isValidGguf(path: string): boolean {
+  try {
+    const stat = fs.statSync(path)
+    return stat.size > 1024 // GGUF header alone is >100 bytes; 1KB is safe minimum
+  } catch {
+    return false
+  }
+}
+
 export const LLM_MODELS: LlmModelInfo[] = [
   {
     id: 'qwen3-0.6b',
@@ -26,7 +36,7 @@ export const LLM_MODELS: LlmModelInfo[] = [
     size: '400 MB',
     ggufFile: 'Qwen3-0.6B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf',
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'Qwen3-0.6B-Q4_K_M.gguf')),
+    isReady: () => isValidGguf(join(MODELS_DIR, 'Qwen3-0.6B-Q4_K_M.gguf')),
   },
   {
     id: 'bonsai-1.7b',
@@ -35,7 +45,7 @@ export const LLM_MODELS: LlmModelInfo[] = [
     size: '270 MB',
     ggufFile: 'Bonsai-1.7B-Q1_0_g128.gguf',
     url: 'https://huggingface.co/prism-ml/Bonsai-1.7B-gguf/resolve/main/Bonsai-1.7B-Q1_0_g128.gguf',
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'Bonsai-1.7B-Q1_0_g128.gguf')),
+    isReady: () => isValidGguf(join(MODELS_DIR, 'Bonsai-1.7B-Q1_0_g128.gguf')),
   },
   {
     id: 'gemma4-e2b',
@@ -44,7 +54,7 @@ export const LLM_MODELS: LlmModelInfo[] = [
     size: '1.5 GB',
     ggufFile: 'gemma-4-E2B-it-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_M.gguf',
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'gemma-4-E2B-it-Q4_K_M.gguf')),
+    isReady: () => isValidGguf(join(MODELS_DIR, 'gemma-4-E2B-it-Q4_K_M.gguf')),
   },
 ]
 
@@ -55,7 +65,7 @@ export const EMBEDDING_MODEL = {
   ggufFile: 'nomic-embed-text-v2-moe-Q8_0.gguf',
   url: 'https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe-Q8_0.gguf',
   size: '487 MB',
-  isReady: () => fs.existsSync(join(MODELS_DIR, 'nomic-embed-text-v2-moe-Q8_0.gguf')),
+  isReady: () => isValidGguf(join(MODELS_DIR, 'nomic-embed-text-v2-moe-Q8_0.gguf')),
 }
 
 export function getLlmModel(id: LlmModelType): LlmModelInfo {

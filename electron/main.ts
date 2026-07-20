@@ -562,16 +562,16 @@ app.whenReady().then(async () => {
     } catch (e) {
       console.error('ASR init error:', e)
     }
-    // Init scene interpreter if model is available
+    // Init scene interpreter if model is available (and non-empty)
     const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
     const llmPath = getLlmModelPath(llmModelId)
-    if (fs.existsSync(llmPath)) {
+    if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
       loadSceneModel(llmPath)
       startInterpreting()
     }
-    // Init embedding model if available
+    // Init embedding model if available (and non-empty)
     const embPath = getEmbeddingModelPath()
-    if (fs.existsSync(embPath)) {
+    if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
       loadEmbeddingModel(embPath)
     }
   }
