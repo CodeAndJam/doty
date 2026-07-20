@@ -59,7 +59,7 @@ import {
   startEmbeddingQueue,
   stopEmbeddingQueue,
 } from './embedding-queue'
-import { getLlmModelPath, type LlmModelType } from './llm-models'
+import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
 import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
@@ -70,6 +70,7 @@ import {
   isEmbeddingModelReady,
   loadEmbeddingModel,
   loadSceneModel,
+  requestEmbedding as requestEmbeddingFromInterpreter,
   setOnEmbedding,
   setOnStatus as setOnLlmStatus,
   setOnSceneUpdate,
@@ -78,7 +79,7 @@ import {
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
-import { initVectorTables } from './track-vectors'
+import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -461,8 +462,7 @@ function registerMusicProtocol() {
 
 /** Request embedding for a scene description (id=0 for scene embeddings) */
 function requestSceneEmbedding(sceneText: string) {
-  const { requestEmbedding: reqEmbed } = require('./scene-interpreter')
-  reqEmbed(0, `search_query: ${sceneText}`)
+  requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
 }
 
 app.whenReady().then(async () => {
@@ -897,7 +897,6 @@ ipcMain.handle('llm:download', async (_e, modelId: LlmModelType) => {
     loadSceneModel(getLlmModelPath(modelId))
     return { ok: true }
   }
-  const { MODELS_DIR } = require('./model-paths')
   const destPath = join(MODELS_DIR, modelInfo.ggufFile)
   try {
     await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
@@ -917,7 +916,6 @@ ipcMain.handle('llm:download-embedding', async () => {
     loadEmbeddingModel(getEmbeddingModelPath())
     return { ok: true }
   }
-  const { MODELS_DIR } = require('./model-paths')
   const destPath = join(MODELS_DIR, EMBEDDING_MODEL.ggufFile)
   try {
     await downloadFile(EMBEDDING_MODEL.url, destPath, (percent, downloadedMB, totalMB) => {
@@ -937,7 +935,6 @@ ipcMain.handle('llm:get-embedding-status', () => ({
 }))
 
 ipcMain.handle('embedding:get-progress', () => {
-  const { getEmbeddingStats } = require('./track-vectors')
   const musicFolder = store.get('musicFolder', '') as string
   const total = musicFolder ? listMusicFiles(musicFolder).length : 0
   return getEmbeddingStats(total)
