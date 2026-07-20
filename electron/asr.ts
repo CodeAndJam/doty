@@ -90,9 +90,25 @@ export function initRecognizer(): void {
   w.postMessage({ type: 'load', modelPath })
 }
 
-/** Start a streaming session */
+/** Start a streaming session. Ensures worker is initialized and model is loaded. */
 export function startStream(): void {
-  if (!workerReady) return
+  if (!worker) {
+    // No worker yet — init first, then start stream once ready
+    initRecognizer()
+  }
+  if (!workerReady) {
+    // Model still loading — wait then start
+    const waitAndStart = () => {
+      if (workerReady && worker) {
+        streaming = true
+        worker.postMessage({ type: 'stream-start' })
+      } else {
+        setTimeout(waitAndStart, 50)
+      }
+    }
+    waitAndStart()
+    return
+  }
   streaming = true
   worker!.postMessage({ type: 'stream-start' })
 }
