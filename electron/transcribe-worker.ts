@@ -118,10 +118,7 @@ async function loadModel(modelPath: string) {
 }
 
 async function startStream() {
-  if (!session) {
-    sendMsg({ type: 'error', error: 'No model loaded' })
-    return
-  }
+  if (!session) return // model not loaded yet — caller will retry
   // Reset stream if one exists
   if (stream) {
     try {
@@ -139,13 +136,11 @@ async function startStream() {
 }
 
 async function feedChunk(buffer: ArrayBuffer) {
-  if (!stream) {
-    sendMsg({ type: 'error', error: 'No active stream' })
-    return
-  }
+  if (!stream) return // silently drop — stream not active (during model swap)
   const samples = new Float32Array(buffer)
   await stream.feed(samples)
   _lastFeedTime = Date.now()
+  if (!stream) return // stream may have been reset during async feed
   const { committed, tentative } = stream.text
 
   if (committed !== lastCommitted || tentative) {
@@ -160,10 +155,7 @@ async function feedChunk(buffer: ArrayBuffer) {
 }
 
 async function finalizeStream() {
-  if (!stream) {
-    sendMsg({ type: 'error', error: 'No active stream' })
-    return
-  }
+  if (!stream) return // already finalized or never started
   clearSilenceTimer()
   await stream.finalize()
   const { committed } = stream.text
