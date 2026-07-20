@@ -232,6 +232,11 @@ export default function MainLayout() {
       setInterimText(text)
     })
 
+    const unsubModelSwitch = window.doty.onSttModelSwitched((info) => {
+      setTranscripts((prev) => [...prev, `⟳ Switched to ${info.label}`])
+      setInterimText('')
+    })
+
     // Listen for SFX recommendations from the backend (fallback)
     const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
       setSfxRecommendations(ids)
@@ -255,6 +260,7 @@ export default function MainLayout() {
       unsubTranscript()
       unsubSttStatus()
       unsubInterim()
+      unsubModelSwitch()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)

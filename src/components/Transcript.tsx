@@ -316,21 +316,38 @@ export default function Transcript({
               : 'Await the spoken word.'}
           </p>
         ) : (
-          lines.map((line, i) => (
-            <p
-              key={i}
-              style={{
-                fontSize: '16px',
-                color: '#c8b07a',
-                lineHeight: '1.6',
-                fontFamily: "'Crimson Text', serif",
-                borderLeft: '1px solid rgba(46,36,22,0.6)',
-                paddingLeft: '8px',
-              }}
-            >
-              {line}
-            </p>
-          ))
+          lines.map((line, i) =>
+            line.startsWith('⟳') ? (
+              <p
+                key={i}
+                style={{
+                  fontSize: '12px',
+                  color: '#6a6a5a',
+                  lineHeight: '1.8',
+                  fontFamily: 'monospace',
+                  textAlign: 'center',
+                  opacity: 0.7,
+                  margin: '4px 0',
+                }}
+              >
+                {line}
+              </p>
+            ) : (
+              <p
+                key={i}
+                style={{
+                  fontSize: '16px',
+                  color: '#c8b07a',
+                  lineHeight: '1.6',
+                  fontFamily: "'Crimson Text', serif",
+                  borderLeft: '1px solid rgba(46,36,22,0.6)',
+                  paddingLeft: '8px',
+                }}
+              >
+                {line}
+              </p>
+            ),
+          )
         )}
         {interimText && (
           <p

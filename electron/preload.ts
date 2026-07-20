@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('stt:interim', handler)
     return () => ipcRenderer.removeListener('stt:interim', handler)
   },
+  onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: { id: string; label: string }) => cb(info)
+    ipcRenderer.on('stt:model-switched', handler)
+    return () => ipcRenderer.removeListener('stt:model-switched', handler)
+  },
 
   // Music
   pickMusicFolder: () => ipcRenderer.invoke('music:pick-folder'),

@@ -170,6 +170,7 @@ export interface DotyAPI {
   onTranscript: (cb: (text: string) => void) => () => void
   onSttStatus: (cb: (status: string) => void) => () => void
   onSttInterim: (cb: (text: string) => void) => () => void
+  onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => () => void
 
   // Music
   pickMusicFolder: () => Promise<string | null>

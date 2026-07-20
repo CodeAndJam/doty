@@ -140,17 +140,33 @@ export function flushRecognizer(): void {
   finalizeStream()
 }
 
-/** Restart with potentially different model */
+/** Restart with potentially different model. Seamlessly resumes streaming if active. */
 export function restartRecognizer(): void {
+  const wasStreaming = streaming
+
   if (worker) {
+    // Finalize current stream to flush pending text before switching
+    if (streaming) {
+      worker.postMessage({ type: 'finalize' })
+      streaming = false
+    }
     worker.postMessage({ type: 'dispose' })
-    // Give it a moment then reinit
     setTimeout(() => {
       worker?.terminate()
       worker = null
       workerReady = false
-      streaming = false
       initRecognizer()
+      // Re-start streaming once new model is ready
+      if (wasStreaming) {
+        const waitForReady = () => {
+          if (workerReady) {
+            startStream()
+          } else {
+            setTimeout(waitForReady, 50)
+          }
+        }
+        waitForReady()
+      }
     }, 200)
   } else {
     initRecognizer()

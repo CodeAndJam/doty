@@ -793,11 +793,16 @@ ipcMain.handle('stt:get-model', () => {
   return store.get('sttModel', 'parakeet-unified-en') as string
 })
 
-ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
+ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
   const current = store.get('sttModel', '') as string
-  if (current === model) return { ok: true } // no change
-  store.set('sttModel', model)
+  if (current === modelId) return { ok: true }
+  const modelInfo = STT_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
+  store.set('sttModel', modelId)
   restartRecognizer()
+  // Notify renderer about the switch
+  mainWindow?.webContents.send('stt:model-switched', { id: modelId, label: modelInfo.label })
   return { ok: true }
 })
 
