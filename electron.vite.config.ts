@@ -13,6 +13,7 @@ export default defineConfig({
           index: resolve(__dirname, 'electron/main.ts'),
           'analyze-worker': resolve(__dirname, 'electron/analyze-worker.ts'),
           'transcribe-worker': resolve(__dirname, 'electron/transcribe-worker.ts'),
+          'llm-child': resolve(__dirname, 'electron/llm-child.ts'),
           'qwen-worker': resolve(__dirname, 'electron/qwen-worker.ts'),
           'qwen-child': resolve(__dirname, 'electron/qwen-child.ts'),
           'reprocess-worker': resolve(__dirname, 'electron/reprocess-worker.ts'),
