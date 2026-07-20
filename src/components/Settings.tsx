@@ -74,9 +74,17 @@ export default function Settings({
   const [autopilotMusic, setAutopilotMusic] = useState(true)
   const [autopilotSfx, setAutopilotSfx] = useState(true)
   const [sttModel, setSttModel] = useState('parakeet')
-  const [sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
+  const [_sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
   const [sttModelList, setSttModelList] = useState<
-    Array<{ id: string; label: string; description: string; size: string; downloadMethod: string; ready: boolean }>
+    Array<{
+      id: string
+      label: string
+      description: string
+      size: string
+      streaming: boolean
+      languages: string[]
+      ready: boolean
+    }>
   >([])
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
@@ -134,12 +142,13 @@ export default function Settings({
       setScanDone(true)
       setLastScanTime(new Date().toLocaleTimeString())
     })
-    const unsubWhisper = window.doty.onSttDownloadProgress((p) => {
+    const unsubWhisper = window.doty.onModelProgress((p) => {
       setWhisperProgress(p.percent)
-      if (p.done) {
+      if (p.percent >= 100) {
         setWhisperDownloading(null)
         setWhisperProgress(0)
         window.doty.getSttModelStatus().then(setSttModelStatus)
+        window.doty.getSttModelList().then(setSttModelList)
       }
     })
 
@@ -704,10 +713,10 @@ export default function Settings({
             {/* Model radio buttons — driven by registry */}
             <div className="space-y-1.5 mt-3">
               {sttModelList.map((m) => {
-                const isDownloaded = m.ready || sttModelStatus[m.id]
+                const isDownloaded = m.ready
                 const isActive = sttModel === m.id
                 const isDownloading = whisperDownloading === m.id
-                const needsDownload = m.downloadMethod === 'tar' && !isDownloaded
+                const needsDownload = !isDownloaded
 
                 return (
                   <div
@@ -723,10 +732,12 @@ export default function Settings({
                     <button
                       type="button"
                       disabled={needsDownload || isDownloading}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!needsDownload && !isActive) {
-                          setSttModel(m.id)
-                          window.doty.setSttModel(m.id)
+                          const result = await window.doty.setSttModel(m.id)
+                          if (result.ok) {
+                            setSttModel(m.id)
+                          }
                         }
                       }}
                       style={{
@@ -744,14 +755,7 @@ export default function Settings({
                       }}
                     >
                       {isActive && (
-                        <div
-                          style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            background: '#c8922a',
-                          }}
-                        />
+                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8922a' }} />
                       )}
                     </button>
 
@@ -760,30 +764,12 @@ export default function Settings({
                       <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
                         {m.label}
                       </span>
-                      {m.id === 'voxmlx' && (
-                        <span
-                          className="ml-1.5 px-1 rounded text-[10px]"
-                          style={{ background: 'rgba(74,138,106,0.15)', color: '#4a8a6a' }}
-                        >
-                          GPU
-                        </span>
-                      )}
-                      {m.id === 'voxtral' && (
-                        <span
-                          className="ml-1.5 px-1 rounded text-[10px]"
-                          style={{ background: 'rgba(180,60,40,0.15)', color: '#b43c28' }}
-                        >
-                          ~7GB RAM
-                        </span>
-                      )}
-                      {(m.id === 'parakeet' || m.id?.startsWith('whisper')) && (
-                        <span
-                          className="ml-1.5 px-1 rounded text-[10px]"
-                          style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
-                        >
-                          CPU · {m.size}
-                        </span>
-                      )}
+                      <span
+                        className="ml-1.5 px-1 rounded text-[10px]"
+                        style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
+                      >
+                        {m.size}
+                      </span>
                       <br />
                       <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
                         {m.description}
@@ -795,7 +781,7 @@ export default function Settings({
                       <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
                         {whisperProgress}%
                       </span>
-                    ) : !needsDownload ? (
+                    ) : isDownloaded ? (
                       <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
                         ready
                       </span>
@@ -806,12 +792,13 @@ export default function Settings({
                           setWhisperDownloading(m.id)
                           setWhisperProgress(0)
                           try {
-                            await window.doty.downloadWhisper(m.id)
+                            await window.doty.downloadModel(m.id)
                           } catch (e) {
-                            console.error('Whisper download failed:', e)
+                            console.error('Model download failed:', e)
                           }
                           setWhisperDownloading(null)
                           window.doty.getSttModelStatus().then(setSttModelStatus)
+                          window.doty.getSttModelList().then(setSttModelList)
                         }}
                         style={{
                           fontSize: '11px',
@@ -826,7 +813,7 @@ export default function Settings({
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.1)')}
                         onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
                       >
-                        {m.size}
+                        download
                       </button>
                     )}
                   </div>

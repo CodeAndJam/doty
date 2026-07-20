@@ -191,7 +191,8 @@ export interface DotyAPI {
       label: string
       description: string
       size: string
-      downloadMethod: string
+      streaming: boolean
+      languages: string[]
       ready: boolean
     }>
   >

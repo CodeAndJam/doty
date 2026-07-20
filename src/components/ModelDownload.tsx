@@ -6,7 +6,8 @@ interface ModelEntry {
   label: string
   description: string
   size: string
-  downloadMethod: string
+  streaming: boolean
+  languages: string[]
   ready: boolean
 }
 
@@ -93,9 +94,7 @@ export default function ModelDownload({ onComplete }: Props) {
               disabled={!selected}
               className="w-full py-3 bg-accent hover:bg-accent/80 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors"
             >
-              {selectedModel?.downloadMethod === 'auto'
-                ? `Select ${selectedModel.label}`
-                : `Download ${selectedModel?.label ?? 'Model'}`}
+              {`Download ${selectedModel?.label ?? 'Model'}`}
             </button>
           </>
         )}
@@ -121,7 +120,7 @@ export default function ModelDownload({ onComplete }: Props) {
         {started && !progress && (
           <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
             <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-            <span>{selectedModel?.downloadMethod === 'auto' ? 'Setting up...' : 'Starting download...'}</span>
+            <span>Starting download...</span>
           </div>
         )}
 
