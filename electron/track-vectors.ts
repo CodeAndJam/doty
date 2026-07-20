@@ -47,9 +47,9 @@ export function initVectorTables(): void {
 function getRowId(filename: string): number | null {
   const db = getDb()
   const row = db.prepare('SELECT rowid FROM track_embedding_meta WHERE filename = ?').get(filename) as
-    | { rowid: number }
+    | { rowid: number | bigint }
     | undefined
-  return row?.rowid ?? null
+  return row ? Number(row.rowid) : null
 }
 
 /** Store a track embedding (insert or update) */
@@ -76,7 +76,7 @@ export function upsertTrackEmbedding(
     const metaResult = db
       .prepare('INSERT INTO track_embedding_meta (filename, description, source) VALUES (?, ?, ?)')
       .run(filename, description, source)
-    const rowid = metaResult.lastInsertRowid
+    const rowid = Number(metaResult.lastInsertRowid) // vec0 needs plain integer, not BigInt
     db.prepare('INSERT INTO track_vec (rowid, embedding) VALUES (?, ?)').run(rowid, vecBuffer)
   }
 }
