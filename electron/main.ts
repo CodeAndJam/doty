@@ -50,11 +50,35 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import {
+  handleEmbeddingResult,
+  pauseEmbedding,
+  resumeEmbedding,
+  setEmbeddingFiles,
+  setOnEmbeddingProgress,
+  startEmbeddingQueue,
+  stopEmbeddingQueue,
+} from './embedding-queue'
+import { getLlmModelPath, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
 import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
+import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import {
+  disposeInterpreter,
+  feedTranscript,
+  isEmbeddingModelReady,
+  loadEmbeddingModel,
+  loadSceneModel,
+  setOnEmbedding,
+  setOnStatus as setOnLlmStatus,
+  setOnSceneUpdate,
+  startInterpreting,
+  stopInterpreting,
+} from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
+import { initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -435,6 +459,12 @@ function registerMusicProtocol() {
   })
 }
 
+/** Request embedding for a scene description (id=0 for scene embeddings) */
+function requestSceneEmbedding(sceneText: string) {
+  const { requestEmbedding: reqEmbed } = require('./scene-interpreter')
+  reqEmbed(0, `search_query: ${sceneText}`)
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -456,15 +486,6 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   // Always set up ASR callbacks (process starts lazily on first transcribe)
-  setOnFlushText((text, elapsedMs) => {
-    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
-    const file = getActiveSessionFile()
-    if (file) {
-      if (!sessionStartTime) sessionStartTime = Date.now()
-      const elapsed = Date.now() - sessionStartTime
-      sessionOps.appendCue(file, elapsed, text)
-    }
-  })
   setOnInterimText((text) => {
     mainWindow?.webContents.send('stt:interim', text)
   })
@@ -473,6 +494,63 @@ app.whenReady().then(async () => {
   })
   setOnParagraphBreak(() => {
     mainWindow?.webContents.send('stt:paragraph-break')
+  })
+
+  // ── Scene Interpreter + Recommendation wiring ────────────────────────────
+  // Initialize vector tables for track embeddings
+  initVectorTables()
+
+  // Feed transcript to scene interpreter on each flush
+  setOnFlushText((text, elapsedMs) => {
+    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
+    // Feed to scene interpreter
+    feedTranscript(text)
+    // Fast-path check for instant triggers
+    const fastRec = fastPathCheck(text)
+    if (fastRec && fastRec.files.length > 0) {
+      mainWindow?.webContents.send('music:recommendations', fastRec.files)
+      startCooldown()
+    }
+  })
+
+  // Scene interpreter produces results → embed → vector search → recommend
+  setOnSceneUpdate((scene) => {
+    mainWindow?.webContents.send('scene:update', scene)
+    // Embed the scene description for vector search
+    if (isEmbeddingModelReady()) {
+      requestSceneEmbedding(scene.scene)
+    }
+  })
+
+  // Handle embeddings from the LLM process
+  setOnEmbedding((id, vector) => {
+    // Check if this is a scene embedding (id=0) or a track embedding (id>0)
+    if (id === 0) {
+      // Scene embedding → run slow-path recommendation
+      const rec = slowPathRecommend(vector)
+      if (rec.files.length > 0) {
+        mainWindow?.webContents.send('music:recommendations', rec.files)
+        mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+      }
+    } else {
+      // Track embedding → handled by embedding queue
+      handleEmbeddingResult(id, vector)
+    }
+  })
+
+  setOnLlmStatus((status) => {
+    mainWindow?.webContents.send('llm:status', status)
+  })
+
+  // Set up embedding progress reporting
+  setOnEmbeddingProgress((stats) => {
+    mainWindow?.webContents.send('embedding:progress', stats)
   })
 
   if (ready) {
@@ -484,10 +562,31 @@ app.whenReady().then(async () => {
     } catch (e) {
       console.error('ASR init error:', e)
     }
+    // Init scene interpreter if model is available
+    const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
+    const llmPath = getLlmModelPath(llmModelId)
+    if (fs.existsSync(llmPath)) {
+      loadSceneModel(llmPath)
+      startInterpreting()
+    }
+    // Init embedding model if available
+    const embPath = getEmbeddingModelPath()
+    if (fs.existsSync(embPath)) {
+      loadEmbeddingModel(embPath)
+    }
   }
 
+  // Start background embedding queue if music folder is set
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) launchScanner(musicFolder)
+  if (musicFolder) {
+    launchScanner(musicFolder)
+    // Kick off embedding queue after a delay (let scanner populate files first)
+    setTimeout(() => {
+      const files = listMusicFiles(musicFolder)
+      setEmbeddingFiles(files)
+      startEmbeddingQueue()
+    }, 5000)
+  }
 
   // Forward Discord state changes to renderer
   onStateChange((discordState) => {
@@ -500,6 +599,9 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   freeRecognizer()
+  stopInterpreting()
+  disposeInterpreter()
+  stopEmbeddingQueue()
   stopScanner()
   closeDb()
   destroyDiscord()
@@ -536,11 +638,13 @@ ipcMain.handle('stt:start', () => {
   sessionStartTime = Date.now()
   startWavRecording()
   startStream()
+  pauseEmbedding() // STT has priority over background embedding
   return { ok: true }
 })
 ipcMain.handle('stt:stop', () => {
   finalizeStream()
   finalizeWavRecording()
+  resumeEmbedding() // resume background work
   return { ok: true }
 })
 
