@@ -1116,37 +1116,74 @@ export default function Settings({
               </p>
             </div>
 
-            {/* Embedding progress */}
-            {embeddingProgress && embeddingProgress.total > 0 && (
-              <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
-                <div className="flex items-center justify-between">
-                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
-                    Library indexing: {embeddingProgress.embedded}/{embeddingProgress.total} tracks
-                  </span>
-                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
-                    {embeddingProgress.percent}%
-                  </span>
-                </div>
-                <div
-                  style={{
-                    height: '3px',
-                    background: '#1a1408',
-                    marginTop: '4px',
-                    borderRadius: '2px',
-                    overflow: 'hidden',
-                  }}
-                >
+            {/* Embedding progress / status */}
+            <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
+              {!embeddingStatus?.ready || !llmModelReady ? (
+                <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', fontStyle: 'italic' }}>
+                  Download scene interpreter + embedding model to enable smart recommendations
+                </p>
+              ) : embeddingProgress &&
+                embeddingProgress.total > 0 &&
+                embeddingProgress.embedded < embeddingProgress.total ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
+                      Indexing: {embeddingProgress.embedded}/{embeddingProgress.total} tracks
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
+                      {embeddingProgress.percent}%
+                    </span>
+                  </div>
                   <div
                     style={{
-                      height: '100%',
-                      width: `${embeddingProgress.percent}%`,
-                      background: '#4a8a6a',
-                      transition: 'width 0.5s',
+                      height: '3px',
+                      background: '#1a1408',
+                      marginTop: '4px',
+                      borderRadius: '2px',
+                      overflow: 'hidden',
                     }}
-                  />
+                  >
+                    <div
+                      style={{
+                        height: '100%',
+                        width: `${embeddingProgress.percent}%`,
+                        background: '#4a8a6a',
+                        transition: 'width 0.5s',
+                      }}
+                    />
+                  </div>
+                </>
+              ) : embeddingProgress &&
+                embeddingProgress.embedded > 0 &&
+                embeddingProgress.embedded >= embeddingProgress.total ? (
+                <div className="flex items-center justify-between">
+                  <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace' }}>
+                    Library indexed ✓ ({embeddingProgress.embedded} tracks)
+                  </span>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="flex items-center justify-between">
+                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
+                    Library not indexed yet
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => window.doty.getEmbeddingProgress().then(setEmbeddingProgress)}
+                    style={{
+                      fontSize: '11px',
+                      color: '#c8922a',
+                      fontFamily: 'monospace',
+                      background: 'none',
+                      border: '1px solid rgba(200,146,42,0.3)',
+                      padding: '2px 8px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Start indexing
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
