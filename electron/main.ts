@@ -83,7 +83,7 @@ import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
-/** Download a file from a URL with progress reporting. Follows redirects. */
+/** Download a file from a URL with progress reporting. Follows up to 10 redirects. */
 function downloadFile(
   url: string,
   destPath: string,
@@ -92,10 +92,13 @@ function downloadFile(
   return new Promise((resolve, reject) => {
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
     const file = fs.createWriteStream(destPath)
+    let redirectCount = 0
     const get = (u: string) => {
-      https
-        .get(u, (res) => {
-          if (res.statusCode === 301 || res.statusCode === 302) {
+      if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
+      const mod = u.startsWith('https') ? https : require('node:http')
+      mod
+        .get(u, (res: any) => {
+          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
             return get(res.headers.location!)
           }
           if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))

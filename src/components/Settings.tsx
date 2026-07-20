@@ -1090,11 +1090,18 @@ export default function Settings({
                 </div>
                 {embeddingStatus?.ready ? (
                   <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace' }}>ready</span>
+                ) : llmDownloading === 'embedding' ? (
+                  <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                    {llmDownloadProgress}%
+                  </span>
                 ) : (
                   <button
                     type="button"
                     onClick={async () => {
+                      setLlmDownloading('embedding')
+                      setLlmDownloadProgress(0)
                       await window.doty.downloadEmbeddingModel()
+                      setLlmDownloading(null)
                       setEmbeddingStatus(await window.doty.getEmbeddingStatus())
                     }}
                     style={{

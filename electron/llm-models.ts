@@ -62,10 +62,10 @@ export const LLM_MODELS: LlmModelInfo[] = [
 export const EMBEDDING_MODEL = {
   id: 'nomic-embed-v2',
   label: 'Nomic Embed Text v2 (multilingual)',
-  ggufFile: 'nomic-embed-text-v2-moe-Q8_0.gguf',
-  url: 'https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe-Q8_0.gguf',
+  ggufFile: 'nomic-embed-text-v2-moe.Q8_0.gguf',
+  url: 'https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/main/nomic-embed-text-v2-moe.Q8_0.gguf',
   size: '487 MB',
-  isReady: () => isValidGguf(join(MODELS_DIR, 'nomic-embed-text-v2-moe-Q8_0.gguf')),
+  isReady: () => isValidGguf(join(MODELS_DIR, 'nomic-embed-text-v2-moe.Q8_0.gguf')),
 }
 
 export function getLlmModel(id: LlmModelType): LlmModelInfo {
