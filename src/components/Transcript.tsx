@@ -342,9 +342,22 @@ export default function Transcript({
               borderLeft: '1px solid rgba(200,146,42,0.3)',
               paddingLeft: '8px',
               fontStyle: 'italic',
+              transition: 'opacity 0.15s ease-in',
+              opacity: 0.9,
             }}
           >
             {interimText}
+            <span
+              style={{
+                display: 'inline-block',
+                width: '2px',
+                height: '1em',
+                backgroundColor: '#c8922a',
+                marginLeft: '2px',
+                verticalAlign: 'text-bottom',
+                animation: 'blink 1s step-end infinite',
+              }}
+            />
           </p>
         )}
         <div ref={bottomRef} />

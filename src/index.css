@@ -98,3 +98,13 @@ h3,
   right: 0;
   border-width: 0 1px 1px 0;
 }
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}

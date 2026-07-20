@@ -228,8 +228,8 @@ export default function MainLayout() {
     })
 
     const unsubInterim = window.doty.onSttInterim((text) => {
-      if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
-      interimDebounceRef.current = setTimeout(() => setInterimText(text), 300)
+      // Show streaming text immediately — no debounce for smooth typing feel
+      setInterimText(text)
     })
 
     // Listen for SFX recommendations from the backend (fallback)
@@ -261,7 +261,7 @@ export default function MainLayout() {
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation])
+  }, [runRecommendation, runSfxRecommendation, toggleRecording])
 
   function handleDmChange(text: string) {
     setDmPrompt(text)

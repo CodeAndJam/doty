@@ -28,9 +28,10 @@ let model: any = null
 let session: any = null
 let stream: any = null
 
-// Silence timeout: if no new committed text for N ms, emit flush
+// Silence timeout: if no new committed text for N ms, emit flush with delta
 const SILENCE_FLUSH_MS = 2000
 let lastCommitted = ''
+let lastFlushed = '' // track what was already sent as flush
 let silenceTimer: ReturnType<typeof setTimeout> | null = null
 
 function sendMsg(msg: Record<string, unknown>) {
@@ -47,9 +48,13 @@ function clearSilenceTimer() {
 function scheduleSilenceFlush() {
   clearSilenceTimer()
   silenceTimer = setTimeout(() => {
-    if (stream && lastCommitted) {
-      sendMsg({ type: 'flush', text: lastCommitted })
-      lastCommitted = ''
+    if (stream && lastCommitted && lastCommitted !== lastFlushed) {
+      // Only send the new portion since last flush
+      const delta = lastCommitted.slice(lastFlushed.length).trim()
+      if (delta) {
+        sendMsg({ type: 'flush', text: delta })
+        lastFlushed = lastCommitted
+      }
     }
   }, SILENCE_FLUSH_MS)
 }
@@ -115,6 +120,7 @@ async function startStream() {
   }
   stream = await session.stream({ commitPolicy: 'stable_prefix' })
   lastCommitted = ''
+  lastFlushed = ''
   sendMsg({ type: 'status', status: 'streaming' })
 }
 
@@ -129,12 +135,13 @@ async function feedChunk(buffer: ArrayBuffer) {
 
   // Only send update if text changed
   if (committed !== lastCommitted || tentative) {
-    // Detect new committed text for flush detection
     if (committed !== lastCommitted) {
       lastCommitted = committed
       scheduleSilenceFlush()
     }
-    sendMsg({ type: 'text', committed, tentative })
+    // Send the *delta* since last flush as interim — this is what the user sees streaming in
+    const delta = committed.slice(lastFlushed.length)
+    sendMsg({ type: 'text', committed: delta, tentative })
   }
 }
 
@@ -146,10 +153,15 @@ async function finalizeStream() {
   clearSilenceTimer()
   await stream.finalize()
   const { committed } = stream.text
-  sendMsg({ type: 'flush', text: committed })
+  // Only send the new portion since last flush
+  const delta = committed.slice(lastFlushed.length).trim()
+  if (delta) {
+    sendMsg({ type: 'flush', text: delta })
+  }
   stream.reset()
   stream = null
   lastCommitted = ''
+  lastFlushed = ''
   sendMsg({ type: 'status', status: 'idle' })
 }
 

@@ -39,12 +39,15 @@ function ensureWorker(): Worker {
         if (onAsrStatus) onAsrStatus('ready')
         break
       case 'text':
-        // Streaming interim updates — committed is stable, tentative may change
-        if (msg.tentative && onInterimText) onInterimText(msg.committed + msg.tentative)
-        if (msg.committed && onInterimText) onInterimText(msg.committed)
+        // Streaming update — committed is the stable delta since last flush,
+        // tentative may still change. Show both as the live "typing" view.
+        if (onInterimText) {
+          const live = (msg.committed || '') + (msg.tentative || '')
+          if (live) onInterimText(live)
+        }
         break
       case 'flush':
-        // Final committed text from stream finalize or silence timeout
+        // Finalized segment text (delta since previous flush) — append to session
         if (msg.text && onFlushText) onFlushText(msg.text)
         break
       case 'status':
