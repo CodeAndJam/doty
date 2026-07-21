@@ -12,8 +12,8 @@ contextBridge.exposeInMainWorld('doty', {
   sttStart: () => ipcRenderer.invoke('stt:start'),
   sttStop: () => ipcRenderer.invoke('stt:stop'),
   sttTranscribeChunk: (buffer: ArrayBuffer) => ipcRenderer.invoke('stt:transcribe-chunk', buffer),
-  onTranscript: (cb: (text: string) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
+  onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, data: { text: string; elapsedMs: number }) => cb(data)
     ipcRenderer.on('stt:transcript', handler)
     return () => ipcRenderer.removeListener('stt:transcript', handler)
   },
@@ -26,6 +26,45 @@ contextBridge.exposeInMainWorld('doty', {
     const handler = (_e: Electron.IpcRendererEvent, text: string) => cb(text)
     ipcRenderer.on('stt:interim', handler)
     return () => ipcRenderer.removeListener('stt:interim', handler)
+  },
+  onParagraphBreak: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('stt:paragraph-break', handler)
+    return () => ipcRenderer.removeListener('stt:paragraph-break', handler)
+  },
+  onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, info: { id: string; label: string }) => cb(info)
+    ipcRenderer.on('stt:model-switched', handler)
+    return () => ipcRenderer.removeListener('stt:model-switched', handler)
+  },
+
+  // Scene Interpreter (LLM)
+  getLlmModelList: () => ipcRenderer.invoke('llm:get-model-list'),
+  getLlmModel: () => ipcRenderer.invoke('llm:get-model'),
+  setLlmModel: (modelId: string) => ipcRenderer.invoke('llm:set-model', modelId),
+  downloadLlm: (modelId: string) => ipcRenderer.invoke('llm:download', modelId),
+  downloadEmbeddingModel: () => ipcRenderer.invoke('llm:download-embedding'),
+  getEmbeddingStatus: () => ipcRenderer.invoke('llm:get-embedding-status'),
+  getEmbeddingProgress: () => ipcRenderer.invoke('embedding:get-progress'),
+  onSceneUpdate: (cb: (scene: { scene: string; mood: string; intensity: number; keywords: string[] }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, scene: any) => cb(scene)
+    ipcRenderer.on('scene:update', handler)
+    return () => ipcRenderer.removeListener('scene:update', handler)
+  },
+  onLlmStatus: (cb: (status: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, status: string) => cb(status)
+    ipcRenderer.on('llm:status', handler)
+    return () => ipcRenderer.removeListener('llm:status', handler)
+  },
+  onLlmDownloadProgress: (cb: (p: { percent: number; downloadedMB: number; totalMB: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: any) => cb(p)
+    ipcRenderer.on('llm:download-progress', handler)
+    return () => ipcRenderer.removeListener('llm:download-progress', handler)
+  },
+  onEmbeddingProgress: (cb: (stats: { embedded: number; total: number; percent: number }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, stats: any) => cb(stats)
+    ipcRenderer.on('embedding:progress', handler)
+    return () => ipcRenderer.removeListener('embedding:progress', handler)
   },
 
   // Music

@@ -5,6 +5,7 @@ import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
 import Soundboard from './Soundboard'
+import type { TranscriptSegment } from './Transcript'
 import Transcript from './Transcript'
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
@@ -13,8 +14,14 @@ const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
 export default function MainLayout() {
   const [recording, setRecording] = useState(false)
   const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready' | 'crashed'>('idle')
-  const [transcripts, setTranscripts] = useState<string[]>([])
+  const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([])
   const [interimText, setInterimText] = useState('')
+  const [currentScene, setCurrentScene] = useState<{
+    scene: string
+    mood: string
+    intensity: number
+    keywords: string[]
+  } | null>(null)
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -35,8 +42,8 @@ export default function MainLayout() {
   const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
-  const [reprocessProgress, setReprocessProgress] = useState<number | null>(null)
-  const [reprocessingFile, setReprocessingFile] = useState<string | null>(null)
+  const [_reprocessProgress, setReprocessProgress] = useState<number | null>(null)
+  const [_reprocessingFile, setReprocessingFile] = useState<string | null>(null)
   const [sttModelList, setSttModelList] = useState<Array<{ id: string; label: string; ready: boolean }>>([])
 
   // Load STT model list for reprocess picker
@@ -81,7 +88,7 @@ export default function MainLayout() {
       if (last) {
         setActiveSession(last)
         const cues = await window.doty.sessionLoad(last)
-        setTranscripts(cues.map((c) => c.text))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
       } else if (list.length === 0) {
         // Auto-create first session
         const s = await window.doty.sessionCreate()
@@ -90,7 +97,7 @@ export default function MainLayout() {
       } else {
         setActiveSession(list[0].file)
         const cues = await window.doty.sessionLoad(list[0].file)
-        setTranscripts(cues.map((c) => c.text))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
       }
     }
     loadSessions()
@@ -105,7 +112,7 @@ export default function MainLayout() {
       // Reload the session if it's the active one
       if (r.file === activeSession) {
         const cues = await window.doty.sessionLoad(r.file)
-        setTranscripts(cues.map((c) => c.text))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
       }
     })
     const unsubError = window.doty.onReprocessError(() => {
@@ -206,8 +213,8 @@ export default function MainLayout() {
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
 
-    const unsubTranscript = window.doty.onTranscript((text) => {
-      setTranscripts((prev) => [...prev, text])
+    const unsubTranscript = window.doty.onTranscript(({ text, elapsedMs }) => {
+      setTranscripts((prev) => [...prev, { text, elapsedMs }])
       setInterimText('') // Clear interim when final arrives
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
       // Debounce STT-triggered recommendations — run via Web Worker, not main process
@@ -228,8 +235,29 @@ export default function MainLayout() {
     })
 
     const unsubInterim = window.doty.onSttInterim((text) => {
-      if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
-      interimDebounceRef.current = setTimeout(() => setInterimText(text), 300)
+      // Show streaming text immediately — no debounce for smooth typing feel
+      setInterimText(text)
+    })
+
+    const unsubModelSwitch = window.doty.onSttModelSwitched((info) => {
+      setTranscripts((prev) => [...prev, { text: `⟳ Switched to ${info.label}`, elapsedMs: 0, system: true }])
+      setInterimText('')
+    })
+
+    const unsubParagraphBreak = window.doty.onParagraphBreak(() => {
+      // Mark next segment as paragraph start
+      setTranscripts((prev) => {
+        if (prev.length === 0) return prev
+        // Add a marker that the next segment starts a new paragraph
+        const last = prev[prev.length - 1]
+        if (last.system) return prev // don't double-break after system messages
+        return [...prev, { text: '', elapsedMs: 0, paragraphStart: true }]
+      })
+    })
+
+    // Listen for scene interpreter updates
+    const unsubScene = window.doty.onSceneUpdate((scene) => {
+      setCurrentScene(scene)
     })
 
     // Listen for SFX recommendations from the backend (fallback)
@@ -255,13 +283,16 @@ export default function MainLayout() {
       unsubTranscript()
       unsubSttStatus()
       unsubInterim()
+      unsubModelSwitch()
+      unsubParagraphBreak()
+      unsubScene()
       unsubSfxRec()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation])
+  }, [runRecommendation, runSfxRecommendation, toggleRecording])
 
   function handleDmChange(text: string) {
     setDmPrompt(text)
@@ -397,7 +428,7 @@ export default function MainLayout() {
         {showTranscript && (
           <div className="flex flex-col shrink-0 gap-2 w-72">
             <Transcript
-              lines={transcripts}
+              segments={transcripts}
               recording={recording}
               asrStatus={asrStatus}
               interimText={interimText}
@@ -414,7 +445,7 @@ export default function MainLayout() {
               onSwitchSession={async (file) => {
                 setActiveSession(file)
                 const cues = await window.doty.sessionLoad(file)
-                setTranscripts(cues.map((c) => c.text))
+                setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
               }}
               onRenameSession={async (file, name) => {
                 await window.doty.sessionRename(file, name)
@@ -428,25 +459,38 @@ export default function MainLayout() {
                   if (remaining.length > 0) {
                     setActiveSession(remaining[0].file)
                     const cues = await window.doty.sessionLoad(remaining[0].file)
-                    setTranscripts(cues.map((c) => c.text))
+                    setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
                   } else {
                     setActiveSession(null)
                     setTranscripts([])
                   }
                 }
               }}
-              onReprocess={async (file, modelId) => {
-                setReprocessingFile(file)
-                setReprocessProgress(0)
-                await window.doty.reprocessStart(file, modelId)
+              onCopyTranscript={() => {
+                const text = transcripts
+                  .filter((s) => !s.system && s.text)
+                  .map((s) => s.text)
+                  .join(' ')
+                navigator.clipboard.writeText(text)
               }}
-              onReprocessCancel={async () => {
-                await window.doty.reprocessCancel()
-                setReprocessingFile(null)
-                setReprocessProgress(null)
+              onExportTranscript={() => {
+                const lines: string[] = []
+                for (const seg of transcripts) {
+                  if (seg.system) {
+                    lines.push(`\n---\n*${seg.text}*\n`)
+                    continue
+                  }
+                  if (!seg.text) continue
+                  const ts =
+                    seg.elapsedMs > 0
+                      ? `[${Math.floor(seg.elapsedMs / 60000)}:${String(Math.floor((seg.elapsedMs / 1000) % 60)).padStart(2, '0')}] `
+                      : ''
+                  lines.push(`${ts}${seg.text}`)
+                }
+                const md = `# Session Transcript\n\n${lines.join('\n\n')}\n`
+                navigator.clipboard.writeText(md)
               }}
-              reprocessProgress={reprocessProgress}
-              reprocessingFile={reprocessingFile}
+              currentScene={currentScene}
               availableModels={sttModelList}
             />
           </div>

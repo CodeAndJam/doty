@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { MicPermission } from '../types'
 
 interface SessionMeta {
@@ -7,8 +7,18 @@ interface SessionMeta {
   created: string
 }
 
+/** A segment of transcribed text with its timestamp */
+export interface TranscriptSegment {
+  text: string
+  elapsedMs: number
+  /** true = system message (model switch, etc) */
+  system?: boolean
+  /** true = starts a new paragraph (after long silence) */
+  paragraphStart?: boolean
+}
+
 interface Props {
-  lines: string[]
+  segments: TranscriptSegment[]
   recording: boolean
   asrStatus?: 'idle' | 'loading' | 'ready' | 'crashed'
   interimText?: string
@@ -20,15 +30,21 @@ interface Props {
   onSwitchSession: (file: string) => void
   onRenameSession: (file: string, name: string) => void
   onDeleteSession: (file: string) => void
-  onReprocess: (file: string, modelId: string) => void
-  onReprocessCancel: () => void
-  reprocessProgress: number | null
-  reprocessingFile: string | null
+  onCopyTranscript: () => void
+  onExportTranscript: () => void
+  currentScene?: { scene: string; mood: string; intensity: number; keywords: string[] } | null
   availableModels: Array<{ id: string; label: string; ready: boolean }>
 }
 
+function formatTime(ms: number): string {
+  const totalSec = Math.floor(ms / 1000)
+  const m = Math.floor(totalSec / 60)
+  const s = totalSec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 export default function Transcript({
-  lines,
+  segments,
   recording,
   asrStatus = 'idle',
   interimText = '',
@@ -40,16 +56,23 @@ export default function Transcript({
   onSwitchSession,
   onRenameSession,
   onDeleteSession,
-  onReprocess,
-  onReprocessCancel,
-  reprocessProgress,
-  reprocessingFile,
-  availableModels,
+  onCopyTranscript,
+  onExportTranscript,
+  currentScene,
 }: Props) {
+  const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showDropdown, setShowDropdown] = useState(false)
   const [elapsed, setElapsed] = useState('')
+  const [pinnedToBottom, setPinnedToBottom] = useState(true)
+  const [showNewTextPill, setShowNewTextPill] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
+  // Word count
+  const wordCount = segments.reduce((acc, s) => (s.system ? acc : acc + s.text.split(/\s+/).filter(Boolean).length), 0)
+
+  // Elapsed timer
   useEffect(() => {
     if (!sessionStartTime || !recording) {
       setElapsed('')
@@ -65,14 +88,32 @@ export default function Transcript({
     const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [sessionStartTime, recording])
-  const [renaming, setRenaming] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [reprocessPicker, setReprocessPicker] = useState<string | null>(null)
 
+  // Auto-scroll: only if pinned to bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (pinnedToBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    } else {
+      setShowNewTextPill(true)
+    }
+  }, [pinnedToBottom])
+
+  // Detect scroll position to manage pinned state
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+    setPinnedToBottom(atBottom)
+    if (atBottom) setShowNewTextPill(false)
   }, [])
 
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    setPinnedToBottom(true)
+    setShowNewTextPill(false)
+  }
+
+  // Session dropdown close on outside click
   useEffect(() => {
     if (!showDropdown) return
     const handler = (e: MouseEvent) => {
@@ -83,6 +124,26 @@ export default function Transcript({
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showDropdown])
+
+  // Group segments into paragraphs
+  const paragraphs: TranscriptSegment[][] = []
+  let currentParagraph: TranscriptSegment[] = []
+  for (const seg of segments) {
+    if (seg.system || seg.paragraphStart) {
+      if (currentParagraph.length > 0) {
+        paragraphs.push(currentParagraph)
+        currentParagraph = []
+      }
+      if (seg.system) {
+        paragraphs.push([seg])
+      } else {
+        currentParagraph.push(seg)
+      }
+    } else {
+      currentParagraph.push(seg)
+    }
+  }
+  if (currentParagraph.length > 0) paragraphs.push(currentParagraph)
 
   return (
     <div
@@ -96,39 +157,25 @@ export default function Transcript({
       {/* Corner ornaments */}
       <div
         className="absolute top-0 left-0 w-3 h-3 pointer-events-none"
-        style={{
-          borderTop: '1px solid rgba(200,146,42,0.4)',
-          borderLeft: '1px solid rgba(200,146,42,0.4)',
-        }}
+        style={{ borderTop: '1px solid rgba(200,146,42,0.4)', borderLeft: '1px solid rgba(200,146,42,0.4)' }}
       />
       <div
         className="absolute top-0 right-0 w-3 h-3 pointer-events-none"
-        style={{
-          borderTop: '1px solid rgba(200,146,42,0.4)',
-          borderRight: '1px solid rgba(200,146,42,0.4)',
-        }}
+        style={{ borderTop: '1px solid rgba(200,146,42,0.4)', borderRight: '1px solid rgba(200,146,42,0.4)' }}
       />
       <div
         className="absolute bottom-0 left-0 w-3 h-3 pointer-events-none"
-        style={{
-          borderBottom: '1px solid rgba(200,146,42,0.4)',
-          borderLeft: '1px solid rgba(200,146,42,0.4)',
-        }}
+        style={{ borderBottom: '1px solid rgba(200,146,42,0.4)', borderLeft: '1px solid rgba(200,146,42,0.4)' }}
       />
       <div
         className="absolute bottom-0 right-0 w-3 h-3 pointer-events-none"
-        style={{
-          borderBottom: '1px solid rgba(200,146,42,0.4)',
-          borderRight: '1px solid rgba(200,146,42,0.4)',
-        }}
+        style={{ borderBottom: '1px solid rgba(200,146,42,0.4)', borderRight: '1px solid rgba(200,146,42,0.4)' }}
       />
 
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0"
-        style={{
-          borderBottom: '1px solid rgba(46,36,22,0.8)',
-        }}
+        style={{ borderBottom: '1px solid rgba(46,36,22,0.8)' }}
       >
         <div className="relative" data-session-dropdown>
           <button
@@ -173,8 +220,6 @@ export default function Transcript({
                         if (renameValue) onRenameSession(s.file, renameValue)
                         setRenaming(null)
                       }}
-                      // biome-ignore lint/a11y/noAutofocus: rename input needs immediate focus
-                      autoFocus
                     />
                   ) : (
                     <>
@@ -201,56 +246,14 @@ export default function Transcript({
                       >
                         ✎
                       </button>
-                      {reprocessingFile === s.file ? (
-                        <button
-                          type="button"
-                          className="text-xs"
-                          style={{ color: '#b43c28' }}
-                          onClick={onReprocessCancel}
-                          title="Cancel reprocess"
-                        >
-                          ✕ {reprocessProgress ?? 0}%
-                        </button>
-                      ) : reprocessPicker === s.file ? (
-                        <div className="flex flex-col gap-0.5">
-                          {availableModels
-                            .filter((m) => m.ready)
-                            .map((m) => (
-                              <button
-                                key={m.id}
-                                type="button"
-                                className="text-[10px] px-1 rounded hover:bg-[#2e2416] text-left"
-                                style={{ color: '#c8b07a' }}
-                                onClick={() => {
-                                  onReprocess(s.file, m.id)
-                                  setReprocessPicker(null)
-                                }}
-                              >
-                                {m.label}
-                              </button>
-                            ))}
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          className="text-xs opacity-50 hover:opacity-100"
-                          style={{ color: '#4a8a6a' }}
-                          onClick={() => setReprocessPicker(s.file)}
-                          title="Reprocess with better model"
-                        >
-                          🔄
-                        </button>
-                      )}
                       <button
                         type="button"
                         className="text-xs opacity-50 hover:opacity-100"
                         style={{ color: '#b43c28' }}
                         onClick={() => {
-                          if (window.confirm(`Delete session "${s.name}"?`)) {
-                            onDeleteSession(s.file)
-                          }
+                          if (window.confirm(`Delete session "${s.name}"?`)) onDeleteSession(s.file)
                         }}
-                        title="Delete session"
+                        title="Delete"
                       >
                         🗑
                       </button>
@@ -261,10 +264,10 @@ export default function Transcript({
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           {recording && (
             <span className="text-xs" style={{ color: '#ef4444' }} data-testid="recording-indicator">
-              🔴
+              ●
             </span>
           )}
           {elapsed && (
@@ -272,6 +275,29 @@ export default function Transcript({
               {elapsed}
             </span>
           )}
+          {wordCount > 0 && (
+            <span className="text-xs tabular-nums" style={{ color: '#5a5a4a' }}>
+              {wordCount} words
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onCopyTranscript}
+            className="text-xs opacity-50 hover:opacity-100 px-1"
+            style={{ color: '#6b4e15' }}
+            title="Copy transcript"
+          >
+            📋
+          </button>
+          <button
+            type="button"
+            onClick={onExportTranscript}
+            className="text-xs opacity-50 hover:opacity-100 px-1"
+            style={{ color: '#6b4e15' }}
+            title="Export as markdown"
+          >
+            ↗
+          </button>
           <button
             type="button"
             onClick={onNewSession}
@@ -291,9 +317,7 @@ export default function Transcript({
           style={{ background: 'rgba(180,60,40,0.15)', border: '1px solid rgba(180,60,40,0.4)', color: '#e8a87c' }}
         >
           <p className="font-medium mb-1">⚠ Microphone access denied</p>
-          <p className="text-xs opacity-80 mb-2">
-            Doty needs microphone permission to transcribe. Open System Settings to grant access.
-          </p>
+          <p className="text-xs opacity-80 mb-2">Doty needs microphone permission to transcribe.</p>
           <button
             type="button"
             onClick={() => window.doty.micOpenSettings()}
@@ -305,9 +329,9 @@ export default function Transcript({
         </div>
       )}
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5 select-text cursor-text">
-        {lines.length === 0 ? (
+      {/* Scrollable content */}
+      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 select-text cursor-text">
+        {paragraphs.length === 0 && !interimText ? (
           <p style={{ fontSize: '15px', color: '#3a2e1a', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
             {recording
               ? asrStatus === 'loading'
@@ -316,39 +340,160 @@ export default function Transcript({
               : 'Await the spoken word.'}
           </p>
         ) : (
-          lines.map((line, i) => (
-            <p
-              key={i}
-              style={{
-                fontSize: '16px',
-                color: '#c8b07a',
-                lineHeight: '1.6',
-                fontFamily: "'Crimson Text', serif",
-                borderLeft: '1px solid rgba(46,36,22,0.6)',
-                paddingLeft: '8px',
-              }}
-            >
-              {line}
-            </p>
-          ))
+          paragraphs.map((para, pi) => {
+            // System message (model switch, etc)
+            if (para.length === 1 && para[0].system) {
+              return (
+                <p
+                  key={pi}
+                  style={{
+                    fontSize: '12px',
+                    color: '#6a6a5a',
+                    lineHeight: '1.8',
+                    fontFamily: 'monospace',
+                    textAlign: 'center',
+                    opacity: 0.7,
+                    margin: '8px 0',
+                  }}
+                >
+                  {para[0].text}
+                </p>
+              )
+            }
+            // Regular paragraph — flowing text with timestamp on first segment
+            const firstTs = para[0]?.elapsedMs
+            const paragraphText = para.map((s) => s.text).join(' ')
+            return (
+              <div key={pi} className="group relative" style={{ marginBottom: '12px' }}>
+                {firstTs > 0 && (
+                  <span
+                    className="absolute -left-0 top-0 text-[10px] tabular-nums select-none opacity-0 group-hover:opacity-60 transition-opacity"
+                    style={{
+                      color: '#5a5a4a',
+                      fontFamily: 'monospace',
+                      transform: 'translateX(-100%) translateX(-8px)',
+                    }}
+                  >
+                    {formatTime(firstTs)}
+                  </span>
+                )}
+                <p
+                  style={{
+                    fontSize: '16px',
+                    color: '#c8b07a',
+                    lineHeight: '1.7',
+                    fontFamily: "'Crimson Text', serif",
+                    borderLeft: '1px solid rgba(46,36,22,0.6)',
+                    paddingLeft: '10px',
+                  }}
+                >
+                  {paragraphText}
+                </p>
+              </div>
+            )
+          })
         )}
-        {interimText && (
-          <p
+
+        {/* Scene interpretation indicator */}
+        {currentScene && recording && (
+          <div
             style={{
-              fontSize: '16px',
-              color: '#8a7a5a',
-              lineHeight: '1.6',
-              fontFamily: "'Crimson Text', serif",
-              borderLeft: '1px solid rgba(200,146,42,0.3)',
-              paddingLeft: '8px',
-              fontStyle: 'italic',
+              margin: '8px 0',
+              padding: '4px 10px',
+              background: 'rgba(46,36,22,0.3)',
+              borderRadius: '4px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
             }}
           >
-            {interimText}
-          </p>
+            <span
+              style={{
+                fontSize: '10px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                color: '#5a4a2a',
+                fontFamily: 'monospace',
+              }}
+            >
+              {currentScene.mood}
+            </span>
+            <div style={{ flex: 1, height: '3px', background: '#1a1408', borderRadius: '2px', overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${Math.round(currentScene.intensity * 100)}%`,
+                  background:
+                    currentScene.intensity > 0.7 ? '#b43c28' : currentScene.intensity > 0.4 ? '#c8922a' : '#4a8a6a',
+                  transition: 'width 1s ease, background 1s ease',
+                }}
+              />
+            </div>
+            <span
+              style={{
+                fontSize: '10px',
+                color: '#3a2e1a',
+                fontFamily: 'monospace',
+                maxWidth: '120px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {currentScene.keywords.slice(0, 3).join(' · ')}
+            </span>
+          </div>
         )}
+
+        {/* Live interim text with cursor */}
+        {interimText && (
+          <div style={{ marginBottom: '12px' }}>
+            <p
+              style={{
+                fontSize: '16px',
+                color: '#8a7a5a',
+                lineHeight: '1.7',
+                fontFamily: "'Crimson Text', serif",
+                borderLeft: '1px solid rgba(200,146,42,0.3)',
+                paddingLeft: '10px',
+                fontStyle: 'italic',
+              }}
+            >
+              {interimText}
+              <span
+                style={{
+                  display: 'inline-block',
+                  width: '2px',
+                  height: '1em',
+                  backgroundColor: '#c8922a',
+                  marginLeft: '2px',
+                  verticalAlign: 'text-bottom',
+                  animation: 'blink 1s step-end infinite',
+                }}
+              />
+            </p>
+          </div>
+        )}
+
         <div ref={bottomRef} />
       </div>
+
+      {/* "New text" pill — shown when user scrolled up and new text arrived */}
+      {showNewTextPill && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs shadow-lg transition-all hover:scale-105"
+          style={{
+            background: 'rgba(200,146,42,0.2)',
+            border: '1px solid rgba(200,146,42,0.4)',
+            color: '#c8922a',
+            backdropFilter: 'blur(8px)',
+          }}
+        >
+          ↓ New text
+        </button>
+      )}
     </div>
   )
 }

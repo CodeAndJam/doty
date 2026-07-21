@@ -1,19 +1,20 @@
-import { exec } from 'node:child_process'
 import fs from 'node:fs'
 import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { Worker as NodeWorker } from 'node:worker_threads'
+import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import {
-  flushRecognizer,
+  feedChunk,
+  finalizeStream,
   freeRecognizer,
   initRecognizer,
   restartRecognizer,
   setOnAsrStatus,
   setOnFlushText,
   setOnInterimText,
-  transcribeFloat32,
+  setOnParagraphBreak,
+  startStream,
 } from './asr'
 import {
   closeDb,
@@ -49,40 +50,72 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
-import { migrateFromJson } from './metadata-cache'
 import {
-  DEFAULT_HOTWORDS_PATH,
-  DENOISER_MODEL_PATH,
-  DENOISER_MODEL_URL,
-  getSttModelInfo,
-  isDenoiserReady,
-  isRerankerCached,
-  isVadReady,
-  STT_MODELS,
-  type SttModelType,
-  VAD_MODEL_PATH,
-  VAD_MODEL_URL,
-} from './model-paths'
+  handleEmbeddingResult,
+  pauseEmbedding,
+  resumeEmbedding,
+  setEmbeddingFiles,
+  setOnEmbeddingProgress,
+  startEmbeddingQueue,
+  stopEmbeddingQueue,
+} from './embedding-queue'
+import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
+import { migrateFromJson } from './metadata-cache'
+import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
+import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import {
+  disposeInterpreter,
+  feedTranscript,
+  isEmbeddingModelReady,
+  loadEmbeddingModel,
+  loadSceneModel,
+  requestEmbedding as requestEmbeddingFromInterpreter,
+  setOnEmbedding,
+  setOnStatus as setOnLlmStatus,
+  setOnSceneUpdate,
+  startInterpreting,
+  stopInterpreting,
+} from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
+import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
-/** Download a file from a URL (follows redirects). Ensures parent dir exists. */
-function downloadFile(url: string, destPath: string): Promise<void> {
+/** Download a file from a URL with progress reporting. Follows up to 10 redirects. */
+function downloadFile(
+  url: string,
+  destPath: string,
+  onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
     const file = fs.createWriteStream(destPath)
+    let redirectCount = 0
     const get = (u: string) => {
-      https
-        .get(u, (res) => {
-          if (res.statusCode === 301 || res.statusCode === 302) {
+      if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
+      const mod = u.startsWith('https') ? https : require('node:http')
+      mod
+        .get(u, (res: any) => {
+          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
             return get(res.headers.location!)
           }
           if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
-          res.pipe(file)
-          file.on('finish', () => file.close(() => resolve()))
+          const total = parseInt(res.headers['content-length'] || '0', 10)
+          let downloaded = 0
+          res.on('data', (chunk: Buffer) => {
+            downloaded += chunk.length
+            file.write(chunk)
+            if (total > 0 && onProgress) {
+              onProgress(
+                Math.round((downloaded / total) * 100),
+                Math.round(downloaded / 1024 / 1024),
+                Math.round(total / 1024 / 1024),
+              )
+            }
+          })
+          res.on('end', () => file.close(() => resolve()))
           res.on('error', reject)
         })
         .on('error', reject)
@@ -91,26 +124,15 @@ function downloadFile(url: string, destPath: string): Promise<void> {
   })
 }
 
-/** Download auxiliary STT models (VAD, denoiser) if not present. Non-fatal. */
-async function downloadAuxModels(): Promise<void> {
-  // Silero VAD (~2MB)
-  if (!isVadReady()) {
-    try {
-      await downloadFile(VAD_MODEL_URL, VAD_MODEL_PATH)
-      console.log('[main] Silero VAD model downloaded')
-    } catch (e) {
-      console.error('[main] VAD download failed (non-fatal):', e)
-    }
-  }
+// ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
 
-  // GTCRN speech denoiser (~200KB)
-  if (!isDenoiserReady()) {
-    try {
-      await downloadFile(DENOISER_MODEL_URL, DENOISER_MODEL_PATH)
-      console.log('[main] GTCRN denoiser model downloaded')
-    } catch (e) {
-      console.error('[main] Denoiser download failed (non-fatal):', e)
-    }
+/** Check if the reranker model is already cached */
+function isRerankerCached(): boolean {
+  const rerankerDir = join(app.getPath('home'), '.doty', 'hf-cache', 'cross-encoder', 'mmarco-mMiniLMv2-L12-H384-v1')
+  try {
+    return fs.existsSync(join(rerankerDir, 'onnx', 'model.onnx'))
+  } catch {
+    return false
   }
 }
 
@@ -441,6 +463,11 @@ function registerMusicProtocol() {
   })
 }
 
+/** Request embedding for a scene description (id=0 for scene embeddings) */
+function requestSceneEmbedding(sceneText: string) {
+  requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -462,49 +489,107 @@ app.whenReady().then(async () => {
   mainWindow?.webContents.send('model:status', { ready })
 
   // Always set up ASR callbacks (process starts lazily on first transcribe)
-  setOnFlushText((text) => {
-    mainWindow?.webContents.send('stt:transcript', text)
-    const file = getActiveSessionFile()
-    if (file) {
-      if (!sessionStartTime) sessionStartTime = Date.now()
-      const elapsed = Date.now() - sessionStartTime
-      sessionOps.appendCue(file, elapsed, text)
-    }
-  })
   setOnInterimText((text) => {
     mainWindow?.webContents.send('stt:interim', text)
   })
   setOnAsrStatus((status) => {
     mainWindow?.webContents.send('stt:status', status)
   })
+  setOnParagraphBreak(() => {
+    mainWindow?.webContents.send('stt:paragraph-break')
+  })
 
-  if (ready) {
-    // Download auxiliary STT models (VAD, denoiser) if not present
-    await downloadAuxModels()
-    // Pre-download reranker model in main process (worker fetch stalls in Electron)
-    downloadRerankerModel().catch(() => {})
+  // ── Scene Interpreter + Recommendation wiring ────────────────────────────
+  // Initialize vector tables for track embeddings
+  initVectorTables()
 
-    const sttModel = store.get('sttModel', '') as string
-    if (sttModel === 'voxmlx') {
-      // Pre-load MLX bridge immediately for faster first transcription
-      try {
-        initRecognizer()
-      } catch (e) {
-        console.error('MLX preload error:', e)
+  // Feed transcript to scene interpreter on each flush
+  setOnFlushText((text, elapsedMs) => {
+    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
+    const file = getActiveSessionFile()
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      const elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text)
+    }
+    // Feed to scene interpreter
+    feedTranscript(text)
+    // Fast-path check for instant triggers
+    const fastRec = fastPathCheck(text)
+    if (fastRec && fastRec.files.length > 0) {
+      mainWindow?.webContents.send('music:recommendations', fastRec.files)
+      startCooldown()
+    }
+  })
+
+  // Scene interpreter produces results → embed → vector search → recommend
+  setOnSceneUpdate((scene) => {
+    mainWindow?.webContents.send('scene:update', scene)
+    // Embed the scene description for vector search
+    if (isEmbeddingModelReady()) {
+      requestSceneEmbedding(scene.scene)
+    }
+  })
+
+  // Handle embeddings from the LLM process
+  setOnEmbedding((id, vector) => {
+    // Check if this is a scene embedding (id=0) or a track embedding (id>0)
+    if (id === 0) {
+      // Scene embedding → run slow-path recommendation
+      const rec = slowPathRecommend(vector)
+      if (rec.files.length > 0) {
+        mainWindow?.webContents.send('music:recommendations', rec.files)
+        mainWindow?.webContents.send('recommend:confidence', rec.confidence)
       }
     } else {
-      setTimeout(() => {
-        try {
-          initRecognizer()
-        } catch (e) {
-          console.error('ASR init error:', e)
-        }
-      }, 2000)
+      // Track embedding → handled by embedding queue
+      handleEmbeddingResult(id, vector)
+    }
+  })
+
+  setOnLlmStatus((status) => {
+    mainWindow?.webContents.send('llm:status', status)
+  })
+
+  // Set up embedding progress reporting
+  setOnEmbeddingProgress((stats) => {
+    mainWindow?.webContents.send('embedding:progress', stats)
+  })
+
+  if (ready) {
+    // Pre-download reranker model in main process (worker fetch stalls in Electron)
+    downloadRerankerModel().catch(() => {})
+    // Init ASR immediately — transcribe-cpp loads in ~160ms
+    try {
+      initRecognizer()
+    } catch (e) {
+      console.error('ASR init error:', e)
+    }
+    // Init scene interpreter if model is available (and non-empty)
+    const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
+    const llmPath = getLlmModelPath(llmModelId)
+    if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
+      loadSceneModel(llmPath)
+      startInterpreting()
+    }
+    // Init embedding model if available (and non-empty)
+    const embPath = getEmbeddingModelPath()
+    if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
+      loadEmbeddingModel(embPath)
     }
   }
 
+  // Start background embedding queue if music folder is set
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) launchScanner(musicFolder)
+  if (musicFolder) {
+    launchScanner(musicFolder)
+    // Kick off embedding queue after a delay (let scanner populate files first)
+    setTimeout(() => {
+      const files = listMusicFiles(musicFolder)
+      setEmbeddingFiles(files)
+      startEmbeddingQueue()
+    }, 5000)
+  }
 
   // Forward Discord state changes to renderer
   onStateChange((discordState) => {
@@ -517,6 +602,9 @@ app.whenReady().then(async () => {
 
 app.on('before-quit', () => {
   freeRecognizer()
+  stopInterpreting()
+  disposeInterpreter()
+  stopEmbeddingQueue()
   stopScanner()
   closeDb()
   destroyDiscord()
@@ -552,23 +640,26 @@ ipcMain.handle('mic:open-settings', () => {
 ipcMain.handle('stt:start', () => {
   sessionStartTime = Date.now()
   startWavRecording()
+  startStream()
+  pauseEmbedding() // STT has priority over background embedding
   return { ok: true }
 })
 ipcMain.handle('stt:stop', () => {
-  flushRecognizer()
+  finalizeStream()
   finalizeWavRecording()
+  resumeEmbedding() // resume background work
   return { ok: true }
 })
 
-// Renderer sends 1s PCM segments as Float32Array buffers.
-// The ASR worker uses Silero VAD to detect speech boundaries, then
-// transcribes each speech segment. Results are sent back via 'stt:transcript'.
+// Renderer sends PCM segments as Float32Array buffers.
+// In streaming mode, feeds chunks to the active stream.
+// Results come back via 'stt:transcript' and 'stt:interim' events.
 ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
   try {
     const samples = new Float32Array(buffer)
     appendWavChunk(samples)
-    const text = await transcribeFloat32(samples, 16000)
-    return { text }
+    feedChunk(samples)
+    return { text: '' } // text delivered via events
   } catch (e) {
     console.error('Transcribe error:', e)
     return { text: '' }
@@ -705,70 +796,13 @@ ipcMain.handle('session:get-last', () => {
   return sessionOps.getLastSession()
 })
 
-// ── IPC: Reprocess ────────────────────────────────────────────────────────────
+// ── IPC: Reprocess (TODO: rewrite for transcribe-cpp batch mode) ──────────────
 
 let reprocessWorker: NodeWorker | null = null
 
-ipcMain.handle('reprocess:start', (_e, sessionFile: string, modelId: string) => {
-  if (reprocessWorker) return { ok: false, reason: 'already running' }
-  const wavPath = sessionFile.replace(/\.vtt$/, '.wav')
-  if (!fs.existsSync(wavPath)) return { ok: false, reason: 'no WAV file' }
-
-  const model = STT_MODELS.find((m) => m.id === modelId)
-  if (!model) return { ok: false, reason: 'unknown model' }
-
-  const hotwordsFile = store.get('hotwordsFile', '') as string
-  const workerPath = join(__dirname, 'reprocess-worker.js')
-
-  reprocessWorker = new NodeWorker(workerPath, {
-    workerData: {
-      wavPath,
-      modelDir: model.dir,
-      sttModel: model.id,
-      vadModelPath: VAD_MODEL_PATH,
-      hotwordsFile: hotwordsFile && fs.existsSync(hotwordsFile) ? hotwordsFile : null,
-      denoiserModelPath: DENOISER_MODEL_PATH,
-    },
-  })
-
-  const cues: Array<{ start: string; end: string; text: string }> = []
-
-  reprocessWorker.on('message', (msg) => {
-    if (msg.type === 'progress') {
-      mainWindow?.webContents.send('reprocess:progress', { percent: msg.percent })
-    } else if (msg.type === 'cue') {
-      cues.push({ start: msg.start, end: msg.end, text: msg.text })
-    } else if (msg.type === 'done') {
-      // Overwrite VTT with new cues, preserving NOTE block
-      sessionOps.rewriteSessionCues(sessionFile, cues)
-      mainWindow?.webContents.send('reprocess:done', { file: sessionFile, cueCount: cues.length })
-      reprocessWorker = null
-    } else if (msg.type === 'error') {
-      mainWindow?.webContents.send('reprocess:error', { message: msg.message })
-      reprocessWorker = null
-    }
-  })
-
-  reprocessWorker.on('error', (e) => {
-    mainWindow?.webContents.send('reprocess:error', { message: String(e) })
-    reprocessWorker = null
-  })
-
-  reprocessWorker.on('exit', () => {
-    reprocessWorker = null
-  })
-
-  // Send the work message to start processing
-  reprocessWorker.postMessage({
-    wavPath,
-    modelDir: model.dir,
-    sttModel: model.id,
-    vadModelPath: VAD_MODEL_PATH,
-    hotwordsFile: hotwordsFile && fs.existsSync(hotwordsFile) ? hotwordsFile : null,
-    denoiserModelPath: DENOISER_MODEL_PATH,
-  })
-
-  return { ok: true }
+ipcMain.handle('reprocess:start', (_e, _sessionFile: string, _modelId: string) => {
+  // ponytail: reprocess needs rewrite for transcribe-cpp. Stub for now.
+  return { ok: false, reason: 'Reprocess not yet available with new STT engine' }
 })
 
 ipcMain.handle('reprocess:cancel', () => {
@@ -781,13 +815,7 @@ ipcMain.handle('reprocess:cancel', () => {
 
 // ── IPC: Model download ───────────────────────────────────────────────────────
 
-/** Check if the user has a usable STT model: they must have selected one and it must be ready */
-function isAnySttModelReady(): boolean {
-  const selected = store.get('sttModel', '') as string
-  if (!selected) return false // fresh install — no model selected yet
-  const model = STT_MODELS.find((m) => m.id === selected)
-  return model ? model.isReady() : false
-}
+// isAnySttModelReady imported from model-paths
 
 ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
 
@@ -836,210 +864,135 @@ ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {
   return { ok: true }
 })
 
-// ── IPC: Hotwords ─────────────────────────────────────────────────────────────
+// ── IPC: Scene Interpreter (LLM) ──────────────────────────────────────────────
 
-ipcMain.handle('settings:get-hotwords-file', () => store.get('hotwordsFile', ''))
+ipcMain.handle('llm:get-model-list', () => {
+  return LLM_MODELS.map((m) => ({
+    id: m.id,
+    label: m.label,
+    description: m.description,
+    size: m.size,
+    ready: m.isReady(),
+  }))
+})
 
-ipcMain.handle('settings:set-hotwords-file', (_e, filePath: string) => {
-  store.set('hotwordsFile', filePath)
-  // Restart only sherpa-onnx models (voxtral doesn't use hotwords)
-  const currentModel = store.get('sttModel', 'parakeet') as string
-  if (currentModel !== 'voxtral') {
-    try {
-      restartRecognizer()
-    } catch (e) {
-      console.error('ASR restart error:', e)
-    }
-  }
+ipcMain.handle('llm:get-model', () => {
+  return store.get('llmModel', 'qwen3-0.6b') as string
+})
+
+ipcMain.handle('llm:set-model', (_e, modelId: LlmModelType) => {
+  const current = store.get('llmModel', '') as string
+  if (current === modelId) return { ok: true }
+  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
+  store.set('llmModel', modelId)
+  // Reload the scene model
+  loadSceneModel(getLlmModelPath(modelId))
   return { ok: true }
 })
 
-ipcMain.handle('settings:pick-hotwords-file', async () => {
-  const result = await dialog.showOpenDialog(mainWindow!, {
-    properties: ['openFile'],
-    title: 'Select Hotwords File',
-    filters: [{ name: 'Text Files', extensions: ['txt'] }],
-  })
-  if (!result.canceled && result.filePaths[0]) {
-    store.set('hotwordsFile', result.filePaths[0])
-    const currentModel = store.get('sttModel', 'parakeet') as string
-    if (currentModel !== 'voxtral') {
-      try {
-        restartRecognizer()
-      } catch (e) {
-        console.error('ASR restart error:', e)
-      }
-    }
-    return result.filePaths[0]
+ipcMain.handle('llm:download', async (_e, modelId: LlmModelType) => {
+  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (modelInfo.isReady()) {
+    store.set('llmModel', modelId)
+    loadSceneModel(getLlmModelPath(modelId))
+    return { ok: true }
   }
-  return null
-})
-
-ipcMain.handle('settings:create-default-hotwords', () => {
-  const defaultContent = `# Doty Hotwords — one phrase per line
-# Add campaign-specific names, places, spells, etc.
-# Lines starting with # are ignored by sherpa-onnx
-#
-# Examples:
-# Fireball
-# Eldritch Blast
-# Strahd
-# Waterdeep
-# Dungeons and Dragons
-`
+  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
   try {
-    if (!fs.existsSync(DEFAULT_HOTWORDS_PATH)) {
-      fs.mkdirSync(join(DEFAULT_HOTWORDS_PATH, '..'), { recursive: true })
-      fs.writeFileSync(DEFAULT_HOTWORDS_PATH, defaultContent, 'utf-8')
-    }
-    store.set('hotwordsFile', DEFAULT_HOTWORDS_PATH)
-    return { ok: true, path: DEFAULT_HOTWORDS_PATH }
+    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
+      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
+    })
+    store.set('llmModel', modelId)
+    loadSceneModel(getLlmModelPath(modelId))
+    startInterpreting()
+    return { ok: true }
   } catch (e) {
     return { ok: false, reason: String(e) }
   }
 })
 
-ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
-  const model = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
-
-  if (model.downloadMethod === 'pip') {
-    // Create venv and install voxmlx automatically
-    const venvDir = join(app.getPath('home'), '.doty', 'voxmlx-env')
-    const venvPy = join(venvDir, 'bin', 'python3')
-    const steps = [
-      { label: 'Creating Python environment...', cmd: `python3 -m venv "${venvDir}"` },
-      { label: 'Installing voxmlx (MLX)...', cmd: `"${venvPy}" -m pip install --upgrade voxmlx` },
-    ]
-    try {
-      for (let i = 0; i < steps.length; i++) {
-        mainWindow?.webContents.send('stt:download-progress', {
-          model: model.id,
-          percent: Math.round(((i + 0.5) / steps.length) * 100),
-        })
-        await new Promise<void>((resolve, reject) => {
-          exec(steps[i].cmd, { timeout: 300000 }, (err) => {
-            if (err) reject(new Error(`${steps[i].label} failed: ${err.message}`))
-            else resolve()
-          })
-        })
-      }
-      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 100, done: true })
-      store.set('sttModel', model.id)
-      mainWindow?.webContents.send('model:status', { ready: true })
-      downloadAuxModels().catch(() => {})
-      downloadRerankerModel().catch(() => {})
-      return { ok: true }
-    } catch (e) {
-      mainWindow?.webContents.send('stt:download-progress', { model: model.id, percent: 0, done: true })
-      return { ok: false, reason: String(e) }
-    }
+ipcMain.handle('llm:download-embedding', async () => {
+  if (EMBEDDING_MODEL.isReady()) {
+    loadEmbeddingModel(getEmbeddingModelPath())
+    return { ok: true }
   }
+  const destPath = join(MODELS_DIR, EMBEDDING_MODEL.ggufFile)
+  try {
+    await downloadFile(EMBEDDING_MODEL.url, destPath, (percent, downloadedMB, totalMB) => {
+      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
+    })
+    loadEmbeddingModel(getEmbeddingModelPath())
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
+})
 
-  if (model.downloadMethod === 'auto') {
-    // Voxtral and similar: auto-downloaded by transformers.js on first use.
-    // Don't block — return immediately so the UI transitions to the main screen.
-    store.set('sttModel', model.id)
+ipcMain.handle('llm:get-embedding-status', () => ({
+  ready: EMBEDDING_MODEL.isReady(),
+  label: EMBEDDING_MODEL.label,
+  size: EMBEDDING_MODEL.size,
+}))
+
+ipcMain.handle('embedding:get-progress', () => {
+  const musicFolder = store.get('musicFolder', '') as string
+  const total = musicFolder ? listMusicFiles(musicFolder).length : 0
+  return getEmbeddingStats(total)
+})
+
+// ── IPC: Hotwords (legacy stubs — transcribe-cpp doesn't use hotwords) ────────
+
+ipcMain.handle('settings:get-hotwords-file', () => '')
+ipcMain.handle('settings:set-hotwords-file', () => ({ ok: true }))
+ipcMain.handle('settings:pick-hotwords-file', async () => null)
+ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }))
+
+ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
+  const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
+
+  if (modelInfo.isReady()) {
+    store.set('sttModel', modelInfo.id)
+    initRecognizer()
     mainWindow?.webContents.send('model:status', { ready: true })
-    // Fire-and-forget: aux models + reranker download in background
-    downloadAuxModels().catch(() => {})
-    downloadRerankerModel().catch(() => {})
-    // Don't initRecognizer here — it will start on first transcribe-chunk
     return { ok: true }
   }
 
-  // tar.bz2 download + extract
-  fs.mkdirSync(join(model.dir, '..'), { recursive: true })
-  const tarName = `${model.id}.tar.bz2`
-  const tarPath = join(model.dir, '..', tarName)
-
-  await new Promise<void>((resolve, reject) => {
-    const file = fs.createWriteStream(tarPath)
-    const get = (url: string) => {
-      https
-        .get(url, (res) => {
-          if (res.statusCode === 301 || res.statusCode === 302) {
-            return get(res.headers.location!)
-          }
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
-
-          const total = parseInt(res.headers['content-length'] || '0', 10)
-          let downloaded = 0
-
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length
-            file.write(chunk)
-            if (total > 0) {
-              mainWindow?.webContents.send('model:progress', {
-                percent: Math.round((downloaded / total) * 100),
-                downloadedMB: Math.round(downloaded / 1024 / 1024),
-                totalMB: Math.round(total / 1024 / 1024),
-              })
-            }
-          })
-          res.on('end', () => file.close(() => resolve()))
-          res.on('error', reject)
-        })
-        .on('error', reject)
-    }
-    get(model.url)
-  })
-
-  await new Promise<void>((resolve, reject) => {
-    const destDir = join(model.dir, '..')
-    exec(`tar -xjf "${tarPath}" -C "${destDir}"`, (err) => {
-      if (err) return reject(err)
-      try {
-        fs.unlinkSync(tarPath)
-      } catch {
-        /* non-fatal */
-      }
-      // Rename extracted directory to match expected model.dir
-      if (!fs.existsSync(model.dir)) {
-        const entries = fs.readdirSync(destDir, { withFileTypes: true })
-        const candidate = entries.find(
-          (e) =>
-            e.isDirectory() &&
-            e.name !== model.dir.split('/').pop() &&
-            fs.existsSync(join(destDir, e.name, 'tokens.txt')),
-        )
-        if (candidate) {
-          fs.renameSync(join(destDir, candidate.name), model.dir)
-        }
-      }
-      resolve()
+  // Download single GGUF file
+  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  try {
+    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
+      mainWindow?.webContents.send('model:progress', { percent, downloadedMB, totalMB })
     })
-  })
 
-  store.set('sttModel', model.id)
-  initRecognizer()
-  setOnFlushText((text) => {
-    mainWindow?.webContents.send('stt:transcript', text)
-    const file = getActiveSessionFile()
-    if (file) {
-      if (!sessionStartTime) sessionStartTime = Date.now()
-      const elapsed = Date.now() - sessionStartTime
-      sessionOps.appendCue(file, elapsed, text)
-    }
-  })
-  mainWindow?.webContents.send('model:status', { ready: true })
-
-  await downloadAuxModels()
-  downloadRerankerModel().catch(() => {})
-
-  return { ok: true }
+    store.set('sttModel', modelInfo.id)
+    initRecognizer()
+    mainWindow?.webContents.send('model:status', { ready: true })
+    downloadRerankerModel().catch(() => {})
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, reason: String(e) }
+  }
 })
 
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
 
 ipcMain.handle('stt:get-model', () => {
-  return store.get('sttModel', 'parakeet') as string
+  return store.get('sttModel', 'parakeet-unified-en') as string
 })
 
-ipcMain.handle('stt:set-model', (_e, model: SttModelType) => {
+ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
   const current = store.get('sttModel', '') as string
-  if (current === model) return { ok: true } // no change
-  store.set('sttModel', model)
+  if (current === modelId) return { ok: true }
+  const modelInfo = STT_MODELS.find((m) => m.id === modelId)
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
+  if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
+  store.set('sttModel', modelId)
   restartRecognizer()
+  // Notify renderer about the switch
+  mainWindow?.webContents.send('stt:model-switched', { id: modelId, label: modelInfo.label })
   return { ok: true }
 })
 
@@ -1047,76 +1000,17 @@ ipcMain.handle('stt:get-model-status', () => {
   return Object.fromEntries(STT_MODELS.map((m) => [m.id, m.isReady()]))
 })
 
-/** Return the model registry for the renderer (without functions) */
+/** Return the model registry for the renderer */
 ipcMain.handle('stt:get-model-list', () => {
   return STT_MODELS.map((m) => ({
     id: m.id,
     label: m.label,
     description: m.description,
     size: m.size,
-    downloadMethod: m.downloadMethod,
+    streaming: m.streaming,
+    languages: m.languages,
     ready: m.isReady(),
   }))
-})
-
-ipcMain.handle('stt:download-whisper', async (_e, model: 'whisper-medium' | 'whisper-large-v3') => {
-  const info = getSttModelInfo(model)
-  if (info.isReady()) return { ok: true, alreadyDownloaded: true }
-
-  const modelsDir = join(info.dir, '..')
-  fs.mkdirSync(modelsDir, { recursive: true })
-  const tarName = model === 'whisper-medium' ? 'whisper-medium.tar.bz2' : 'whisper-large-v3.tar.bz2'
-  const tarPath = join(modelsDir, tarName)
-
-  // Download with progress
-  await new Promise<void>((resolve, reject) => {
-    const file = fs.createWriteStream(tarPath)
-    const get = (url: string) => {
-      https
-        .get(url, (res) => {
-          if (res.statusCode === 301 || res.statusCode === 302) {
-            return get(res.headers.location!)
-          }
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`))
-
-          const total = Number.parseInt(res.headers['content-length'] || '0', 10)
-          let downloaded = 0
-
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length
-            file.write(chunk)
-            if (total > 0) {
-              mainWindow?.webContents.send('stt:download-progress', {
-                model,
-                percent: Math.round((downloaded / total) * 100),
-                downloadedMB: Math.round(downloaded / 1024 / 1024),
-                totalMB: Math.round(total / 1024 / 1024),
-              })
-            }
-          })
-          res.on('end', () => file.close(() => resolve()))
-          res.on('error', reject)
-        })
-        .on('error', reject)
-    }
-    get(info.url)
-  })
-
-  // Extract
-  await new Promise<void>((resolve, reject) => {
-    exec(`tar -xjf "${tarPath}" -C "${modelsDir}"`, (err) => {
-      if (err) return reject(err)
-      try {
-        fs.unlinkSync(tarPath)
-      } catch {
-        /* non-fatal */
-      }
-      resolve()
-    })
-  })
-
-  mainWindow?.webContents.send('stt:download-progress', { model, percent: 100, done: true })
-  return { ok: true }
 })
 
 // ── IPC: Discord ──────────────────────────────────────────────────────────────
