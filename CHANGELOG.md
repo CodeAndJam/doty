@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/CodeAndJam/doty/compare/v2.5.0...v3.0.0) (2026-07-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **asr:** sherpa-onnx-node removed, transcribe-cpp is now the STT engine
+
+### Features
+
+* **asr:** replace sherpa-onnx with transcribe-cpp + LLM recommendation system ([b9e33ac](https://github.com/CodeAndJam/doty/commit/b9e33ac57d340cb2e7abd86883a73070e22ed70e))
+
 ## [2.5.0](https://github.com/CodeAndJam/doty/compare/v2.4.0...v2.5.0) (2026-06-09)
 
 
