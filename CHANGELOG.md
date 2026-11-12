@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.0](https://github.com/CodeAndJam/doty/compare/v3.0.2...v3.1.0) (2026-11-12)
+
+
+### Features
+
+* move reranker off main, focus STT on pt-PT, resume downloads ([#110](https://github.com/CodeAndJam/doty/issues/110)) ([d42c029](https://github.com/CodeAndJam/doty/commit/d42c0299a5eee98ad768f93c5d130dc9466ac68b))
+* **onboarding:** skip speech model install and download in background ([#100](https://github.com/CodeAndJam/doty/issues/100)) ([9af73a7](https://github.com/CodeAndJam/doty/commit/9af73a7364abf1d17cc0ca89a451bf957191828a))
+
 ## [3.0.2](https://github.com/CodeAndJam/doty/compare/v3.0.1...v3.0.2) (2026-11-12)
 
 
