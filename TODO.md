@@ -2,9 +2,6 @@
 
 ## Pending
 
-- [ ] `pnpm audit` vulns (20 total, none exploitable at runtime):
-  - 12× high: `tar` via `@discordjs/opus > @discordjs/node-pre-gyp` — install-time only, waiting on `@discordjs/node-pre-gyp` to bump `tar`
-  - 8× moderate: `undici` via `discord.js` and `jsdom` — waiting on upstream bumps
 - [ ] #12 Autopilot mode — beta quality improvements:
   - [ ] Add Portuguese keywords to mood profiles (music + SFX heuristics)
   - [ ] Fix tokenizer to preserve accented characters (ã, ç, é, etc.)
@@ -28,6 +25,7 @@
 
 ## Done
 
+- [x] `pnpm audit` clean (0 vulns): all deps on current major, 10-day release hold via `minimumReleaseAge`, transitive CVEs pinned via overrides
 - [x] Recommendation transparency: ranker type + confidence badge on Suggestions header, collapsible Decision Log panel for beta testing
 - [x] Discord: asarUnpack config for @discordjs/opus, sodium-native, opusscript, prism-media
 - [x] Upgrade chokidar v3 to v4 (drops fsevents dependency, uses native fs.watch)
