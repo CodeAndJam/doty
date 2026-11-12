@@ -27,6 +27,7 @@ Output JSON only:
 
 Rules:
 - Focus on the DM's narration, not player chatter
+- The table usually speaks European Portuguese (pt-PT): interpret pt-PT idiom, and write keywords in European Portuguese
 - Describe what is HAPPENING NOW, not what happened before
 - intensity: 0.0=calm, 0.5=moderate, 1.0=peak action
 - keywords: 3-5 words describing setting/action/atmosphere`

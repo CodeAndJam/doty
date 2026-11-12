@@ -1,5 +1,38 @@
 # Changelog
 
+## [3.1.0](https://github.com/CodeAndJam/doty/compare/v3.0.2...v3.1.0) (2026-11-12)
+
+
+### Features
+
+* move reranker off main, focus STT on pt-PT, resume downloads ([#110](https://github.com/CodeAndJam/doty/issues/110)) ([d42c029](https://github.com/CodeAndJam/doty/commit/d42c0299a5eee98ad768f93c5d130dc9466ac68b))
+* **onboarding:** skip speech model install and download in background ([#100](https://github.com/CodeAndJam/doty/issues/100)) ([9af73a7](https://github.com/CodeAndJam/doty/commit/9af73a7364abf1d17cc0ca89a451bf957191828a))
+
+## [3.0.2](https://github.com/CodeAndJam/doty/compare/v3.0.1...v3.0.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **discord:** stop a refused keychain from blocking the connection ([#104](https://github.com/CodeAndJam/doty/issues/104)) ([d898036](https://github.com/CodeAndJam/doty/commit/d898036c88df8bfed495734e1bc196e7ee80d5b2))
+
+## [3.0.1](https://github.com/CodeAndJam/doty/compare/v3.0.0...v3.0.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **discord:** stop timing out healthy gateway handshakes ([#102](https://github.com/CodeAndJam/doty/issues/102)) ([70bd785](https://github.com/CodeAndJam/doty/commit/70bd785a531ed201d5b8531047c19fd8b9a00c24))
+
+## [3.0.0](https://github.com/CodeAndJam/doty/compare/v2.5.0...v3.0.0) (2026-07-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* **asr:** sherpa-onnx-node removed, transcribe-cpp is now the STT engine
+
+### Features
+
+* **asr:** replace sherpa-onnx with transcribe-cpp + LLM recommendation system ([b9e33ac](https://github.com/CodeAndJam/doty/commit/b9e33ac57d340cb2e7abd86883a73070e22ed70e))
+
 ## [2.5.0](https://github.com/CodeAndJam/doty/compare/v2.4.0...v2.5.0) (2026-06-09)
 
 

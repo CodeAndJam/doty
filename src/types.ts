@@ -1,7 +1,13 @@
 export interface ProgressPayload {
+  modelId?: string
   percent: number
   downloadedMB: number
   totalMB: number
+}
+
+export interface SttDownloadState {
+  downloading: { modelId: string; percent: number } | null
+  error: { modelId: string; error: string } | null
 }
 
 export interface ScanProgress {
@@ -164,7 +170,7 @@ export interface DotyAPI {
   micOpenSettings: () => Promise<void>
 
   // STT
-  sttStart: () => Promise<{ ok: boolean }>
+  sttStart: () => Promise<{ ok: boolean; reason?: string }>
   sttStop: () => Promise<{ ok: boolean }>
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
   onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => () => void
@@ -200,8 +206,11 @@ export interface DotyAPI {
   onRecommendationConfidence: (cb: (confidence: number) => void) => () => void
 
   // Model
-  modelStatus: () => Promise<{ ready: boolean }>
+  modelStatus: () => Promise<{ ready: boolean; onboardingSkipped: boolean }>
   downloadModel: (modelId?: string) => Promise<{ ok: boolean; reason?: string }>
+  getSttDownloadState: () => Promise<SttDownloadState>
+  cancelSttDownload: () => Promise<{ ok: boolean }>
+  skipModelOnboarding: () => Promise<{ ok: boolean }>
   getSttModelList: () => Promise<
     Array<{
       id: string
@@ -210,6 +219,7 @@ export interface DotyAPI {
       size: string
       streaming: boolean
       languages: string[]
+      default?: boolean
       ready: boolean
     }>
   >
@@ -221,10 +231,14 @@ export interface DotyAPI {
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
+  onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => () => void
+  onModelDownloadCancelled: (cb: (e: { modelId: string }) => void) => () => void
 
   // STT model selection
   getSttModel: () => Promise<string>
   setSttModel: (model: string) => Promise<{ ok: boolean }>
+  getSttLanguage: () => Promise<string>
+  setSttLanguage: (language: string) => Promise<{ ok: boolean; reason?: string }>
   getSttModelStatus: () => Promise<Record<string, boolean>>
 
   // Transcripts

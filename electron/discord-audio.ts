@@ -6,7 +6,7 @@
 import { exec } from 'node:child_process'
 import fs from 'node:fs'
 import { join } from 'node:path'
-import { createAudioResource, StreamType } from '@discordjs/voice'
+import { type AudioResource, createAudioResource, StreamType } from '@discordjs/voice'
 import prism from 'prism-media'
 
 // ffmpeg path — use bundled ffmpeg-static if available
@@ -23,7 +23,12 @@ try {
  * then pipes through an Opus encoder for Discord.
  * @param seekSeconds — start decoding at this offset (0 = beginning)
  */
-export function createMusicResource(musicFolder: string, filename: string, volume = 1.0, seekSeconds = 0) {
+export function createMusicResource(
+  musicFolder: string,
+  filename: string,
+  volume = 1.0,
+  seekSeconds = 0,
+): AudioResource {
   const filePath = join(musicFolder, filename)
 
   if (!fs.existsSync(filePath)) {
@@ -65,7 +70,7 @@ export function createMusicResource(musicFolder: string, filename: string, volum
  * @param absolutePath — absolute path to the SFX audio file
  * @param volume — playback volume 0..1
  */
-export function createSfxResource(absolutePath: string, volume = 1.0) {
+export function createSfxResource(absolutePath: string, volume = 1.0): AudioResource {
   if (!fs.existsSync(absolutePath)) {
     throw new Error(`[discord-audio] SFX file not found: ${absolutePath}`)
   }

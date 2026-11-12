@@ -4,6 +4,7 @@ import { watch as chokidarWatch, type FSWatcher } from 'chokidar'
 import { analyzeFile } from './analyzer'
 import type { FullTrackMetadata } from './metadata-cache'
 import { clearCache, getCache, getCached, removeCached, setCached } from './metadata-cache'
+import { invalidateMusicLibrary } from './music-library'
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
 const CONCURRENCY = 2
@@ -50,6 +51,7 @@ function processNext(gen: number) {
         if (queue.length > 0) {
           processNext(gen)
         } else if (active === 0) {
+          invalidateMusicLibrary()
           onComplete?.()
         }
       })
@@ -96,6 +98,7 @@ export function startScanner(
 
   if (force) clearCache()
 
+  invalidateMusicLibrary()
   const cache = getCache()
   const allFiles = listAll(folder)
 
@@ -129,6 +132,7 @@ export function startScanner(
 
     watcher.on('add', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) {
+        invalidateMusicLibrary()
         enqueue(absPath) // enqueue() bumps `total`
       }
     })
@@ -139,6 +143,7 @@ export function startScanner(
 
     watcher.on('unlink', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) {
+        invalidateMusicLibrary()
         removeCached(relPath(absPath))
         onLibraryChanged?.()
       }

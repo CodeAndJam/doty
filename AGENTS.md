@@ -70,6 +70,10 @@ Maintain a `TODO.md` file at the project root to track pending work, known issue
 
 ## Local Development
 
+Dependencies are held for **10 days** after publish before adoption
+(`minimumReleaseAge` in `pnpm-workspace.yaml`). Bump a version only when it is
+older than that; security fixes can be exempted with `minimumReleaseAgeExclude`.
+
 ```bash
 # Install deps and rebuild native addons
 npm install
@@ -96,7 +100,7 @@ npm run rebuild
 
 ## Model Files
 
-- Parakeet TDT v3 ONNX (~640 MB) — downloaded on first launch to `~/.doty/models/`
-- ms-marco-MiniLM-L-6-v2 ONNX (~80 MB) — downloaded on first recommendation to `~/.doty/hf-cache/`
+- Default STT: Nemotron 3.5 streaming GGUF (~716 MB), focused on `pt-PT`; other GGUF models are selectable in Settings. Downloaded to `~/.doty/models/`.
+- Recommendation reranker: multilingual `mmarco-mMiniLMv2-L12` cross-encoder (~80 MB), downloaded on first use to `~/.doty/hf-cache/`. Runs in a worker thread, never on the Electron main thread.
 
 These are never committed to the repository.

@@ -12,6 +12,7 @@
  */
 
 import type { TrackMeta } from '../types'
+import { fold, matchesTag, tokenize } from './keywordMatch'
 
 interface MoodProfile {
   keywords: string[]
@@ -44,6 +45,10 @@ const MOOD_PROFILES: MoodProfile[] = [
       'inimigo',
       'inimigos',
       'chefe',
+      'dragão',
+      'monstro',
+      'feiticeiro',
+      'esqueleto',
     ],
     bpmMin: 120,
     bpmMax: 200,
@@ -91,6 +96,9 @@ const MOOD_PROFILES: MoodProfile[] = [
       'acampamento',
       'descanso',
       'taverna',
+      'taberna',
+      'pousada',
+      'lareira',
       'estalagem',
       'pacífico',
       'calmo',
@@ -127,6 +135,9 @@ const MOOD_PROFILES: MoodProfile[] = [
       'amaldiçoado',
       'cemitério',
       'masmorra',
+      'cripta',
+      'pântano',
+      'maldição',
       'corrompido',
       'obscuro',
       'trevas',
@@ -179,6 +190,8 @@ const MOOD_PROFILES: MoodProfile[] = [
       'heroico',
       'épico',
       'glorioso',
+      'festa',
+      'banquete',
     ],
     bpmMin: 100,
     bpmMax: 160,
@@ -207,6 +220,9 @@ const MOOD_PROFILES: MoodProfile[] = [
       'caminhar',
       'montanha',
       'neve',
+      'bosque',
+      'floresta',
+      'colina',
     ],
     bpmMin: 80,
     bpmMax: 120,
@@ -265,14 +281,6 @@ const MOOD_PROFILES: MoodProfile[] = [
   },
 ]
 
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-}
-
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v))
 }
@@ -296,7 +304,7 @@ function detectMood(tokens: string[]): MoodProfile | null {
   let best: MoodProfile | null = null
   let bestScore = 0
   for (const profile of MOOD_PROFILES) {
-    const score = profile.keywords.filter((k) => tokens.includes(k)).length
+    const score = profile.keywords.filter((k) => tokens.includes(fold(k))).length
     if (score > bestScore) {
       bestScore = score
       best = profile
@@ -346,7 +354,7 @@ export function heuristicRecommend(
 
     // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
     const fileTags = tagsMap[file] || []
-    const tagMatches = fileTags.filter((tag) => tokens.some((t) => tag.includes(t) || t.includes(tag))).length
+    const tagMatches = fileTags.filter((tag) => matchesTag(tokens, tag)).length
     const tagScore = Math.min(1, tagMatches / Math.max(1, fileTags.length)) * 3
 
     let featureScore = 0

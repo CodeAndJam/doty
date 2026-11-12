@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-export type ProgressPayload = { percent: number; downloadedMB: number; totalMB: number }
+export type ProgressPayload = { modelId?: string; percent: number; downloadedMB: number; totalMB: number }
 
 contextBridge.exposeInMainWorld('doty', {
   // Microphone Permission
@@ -87,6 +87,9 @@ contextBridge.exposeInMainWorld('doty', {
   // Model
   modelStatus: () => ipcRenderer.invoke('model:status'),
   downloadModel: (modelId?: string) => ipcRenderer.invoke('model:download', modelId),
+  getSttDownloadState: () => ipcRenderer.invoke('stt:get-download-state'),
+  cancelSttDownload: () => ipcRenderer.invoke('stt:cancel-download'),
+  skipModelOnboarding: () => ipcRenderer.invoke('stt:skip-onboarding'),
   getSttModelList: () => ipcRenderer.invoke('stt:get-model-list'),
   rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
   rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => ipcRenderer.invoke('reranker:score', pairs),
@@ -114,10 +117,22 @@ contextBridge.exposeInMainWorld('doty', {
     ipcRenderer.on('model:status', handler)
     return () => ipcRenderer.removeListener('model:status', handler)
   },
+  onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, e: { modelId: string; error: string }) => cb(e)
+    ipcRenderer.on('model:download-error', handler)
+    return () => ipcRenderer.removeListener('model:download-error', handler)
+  },
+  onModelDownloadCancelled: (cb: (e: { modelId: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, e: { modelId: string }) => cb(e)
+    ipcRenderer.on('model:download-cancelled', handler)
+    return () => ipcRenderer.removeListener('model:download-cancelled', handler)
+  },
 
   // STT model selection
   getSttModel: () => ipcRenderer.invoke('stt:get-model'),
   setSttModel: (model: string) => ipcRenderer.invoke('stt:set-model', model),
+  getSttLanguage: () => ipcRenderer.invoke('stt:get-language'),
+  setSttLanguage: (language: string) => ipcRenderer.invoke('stt:set-language', language),
   getSttModelStatus: () => ipcRenderer.invoke('stt:get-model-status'),
 
   // Transcripts

@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { getModelPath, type SttModelType } from './model-paths'
+import { DEFAULT_STT_LANGUAGE, DEFAULT_STT_MODEL, getModelPath, type SttModelType } from './model-paths'
 import { store } from './store'
 
 const WORKER_PATH = join(__dirname, 'transcribe-worker.js')
@@ -42,6 +42,8 @@ function ensureWorker(): Worker {
     switch (msg.type) {
       case 'ready':
         workerReady = true
+        // Persist the effective language so Settings never claims a focus the model rejected.
+        if (typeof msg.language === 'string') store.set('sttLanguage', msg.language)
         if (onAsrStatus) onAsrStatus('ready')
         break
       case 'text':
@@ -86,10 +88,11 @@ function ensureWorker(): Worker {
 
 /** Initialize the recognizer: load the selected model in the worker */
 export function initRecognizer(): void {
-  const modelId = store.get('sttModel', 'parakeet-unified-en') as SttModelType
+  const modelId = store.get('sttModel', DEFAULT_STT_MODEL) as SttModelType
   const modelPath = getModelPath(modelId)
+  const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
   const w = ensureWorker()
-  w.postMessage({ type: 'load', modelPath })
+  w.postMessage({ type: 'load', modelPath, language })
 }
 
 /** Start a streaming session. Ensures worker is initialized and model is loaded. */

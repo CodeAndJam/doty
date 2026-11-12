@@ -114,13 +114,22 @@ export function getState(): DiscordState {
 
 // ── Token management (encrypted) ──────────────────────────────────────────────
 
+/** A Discord bot token: three dot-separated segments. */
+const BOT_TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
+
 function saveToken(token: string): void {
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(token)
-    store.set('discordToken', encrypted.toString('base64'))
-  } else {
-    // Fallback: store as-is (less secure, but functional)
-    store.set('discordToken', token)
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(token)
+      store.set('discordToken', encrypted.toString('base64'))
+    } else {
+      // Fallback: store as-is (less secure, but functional)
+      store.set('discordToken', token)
+    }
+  } catch (err) {
+    // The keychain refuses access when the app's signature changed (a reinstall
+    // or update). The session still works; the token just won't be remembered.
+    log(`Token not saved: ${err instanceof Error ? err.message : err}`)
   }
 }
 
@@ -132,11 +141,12 @@ export function loadToken(): string {
       const buf = Buffer.from(raw, 'base64')
       return safeStorage.decryptString(buf)
     } catch {
-      // Might be stored unencrypted from a previous run
-      return raw
+      // Unencrypted token from a previous run, or ciphertext this build can no
+      // longer decrypt. Keep the plaintext one, drop the noise.
     }
   }
-  return raw
+  // A token is three dot-separated segments; base64 ciphertext has no dots.
+  return BOT_TOKEN.test(raw) ? raw : ''
 }
 
 export function clearToken(): void {
@@ -225,33 +235,42 @@ export async function connect(token?: string): Promise<void> {
   // Load persisted volume
   discordVolume = (store.get('discordVolume', 1.0) as number) ?? 1.0
 
+  const c = client
   return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Connection timed out'))
-      setState({ status: 'error', error: 'Connection timed out' })
-    }, 15_000)
+    // 45s: the gateway handshake shares the main thread with startup model loading,
+    // which can stall it well past a few seconds. 15s rejected healthy logins.
+    const timeout = setTimeout(() => fail('Connection timed out'), 45_000)
 
-    client!.once('ready', () => {
+    // Destroy on failure so the abandoned login can't outlive the attempt and
+    // poison the next connect() — otherwise every retry disconnects mid-handshake.
+    function fail(msg: string): void {
       clearTimeout(timeout)
-      console.log(`[discord] Bot connected as ${client!.user?.tag}`)
-      if (token) saveToken(token) // persist on successful connect
-      setState({ status: 'ready', error: null })
-      resolve()
-    })
-
-    client!.once('error', (err) => {
-      clearTimeout(timeout)
-      console.error('[discord] Client error:', err.message)
-      setState({ status: 'error', error: err.message })
-      reject(err)
-    })
-
-    client!.login(botToken).catch((err) => {
-      clearTimeout(timeout)
-      const msg = err.message?.includes('TOKEN_INVALID') ? 'Invalid bot token' : err.message || 'Login failed'
-      console.error('[discord] Login failed:', msg)
+      if (client === c) {
+        c.destroy()
+        client = null
+      }
       setState({ status: 'error', error: msg })
       reject(new Error(msg))
+    }
+
+    c.once('ready', () => {
+      clearTimeout(timeout)
+      console.log(`[discord] Bot connected as ${c.user?.tag}`)
+      setState({ status: 'ready', error: null })
+      resolve()
+      // Persist after resolving — a failing keychain must not block the session
+      if (token) saveToken(token)
+    })
+
+    c.once('error', (err) => {
+      console.error('[discord] Client error:', err.message)
+      fail(err.message)
+    })
+
+    c.login(botToken).catch((err) => {
+      const msg = err.message?.includes('TOKEN_INVALID') ? 'Invalid bot token' : err.message || 'Login failed'
+      console.error('[discord] Login failed:', msg)
+      fail(msg)
     })
   })
 }

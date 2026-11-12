@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import https from 'node:https'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
@@ -51,6 +50,7 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import { downloadFile } from './download-file'
 import {
   handleEmbeddingResult,
   pauseEmbedding,
@@ -62,9 +62,19 @@ import {
 } from './embedding-queue'
 import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
-import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
+import {
+  DEFAULT_STT_LANGUAGE,
+  DEFAULT_STT_MODEL,
+  isAnySttModelReady,
+  MODELS_DIR,
+  STT_MODELS,
+  type SttModelInfo,
+  type SttModelType,
+} from './model-paths'
+import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
+import { disposeReranker, scorePairs, setOnRerankerStatus } from './reranker'
 import { getAllMetadata, getMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import {
   disposeInterpreter,
@@ -84,82 +94,12 @@ import { store } from './store'
 import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
-// ── Download helper ───────────────────────────────────────────────────────────
-/** Download a file from a URL with progress reporting. Follows up to 10 redirects. */
-function downloadFile(
-  url: string,
-  destPath: string,
-  onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(join(destPath, '..'), { recursive: true })
-    // Download to a .part file and rename on success: an interrupted download
-    // must never look like a usable model.
-    const partPath = `${destPath}.part`
-    const file = fs.createWriteStream(partPath)
-    let redirectCount = 0
-    let settled = false
-    const fail = (err: Error) => {
-      if (settled) return
-      settled = true
-      file.destroy()
-      fs.unlink(partPath, () => {})
-      reject(err)
-    }
-    file.on('error', fail)
-    const get = (u: string) => {
-      if (redirectCount++ > 10) return fail(new Error('Too many redirects'))
-      const mod = u.startsWith('https') ? https : require('node:http')
-      mod
-        .get(u, (res: any) => {
-          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
-            res.resume()
-            if (!res.headers.location) return fail(new Error(`Redirect without location from ${u}`))
-            return get(res.headers.location)
-          }
-          if (res.statusCode !== 200) {
-            res.resume()
-            return fail(new Error(`HTTP ${res.statusCode} for ${u}`))
-          }
-          const total = parseInt(res.headers['content-length'] || '0', 10)
-          let downloaded = 0
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length
-            file.write(chunk)
-            if (total > 0 && onProgress) {
-              onProgress(
-                Math.round((downloaded / total) * 100),
-                Math.round(downloaded / 1024 / 1024),
-                Math.round(total / 1024 / 1024),
-              )
-            }
-          })
-          res.on('end', () => {
-            if (settled) return
-            if (total > 0 && downloaded !== total) {
-              return fail(new Error(`Incomplete download: ${downloaded}/${total} bytes`))
-            }
-            settled = true
-            file.close((err) => {
-              if (err) return reject(err)
-              try {
-                fs.renameSync(partPath, destPath)
-                resolve()
-              } catch (e) {
-                reject(e as Error)
-              }
-            })
-          })
-          res.on('error', fail)
-          res.on('aborted', () => fail(new Error(`Download aborted for ${u}`)))
-        })
-        .on('error', fail)
-    }
-    get(url)
-  })
-}
-
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
+
+/** Whether the selected model accepts a focused language (or auto-detect). */
+function supportsLanguage(model: SttModelInfo | undefined, language: string): boolean {
+  return language === 'auto' || (model?.languages ?? []).includes(language)
+}
 
 /** Check if the reranker model is already cached */
 function isRerankerCached(): boolean {
@@ -168,56 +108,6 @@ function isRerankerCached(): boolean {
     return fs.existsSync(join(rerankerDir, 'onnx', 'model.onnx'))
   } catch {
     return false
-  }
-}
-
-/**
- * Pre-download the reranker model in the main process (Node.js context).
- * The renderer worker's fetch can stall in Electron's sandboxed context,
- * so we download here where Node.js networking works reliably, then the
- * worker loads from the local cache with allowRemoteModels=false.
- */
-async function downloadRerankerModel(): Promise<void> {
-  if (isRerankerCached()) {
-    console.log('[main] Reranker model already cached')
-    return
-  }
-
-  console.log('[main] Pre-downloading reranker model in main process...')
-  try {
-    // Dynamic require — the package is externalized by electron-vite so Node's
-    // module resolution finds it in the project root node_modules.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
-    const homePath = app.getPath('home')
-    env.cacheDir = join(homePath, '.doty', 'hf-cache')
-    env.allowRemoteModels = true
-
-    const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
-
-    // Notify renderer about download progress via IPC
-    const sendProgress = (p: Record<string, unknown>) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send('reranker:download-progress', p)
-      }
-    }
-
-    const progressCb = (p: Record<string, unknown>) => {
-      if (p.status === 'progress' || p.status === 'download' || p.status === 'initiate' || p.status === 'done') {
-        sendProgress(p)
-      }
-    }
-
-    await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb })
-    await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
-      device: 'cpu',
-      dtype: 'fp32',
-      progress_callback: progressCb,
-    })
-
-    console.log('[main] Reranker model pre-downloaded successfully')
-  } catch (e) {
-    console.error('[main] Reranker model pre-download failed (non-fatal):', e)
   }
 }
 
@@ -238,24 +128,6 @@ function isAllowedMediaPath(filePath: string): boolean {
     .map((root) => resolve(root as string))
   const resolved = resolve(filePath)
   return roots.some((root) => resolved === root || resolved.startsWith(root + sep))
-}
-
-function listMusicFiles(dir: string, root?: string): string[] {
-  const base = root ?? dir
-  const results: string[] = []
-  try {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = `${dir}/${entry.name}`
-      if (entry.isDirectory()) {
-        results.push(...listMusicFiles(full, base))
-      } else if (AUDIO_RE.test(entry.name)) {
-        results.push(full.slice(base.length + 1))
-      }
-    }
-  } catch {
-    /* skip unreadable dirs */
-  }
-  return results
 }
 
 let mainWindow: BrowserWindow | null = null
@@ -357,7 +229,7 @@ function syncEmbeddingQueue(folder: string): void {
     console.warn('[main] music folder unavailable, keeping existing embeddings')
     return
   }
-  const files = listMusicFiles(folder)
+  const files = getMusicFiles(folder)
   setEmbeddingFiles(files)
   try {
     pruneStaleEmbeddings(new Set(files))
@@ -455,6 +327,24 @@ function requestSceneEmbedding(sceneText: string) {
   requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
 }
 
+/**
+ * Load the models that support recommendations (reranker, scene interpreter,
+ * embeddings) when their files exist. Safe to call after a late STT download:
+ * every load is guarded by an existsSync check.
+ */
+function initAuxModels(): void {
+  const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
+  const llmPath = getLlmModelPath(llmModelId)
+  if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
+    loadSceneModel(llmPath)
+    startInterpreting()
+  }
+  const embPath = getEmbeddingModelPath()
+  if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
+    loadEmbeddingModel(embPath)
+  }
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -549,31 +439,22 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('llm:status', status)
   })
 
+  setOnRerankerStatus((status) => {
+    mainWindow?.webContents.send('reranker:ipc-status', status)
+  })
+
   // Set up embedding progress reporting
   setOnEmbeddingProgress((stats) => {
     mainWindow?.webContents.send('embedding:progress', stats)
   })
 
   if (ready) {
-    // Pre-download reranker model in main process (worker fetch stalls in Electron)
-    downloadRerankerModel().catch(() => {})
+    initAuxModels()
     // Init ASR immediately — transcribe-cpp loads in ~160ms
     try {
       initRecognizer()
     } catch (e) {
       console.error('ASR init error:', e)
-    }
-    // Init scene interpreter if model is available (and non-empty)
-    const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
-    const llmPath = getLlmModelPath(llmModelId)
-    if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
-      loadSceneModel(llmPath)
-      startInterpreting()
-    }
-    // Init embedding model if available (and non-empty)
-    const embPath = getEmbeddingModelPath()
-    if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
-      loadEmbeddingModel(embPath)
     }
   }
 
@@ -599,6 +480,7 @@ app.on('before-quit', () => {
   freeRecognizer()
   stopInterpreting()
   disposeInterpreter()
+  disposeReranker()
   stopEmbeddingQueue()
   stopScanner()
   closeDb()
@@ -633,6 +515,7 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
+  if (!isAnySttModelReady()) return { ok: false, reason: 'no-model' }
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
@@ -695,7 +578,7 @@ ipcMain.handle('music:pick-folder', async () => {
 ipcMain.handle('music:list', () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return []
-  return listMusicFiles(musicFolder)
+  return getMusicFiles(musicFolder)
 })
 
 ipcMain.handle('music:scan', () => {
@@ -816,6 +699,18 @@ ipcMain.handle('session:load', async (_e, file: string) => {
   return sessionOps.loadSessionAsync(file)
 })
 
+ipcMain.handle('session:set-active', (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return { ok: false }
+  sessionOps.setActiveSession(file)
+  if (recordingActive) {
+    // Recording in progress — keep cues monotonic and route audio to the new session
+    finalizeWavRecording()
+    sessionStartTime = Date.now() - sessionOps.getLastCueStartMs(file)
+    startWavRecording()
+  }
+  return { ok: true }
+})
+
 ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
   if (!sessionOps.isSessionPath(file)) return
   sessionOps.renameSession(file, newName)
@@ -835,18 +730,6 @@ ipcMain.handle('session:delete', (_e, file: string) => {
       sessionStartTime = Date.now() - (next ? sessionOps.getLastCueStartMs(next) : 0)
       startWavRecording()
     }
-  }
-  return { ok: true }
-})
-
-ipcMain.handle('session:set-active', (_e, file: string) => {
-  if (!sessionOps.isSessionPath(file)) return { ok: false }
-  sessionOps.setActiveSession(file)
-  if (recordingActive) {
-    // Recording in progress — keep cues monotonic and route audio to the new session
-    finalizeWavRecording()
-    sessionStartTime = Date.now() - sessionOps.getLastCueStartMs(file)
-    startWavRecording()
   }
   return { ok: true }
 })
@@ -876,44 +759,15 @@ ipcMain.handle('reprocess:cancel', () => {
 
 // isAnySttModelReady imported from model-paths
 
-ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
+ipcMain.handle('model:status', () => ({
+  ready: isAnySttModelReady(),
+  onboardingSkipped: store.get('sttOnboardingSkipped', false),
+}))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
-// Reranker scoring via IPC — replaces broken WASM worker
-let _rerankerScorer: ((pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>) | null = null
-let _rerankerLoading: Promise<void> | null = null
-
 ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
-  if (!pairs || pairs.length === 0) return []
-  if (!_rerankerScorer) {
-    if (!_rerankerLoading) {
-      _rerankerLoading = (async () => {
-        const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers')
-        env.cacheDir = join(app.getPath('home'), '.doty', 'hf-cache')
-        env.allowRemoteModels = true
-        const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
-        console.log('[reranker-ipc] loading model...')
-        mainWindow?.webContents.send('reranker:ipc-status', 'loading')
-        const [tokenizer, model] = await Promise.all([
-          AutoTokenizer.from_pretrained(MODEL_ID),
-          AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
-        ])
-        _rerankerScorer = async (p) => {
-          const inputs = (tokenizer as any)(
-            p.map((x) => x.text),
-            { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true },
-          )
-          const { logits } = await (model as any)(inputs)
-          return Array.from(logits.data as Float32Array)
-        }
-        console.log('[reranker-ipc] model ready')
-        mainWindow?.webContents.send('reranker:ipc-status', 'ready')
-      })()
-    }
-    await _rerankerLoading
-  }
-  return await _rerankerScorer!(pairs)
+  return scorePairs(pairs)
 })
 
 ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
@@ -998,41 +852,19 @@ ipcMain.handle('llm:get-embedding-status', () => ({
 
 ipcMain.handle('embedding:get-progress', () => {
   const musicFolder = store.get('musicFolder', '') as string
-  const total = musicFolder ? listMusicFiles(musicFolder).length : 0
-  return getEmbeddingStats(total)
-})
-
-ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
-  const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
-
-  if (modelInfo.isReady()) {
-    store.set('sttModel', modelInfo.id)
-    initRecognizer()
-    mainWindow?.webContents.send('model:status', { ready: true })
-    return { ok: true }
-  }
-
-  // Download single GGUF file
-  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  const total = musicFolder ? getMusicFiles(musicFolder).length : 0
   try {
-    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
-      mainWindow?.webContents.send('model:progress', { percent, downloadedMB, totalMB })
-    })
-
-    store.set('sttModel', modelInfo.id)
-    initRecognizer()
-    mainWindow?.webContents.send('model:status', { ready: true })
-    downloadRerankerModel().catch(() => {})
-    return { ok: true }
+    return getEmbeddingStats(total)
   } catch (e) {
-    return { ok: false, reason: String(e) }
+    console.error('[main] embedding stats unavailable:', e)
+    return { embedded: 0, total, percent: 0 }
   }
 })
 
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
 
 ipcMain.handle('stt:get-model', () => {
-  return store.get('sttModel', 'parakeet-unified-en') as string
+  return store.get('sttModel', DEFAULT_STT_MODEL) as string
 })
 
 ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
@@ -1042,9 +874,27 @@ ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
   if (!modelInfo) return { ok: false, reason: 'unknown model' }
   if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
   store.set('sttModel', modelId)
+  // Keep the focused language only when the new model supports it.
+  const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
+  if (!supportsLanguage(modelInfo, language)) {
+    store.set('sttLanguage', 'auto')
+  }
   restartRecognizer()
   // Notify renderer about the switch
   mainWindow?.webContents.send('stt:model-switched', { id: modelId, label: modelInfo.label })
+  return { ok: true }
+})
+
+ipcMain.handle('stt:get-language', () => store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string)
+
+ipcMain.handle('stt:set-language', (_e, language: string) => {
+  const modelId = store.get('sttModel', DEFAULT_STT_MODEL) as SttModelType
+  const modelInfo = STT_MODELS.find((m) => m.id === modelId)
+  if (!supportsLanguage(modelInfo, language)) {
+    return { ok: false, reason: 'unsupported language' }
+  }
+  store.set('sttLanguage', language)
+  restartRecognizer()
   return { ok: true }
 })
 
@@ -1061,6 +911,7 @@ ipcMain.handle('stt:get-model-list', () => {
     size: m.size,
     streaming: m.streaming,
     languages: m.languages,
+    default: !!m.default,
     ready: m.isReady(),
   }))
 })

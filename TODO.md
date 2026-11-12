@@ -2,16 +2,6 @@
 
 ## Pending
 
-- [ ] `pnpm audit` vulns (20 total, none exploitable at runtime):
-  - 12× high: `tar` via `@discordjs/opus > @discordjs/node-pre-gyp` — install-time only, waiting on `@discordjs/node-pre-gyp` to bump `tar`
-  - 8× moderate: `undici` via `discord.js` and `jsdom` — waiting on upstream bumps
-- [ ] #12 Autopilot mode — beta quality improvements:
-  - [ ] Add Portuguese keywords to mood profiles (music + SFX heuristics)
-  - [ ] Fix tokenizer to preserve accented characters (ã, ç, é, etc.)
-  - [ ] Recreate `DecisionLog.tsx` component (lost during branch switch)
-  - [ ] Add recent-track avoidance to autopilot (skip tracks played in last N minutes)
-  - [ ] Add heuristic confidence estimation so autopilot works before reranker loads
-  - [ ] Evaluate multilingual reranker (`mmarco-mMiniLMv2-L6-v2`) to replace English-only ms-marco
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
 ## Music Player — Implementation Order
@@ -28,6 +18,14 @@
 
 ## Done
 
+- [x] `pnpm audit` clean (0 vulns): all deps on current major, 10-day release hold via `minimumReleaseAge`, transitive CVEs pinned via overrides
+- [x] Perf: reranker inference moved off the Electron main thread into a `worker_threads` worker; warmup deferred to idle time
+- [x] Perf: music library list cached instead of re-walking the folder on every recommendation (scanner invalidates on change)
+- [x] Speech model downloads: HTTP Range resume, cancel button in Settings, partial files kept for resume (not deleted on quit)
+- [x] Autopilot: recent-track avoidance covers manual plays too; PT keywords + accent-insensitive matching (`ação` matches `acao`) verified with tests
+- [x] Recommendation model: confirmed multilingual `mmarco-mMiniLMv2-L12` is in use; removed the stale English-only ms-marco worker
+- [x] #12 Autopilot: heuristic confidence estimation, Portuguese keyword profiles, DecisionLog — all present and tested
+- [x] Onboarding: skip the speech-model install and download it in the background while the app stays usable; atomic model downloads (`.part` + rename)
 - [x] Recommendation transparency: ranker type + confidence badge on Suggestions header, collapsible Decision Log panel for beta testing
 - [x] Discord: asarUnpack config for @discordjs/opus, sodium-native, opusscript, prism-media
 - [x] Upgrade chokidar v3 to v4 (drops fsevents dependency, uses native fs.watch)

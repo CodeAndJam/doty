@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AutopilotConfig, AutopilotState } from '../lib/autopilot'
-import { DEFAULT_AUTOPILOT_CONFIG } from '../lib/autopilot'
+import { DEFAULT_AUTOPILOT_CONFIG, isRecentlyPlayed } from '../lib/autopilot'
 
 export interface PendingTransition {
   /** Track filename to transition to */
@@ -69,6 +69,8 @@ export interface UseAutopilotReturn {
   onSfxRecommendation: (sfxIds: string[]) => void
   /** Notify autopilot that the DM manually interacted (pauses autopilot briefly) */
   onManualAction: () => void
+  /** Record a track as played so autopilot avoids replaying it */
+  notePlayed: (track: string) => void
   /** Update config */
   setConfig: (patch: Partial<AutopilotConfig>) => void
   /** Reload config from the persistent store (call after Settings closes) */
@@ -156,6 +158,10 @@ export function useAutopilot(
     setState('idle')
   }, [cancelTransition])
 
+  const notePlayed = useCallback((track: string) => {
+    recentlyPlayedRef.current.set(track, Date.now())
+  }, [])
+
   const onRecommendation = useCallback(
     (topTrack: string, confidence: number) => {
       // Always track latest confidence/candidate for UI display
@@ -219,8 +225,8 @@ export function useAutopilot(
 
       // Don't replay recently auto-played tracks
       const lastPlayed = recentlyPlayedRef.current.get(topTrack)
-      if (lastPlayed && now - lastPlayed < cfg.recentlyPlayedMinutes * 60_000) {
-        const minsAgo = ((now - lastPlayed) / 60_000).toFixed(0)
+      if (isRecentlyPlayed(lastPlayed, now, cfg.recentlyPlayedMinutes)) {
+        const minsAgo = ((now - (lastPlayed ?? now)) / 60_000).toFixed(0)
         addLogEntry({
           channel: 'music',
           action: 'skip',
@@ -378,6 +384,7 @@ export function useAutopilot(
     onRecommendation,
     onSfxRecommendation,
     onManualAction,
+    notePlayed,
     setConfig,
     reloadConfig,
   }

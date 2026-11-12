@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type { ProgressPayload } from '../types'
 
 interface ModelEntry {
   id: string
@@ -8,41 +7,32 @@ interface ModelEntry {
   size: string
   streaming: boolean
   languages: string[]
+  default?: boolean
   ready: boolean
 }
 
 interface Props {
   onComplete: () => void
+  onSkip: () => void
 }
 
-export default function ModelDownload({ onComplete }: Props) {
+export default function ModelDownload({ onComplete, onSkip }: Props) {
   const [models, setModels] = useState<ModelEntry[]>([])
   const [selected, setSelected] = useState<string | null>(null)
-  const [progress, setProgress] = useState<ProgressPayload | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [started, setStarted] = useState(false)
 
   useEffect(() => {
     window.doty.getSttModelList().then((list) => {
       setModels(list)
-      if (list.length > 0) setSelected(list[0].id)
+      const preferred = list.find((m) => m.default) ?? list[0]
+      if (preferred) setSelected(preferred.id)
     })
-    const unsub = window.doty.onModelProgress((p) => setProgress(p))
-    return unsub
   }, [])
 
-  async function startDownload() {
+  function startDownload() {
     if (!selected) return
-    setStarted(true)
-    setError(null)
-    try {
-      const result = await window.doty.downloadModel(selected)
-      if (!result.ok) throw new Error(result.reason ?? 'Download failed')
-      onComplete()
-    } catch (e) {
-      setError(String(e))
-      setStarted(false)
-    }
+    // Fire-and-forget: the main process downloads in the background and the app stays usable.
+    window.doty.downloadModel(selected).catch(() => {})
+    onComplete()
   }
 
   const selectedModel = models.find((m) => m.id === selected)
@@ -65,10 +55,11 @@ export default function ModelDownload({ onComplete }: Props) {
 
         <h1 className="text-xl font-semibold mb-2">Speech Recognition Model</h1>
         <p className="text-sm text-gray-400 mb-5">
-          Choose a model for offline speech-to-text. This only happens once — everything runs locally on your machine.
+          Choose a model for offline speech-to-text. It downloads once, runs locally, and keeps downloading in the
+          background if you continue.
         </p>
 
-        {!started && models.length > 0 && (
+        {models.length > 0 && (
           <>
             <div className="space-y-2 mb-5 text-left">
               {models.map((m) => (
@@ -95,39 +86,18 @@ export default function ModelDownload({ onComplete }: Props) {
               disabled={!selected}
               className="w-full py-3 bg-accent hover:bg-accent/80 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors"
             >
-              {`Download ${selectedModel?.label ?? 'Model'}`}
+              {`Download ${selectedModel?.label ?? 'Model'} in background`}
             </button>
           </>
         )}
 
-        {started && progress && (
-          <div className="space-y-3">
-            <div className="w-full bg-border rounded-full h-2 overflow-hidden">
-              <div
-                className="h-full bg-accent rounded-full transition-all duration-300"
-                style={{ width: `${progress.percent}%` }}
-              />
-            </div>
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>{progress.percent}%</span>
-              <span>
-                {progress.downloadedMB} / {progress.totalMB} MB
-              </span>
-            </div>
-            <p className="text-xs text-gray-500">Downloading {selectedModel?.label}...</p>
-          </div>
-        )}
-
-        {started && !progress && (
-          <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
-            <div className="w-4 h-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-            <span>Starting download...</span>
-          </div>
-        )}
-
-        {error && (
-          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-xs text-red-400">{error}</div>
-        )}
+        <button
+          type="button"
+          onClick={onSkip}
+          className="mt-3 w-full py-2 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+        >
+          Skip for now — set it up later in Settings
+        </button>
       </div>
     </div>
   )

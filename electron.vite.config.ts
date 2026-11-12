@@ -14,6 +14,7 @@ export default defineConfig({
           'analyze-worker': resolve(__dirname, 'electron/analyze-worker.ts'),
           'transcribe-worker': resolve(__dirname, 'electron/transcribe-worker.ts'),
           'llm-child': resolve(__dirname, 'electron/llm-child.ts'),
+          'reranker-worker': resolve(__dirname, 'electron/reranker-worker.ts'),
         },
       },
     },
