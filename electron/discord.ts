@@ -114,13 +114,22 @@ export function getState(): DiscordState {
 
 // ── Token management (encrypted) ──────────────────────────────────────────────
 
+/** A Discord bot token: three dot-separated segments. */
+const BOT_TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
+
 function saveToken(token: string): void {
-  if (safeStorage.isEncryptionAvailable()) {
-    const encrypted = safeStorage.encryptString(token)
-    store.set('discordToken', encrypted.toString('base64'))
-  } else {
-    // Fallback: store as-is (less secure, but functional)
-    store.set('discordToken', token)
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const encrypted = safeStorage.encryptString(token)
+      store.set('discordToken', encrypted.toString('base64'))
+    } else {
+      // Fallback: store as-is (less secure, but functional)
+      store.set('discordToken', token)
+    }
+  } catch (err) {
+    // The keychain refuses access when the app's signature changed (a reinstall
+    // or update). The session still works; the token just won't be remembered.
+    log(`Token not saved: ${err instanceof Error ? err.message : err}`)
   }
 }
 
@@ -132,11 +141,12 @@ export function loadToken(): string {
       const buf = Buffer.from(raw, 'base64')
       return safeStorage.decryptString(buf)
     } catch {
-      // Might be stored unencrypted from a previous run
-      return raw
+      // Unencrypted token from a previous run, or ciphertext this build can no
+      // longer decrypt. Keep the plaintext one, drop the noise.
     }
   }
-  return raw
+  // A token is three dot-separated segments; base64 ciphertext has no dots.
+  return BOT_TOKEN.test(raw) ? raw : ''
 }
 
 export function clearToken(): void {
@@ -239,9 +249,10 @@ export async function connect(token?: string): Promise<void> {
     c.once('ready', () => {
       clearTimeout(timeout)
       console.log(`[discord] Bot connected as ${c.user?.tag}`)
-      if (token) saveToken(token) // persist on successful connect
       setState({ status: 'ready', error: null })
       resolve()
+      // Persist after resolving — a failing keychain must not block the session
+      if (token) saveToken(token)
     })
 
     c.once('error', (err) => {
