@@ -3,27 +3,27 @@
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* Base styles live in the same cascade layer as preflight so Tailwind
+ * utilities (also layered) can still override spacing, fonts, etc.
+ * An unlayered `* { margin: 0; padding: 0 }` silently beats every
+ * `p-*`/`m-*` utility in Tailwind v4. */
+@layer base {
+  body {
+    background: #080705;
+    color: #e8d5a3;
+    font-family: "Crimson Text", Georgia, serif;
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+  }
 
-body {
-  background: #080705;
-  color: #e8d5a3;
-  font-family: "Crimson Text", Georgia, serif;
-  font-size: 16px;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-}
-
-h1,
-h2,
-h3,
-.font-display {
-  font-family: "Cinzel", Georgia, serif;
-  letter-spacing: 0.1em;
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: "Cinzel", Georgia, serif;
+    letter-spacing: 0.1em;
+  }
 }
 
 ::-webkit-scrollbar {
