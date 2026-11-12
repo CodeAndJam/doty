@@ -54,7 +54,7 @@ describe('downloadFile', () => {
 
     expect(fs.readFileSync(dest)).toEqual(body)
     expect(fs.existsSync(`${dest}.part`)).toBe(false)
-    expect(percents.at(-1)).toBe(100)
+    expect(percents[percents.length - 1]).toBe(100)
   })
 
   it('resumes from the existing .part with a Range request', async () => {

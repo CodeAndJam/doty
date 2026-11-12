@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
@@ -44,6 +44,7 @@ import {
   resumeStream,
   setAutoConnect,
   setDiscordVolume,
+  stopSfx,
   stopStream,
   streamSfx,
   streamTrack,
@@ -71,9 +72,10 @@ import {
   type SttModelType,
 } from './model-paths'
 import { getMusicFiles } from './music-library'
+import { handleMusicRequest } from './music-protocol'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
 import { disposeReranker, scorePairs, setOnRerankerStatus } from './reranker'
-import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import { getAllMetadata, getMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import {
   disposeInterpreter,
   feedTranscript,
@@ -90,7 +92,7 @@ import {
 import * as sessionOps from './sessions'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
-import { getEmbeddingStats, initVectorTables } from './track-vectors'
+import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
@@ -132,14 +134,31 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
 
+const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
+
+/** True when the path is inside the configured music or SFX folder. */
+function isAllowedMediaPath(filePath: string): boolean {
+  const roots = [store.get('musicFolder', ''), store.get('sfxFolder', '')]
+    .filter(Boolean)
+    .map((root) => resolve(root as string))
+  const resolved = resolve(filePath)
+  return roots.some((root) => resolved === root || resolved.startsWith(root + sep))
+}
+
 let mainWindow: BrowserWindow | null = null
 let sessionStartTime: number | null = null
+/** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
+let recordingActive = false
 let sessionWavFd: number | null = null
 let sessionWavBytes = 0
 let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
 
 function getActiveSessionFile(): string | null {
-  return sessionOps.getLastSession()
+  const active = sessionOps.getActiveSession()
+  if (active && sessionOps.isSessionPath(active)) return active
+  const last = sessionOps.getLastSession()
+  if (last && sessionOps.isSessionPath(last)) return last
+  return null
 }
 
 function getSessionWavPath(): string | null {
@@ -151,24 +170,39 @@ function getSessionWavPath(): string | null {
 function startWavRecording(): void {
   const wavPath = getSessionWavPath()
   if (!wavPath) return
-  // Write a placeholder 44-byte WAV header (updated on stop)
-  const header = Buffer.alloc(44)
-  header.write('RIFF', 0)
-  header.writeUInt32LE(0, 4) // placeholder file size
-  header.write('WAVE', 8)
-  header.write('fmt ', 12)
-  header.writeUInt32LE(16, 16) // PCM format chunk size
-  header.writeUInt16LE(1, 20) // PCM format
-  header.writeUInt16LE(1, 22) // mono
-  header.writeUInt32LE(16000, 24) // sample rate
-  header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
-  header.writeUInt16LE(2, 32) // block align
-  header.writeUInt16LE(16, 34) // bits per sample
-  header.write('data', 36)
-  header.writeUInt32LE(0, 40) // placeholder data size
-  fs.writeFileSync(wavPath, header)
+  // Close any previous take before reopening (record/stop in the same session appends)
+  finalizeWavRecording()
+  let existingBytes = 0
+  try {
+    const stat = fs.statSync(wavPath)
+    const fd = fs.openSync(wavPath, 'r')
+    const magic = Buffer.alloc(4)
+    fs.readSync(fd, magic, 0, 4, 0)
+    fs.closeSync(fd)
+    if (stat.size >= 44 && magic.toString() === 'RIFF') existingBytes = stat.size - 44
+  } catch {
+    /* new file */
+  }
+  if (existingBytes === 0) {
+    // Write a placeholder 44-byte WAV header (updated on stop)
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0)
+    header.writeUInt32LE(0, 4) // placeholder file size
+    header.write('WAVE', 8)
+    header.write('fmt ', 12)
+    header.writeUInt32LE(16, 16) // PCM format chunk size
+    header.writeUInt16LE(1, 20) // PCM format
+    header.writeUInt16LE(1, 22) // mono
+    header.writeUInt32LE(16000, 24) // sample rate
+    header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
+    header.writeUInt16LE(2, 32) // block align
+    header.writeUInt16LE(16, 34) // bits per sample
+    header.write('data', 36)
+    header.writeUInt32LE(0, 40) // placeholder data size
+    fs.writeFileSync(wavPath, header)
+  }
   sessionWavFd = fs.openSync(wavPath, 'r+')
-  sessionWavBytes = 0
+  sessionWavBytes = existingBytes
   // Update WAV header every 30s for crash resilience
   wavHeaderInterval = setInterval(() => {
     if (sessionWavFd !== null) updateWavHeader(sessionWavFd, sessionWavBytes)
@@ -181,7 +215,9 @@ function appendWavChunk(samples: Float32Array): void {
   for (let i = 0; i < samples.length; i++) {
     int16.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
   }
-  fs.appendFileSync(sessionWavFd, int16)
+  // Write at an explicit offset: appendFileSync on an fd starts at position 0 and
+  // would overwrite the 44-byte WAV header.
+  fs.writeSync(sessionWavFd, int16, 0, int16.length, 44 + sessionWavBytes)
   sessionWavBytes += int16.length
 }
 
@@ -198,6 +234,26 @@ function finalizeWavRecording(): void {
   sessionWavBytes = 0
 }
 
+function syncEmbeddingQueue(folder: string): void {
+  if (!folder) return
+  try {
+    // Don't treat an unreadable/unmounted folder as an empty library — that
+    // would prune every embedding.
+    fs.readdirSync(folder)
+  } catch {
+    console.warn('[main] music folder unavailable, keeping existing embeddings')
+    return
+  }
+  const files = getMusicFiles(folder)
+  setEmbeddingFiles(files)
+  try {
+    pruneStaleEmbeddings(new Set(files))
+  } catch (e) {
+    console.error('[main] could not prune stale embeddings:', e)
+  }
+  startEmbeddingQueue()
+}
+
 function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
@@ -206,10 +262,24 @@ function launchScanner(folder: string, force = false) {
     },
     () => {
       mainWindow?.webContents.send('scan:complete')
+      // Pick up tracks added/removed by the scan
+      syncEmbeddingQueue(folder)
     },
     force,
   )
 }
+
+/** Watcher removals can arrive in bursts — sync the library once they settle. */
+let librarySyncTimer: ReturnType<typeof setTimeout> | null = null
+setOnLibraryChanged(() => {
+  if (librarySyncTimer) clearTimeout(librarySyncTimer)
+  librarySyncTimer = setTimeout(() => {
+    librarySyncTimer = null
+    const folder = store.get('musicFolder', '') as string
+    syncEmbeddingQueue(folder)
+    mainWindow?.webContents.send('scan:complete')
+  }, 500)
+})
 
 function registerAppProtocol() {
   const rendererRoot = join(__dirname, '../renderer')
@@ -243,137 +313,23 @@ function createWindow() {
   } else {
     mainWindow.loadURL('app://doty/')
   }
-}
 
-/** MIME type lookup for audio files. */
-function audioMime(ext: string): string {
-  const map: Record<string, string> = {
-    '.mp3': 'audio/mpeg',
-    '.flac': 'audio/flac',
-    '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4',
-    '.ogg': 'audio/ogg',
-    '.aac': 'audio/aac',
-  }
-  return map[ext.toLowerCase()] ?? 'application/octet-stream'
+  // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 }
 
 function registerMusicProtocol() {
   protocol.handle('music', (request) => {
     try {
-      const musicFolder = store.get('musicFolder', '') as string
-      const raw = request.url
-      const prefix = 'music://play/'
-      const filename = decodeURIComponent(
-        raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length),
-      )
-      // Support absolute paths (for SFX) or relative paths (for music).
-      // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
-      // like /Users/x/sfx/boom.mp3 arrives as "Users/x/sfx/boom.mp3" (leading
-      // slash consumed by the music://play/ prefix).  We try the relative path
-      // first; if it doesn't exist we retry as an absolute path with "/" prepended.
-      let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
-
-      if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
-        const abs = `/${filename}`
-        if (fs.existsSync(abs)) filePath = abs
-      }
-
-      if (!fs.existsSync(filePath)) {
-        return new Response('Not found', { status: 404 })
-      }
-
-      const stat = fs.statSync(filePath)
-      const total = stat.size
-      const ext = filePath.slice(filePath.lastIndexOf('.'))
-      const mime = audioMime(ext)
-
-      /** Wrap a Node fs.ReadStream into a web ReadableStream, guarding against
-       *  enqueue-after-close crashes that happen when Chromium cancels a request
-       *  mid-stream (e.g. rapid seeking). */
-      function nodeToWeb(nodeStream: fs.ReadStream): ReadableStream {
-        let closed = false
-        return new ReadableStream({
-          start(controller) {
-            nodeStream.on('data', (chunk: Buffer | string) => {
-              if (!closed) {
-                try {
-                  controller.enqueue(chunk)
-                } catch {
-                  closed = true
-                  nodeStream.destroy()
-                }
-              }
-            })
-            nodeStream.on('end', () => {
-              if (!closed) {
-                closed = true
-                try {
-                  controller.close()
-                } catch {
-                  /* already closed */
-                }
-              }
-            })
-            nodeStream.on('error', (err) => {
-              if (!closed) {
-                closed = true
-                try {
-                  controller.error(err)
-                } catch {
-                  /* already errored */
-                }
-              }
-            })
-          },
-          cancel() {
-            closed = true
-            nodeStream.destroy()
-          },
-        })
-      }
-
-      // Handle Range requests — required for audio seeking.
-      // Without this, setting audio.currentTime causes Chromium to request a byte
-      // range, but net.fetch(file://) always returns the full file from byte 0,
-      // so the seek position resets to the beginning.
-      const rangeHeader = request.headers.get('Range')
-      if (rangeHeader) {
-        const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
-        const start = match ? parseInt(match[1], 10) : 0
-        const end = match?.[2] ? parseInt(match[2], 10) : total - 1
-
-        // Validate range bounds
-        if (start >= total || end >= total || start > end) {
-          return new Response('Range Not Satisfiable', {
-            status: 416,
-            headers: { 'Content-Range': `bytes */${total}` },
-          })
-        }
-
-        const chunkSize = end - start + 1
-
-        return new Response(nodeToWeb(fs.createReadStream(filePath, { start, end })), {
-          status: 206,
-          headers: {
-            'Content-Type': mime,
-            'Content-Length': String(chunkSize),
-            'Content-Range': `bytes ${start}-${end}/${total}`,
-            'Accept-Ranges': 'bytes',
-          },
-        })
-      }
-
-      // Full file response — advertise Accept-Ranges so Chromium knows
-      // it can send Range requests for seeking.
-      return new Response(nodeToWeb(fs.createReadStream(filePath)), {
-        status: 200,
-        headers: {
-          'Content-Type': mime,
-          'Content-Length': String(total),
-          'Accept-Ranges': 'bytes',
+      return handleMusicRequest(
+        { url: request.url, rangeHeader: request.headers.get('Range') },
+        {
+          musicFolder: store.get('musicFolder', '') as string,
+          sfxFolder: store.get('sfxFolder', '') as string,
         },
-      })
+      )
     } catch (err) {
       console.error('[music-protocol] unhandled error:', err)
       return new Response('Internal error', { status: 500 })
@@ -446,25 +402,34 @@ app.whenReady().then(async () => {
   })
 
   // ── Scene Interpreter + Recommendation wiring ────────────────────────────
-  // Initialize vector tables for track embeddings
-  initVectorTables()
+  // Initialize vector tables for track embeddings. A failure here (e.g. ABI
+  // mismatch) must not abort the rest of the app wiring below.
+  try {
+    initVectorTables()
+  } catch (e) {
+    console.error('[main] vector tables unavailable, recommendations fall back to heuristics:', e)
+  }
 
   // Feed transcript to scene interpreter on each flush
   setOnFlushText((text, elapsedMs) => {
-    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
     const file = getActiveSessionFile()
+    let elapsed = elapsedMs
     if (file) {
       if (!sessionStartTime) sessionStartTime = Date.now()
-      const elapsed = Date.now() - sessionStartTime
+      elapsed = Date.now() - sessionStartTime
       sessionOps.appendCue(file, elapsed, text)
     }
+    // Send the same time base used for the saved VTT cues
+    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs: elapsed })
     // Feed to scene interpreter
     feedTranscript(text)
-    // Fast-path check for instant triggers
-    const fastRec = fastPathCheck(text)
-    if (fastRec && fastRec.files.length > 0) {
-      mainWindow?.webContents.send('music:recommendations', fastRec.files)
-      startCooldown()
+    // Fast-path: a detected mood transition triggers an embedding/search now
+    if (isEmbeddingModelReady()) {
+      const trigger = fastPathCheck(text)
+      if (trigger) {
+        requestSceneEmbedding(trigger.mood)
+        startCooldown()
+      }
     }
   })
 
@@ -482,10 +447,14 @@ app.whenReady().then(async () => {
     // Check if this is a scene embedding (id=0) or a track embedding (id>0)
     if (id === 0) {
       // Scene embedding → run slow-path recommendation
-      const rec = slowPathRecommend(vector)
-      if (rec.files.length > 0) {
-        mainWindow?.webContents.send('music:recommendations', rec.files)
-        mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+      try {
+        const rec = slowPathRecommend(vector)
+        if (rec.files.length > 0) {
+          mainWindow?.webContents.send('music:recommendations', rec.files)
+          mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+        }
+      } catch (e) {
+        console.error('[main] slow-path recommendation failed:', e)
       }
     } else {
       // Track embedding → handled by embedding queue
@@ -521,15 +490,12 @@ app.whenReady().then(async () => {
   if (musicFolder) {
     launchScanner(musicFolder)
     // Kick off embedding queue after a delay (let scanner populate files first)
-    setTimeout(() => {
-      const files = getMusicFiles(musicFolder)
-      setEmbeddingFiles(files)
-      startEmbeddingQueue()
-    }, 5000)
+    setTimeout(() => syncEmbeddingQueue(musicFolder), 5000)
   }
 })
 
 app.on('before-quit', () => {
+  finalizeWavRecording()
   freeRecognizer()
   stopInterpreting()
   disposeInterpreter()
@@ -569,7 +535,10 @@ ipcMain.handle('mic:open-settings', () => {
 
 ipcMain.handle('stt:start', () => {
   if (!isAnySttModelReady()) return { ok: false, reason: 'no-model' }
-  sessionStartTime = Date.now()
+  // Continue timestamps after the active session's last cue instead of restarting at 0
+  const activeFile = getActiveSessionFile()
+  sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
+  recordingActive = true
   startWavRecording()
   startStream()
   pauseEmbedding() // STT has priority over background embedding
@@ -578,6 +547,7 @@ ipcMain.handle('stt:start', () => {
 ipcMain.handle('stt:stop', () => {
   finalizeStream()
   finalizeWavRecording()
+  recordingActive = false
   resumeEmbedding() // resume background work
   return { ok: true }
 })
@@ -602,6 +572,8 @@ ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
 ipcMain.handle('music:set-folder', (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
+  syncEmbeddingQueue(folderPath)
+  mainWindow?.webContents.send('music:folder-changed', folderPath)
   return { ok: true }
 })
 
@@ -615,6 +587,8 @@ ipcMain.handle('music:pick-folder', async () => {
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
+    syncEmbeddingQueue(result.filePaths[0])
+    mainWindow?.webContents.send('music:folder-changed', result.filePaths[0])
     return result.filePaths[0]
   }
   return null
@@ -647,6 +621,16 @@ ipcMain.handle('tags:get', (_e, filename: string) => getTags(filename))
 
 ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
   setTags(filename, tags)
+  // Description feeds the embedding — regenerate it with the new tags.
+  const musicFolder = store.get('musicFolder', '') as string
+  if (musicFolder) {
+    try {
+      deleteTrackEmbedding(filename)
+      syncEmbeddingQueue(musicFolder)
+    } catch (e) {
+      console.error('[main] could not refresh embedding after tag change:', e)
+    }
+  }
   return { ok: true }
 })
 
@@ -679,8 +663,20 @@ ipcMain.handle('transcript:pick-folder', async () => {
     title: 'Select Transcript Folder',
   })
   if (!result.canceled && result.filePaths[0]) {
-    store.set('transcriptFolder', result.filePaths[0])
-    return result.filePaths[0]
+    const folder = result.filePaths[0]
+    const previous = store.get('transcriptFolder', '') as string
+    if (folder !== previous) {
+      // Old session paths are outside the new vault — start a fresh session there
+      finalizeWavRecording()
+      store.set('transcriptFolder', folder)
+      sessionOps.createSession()
+      if (recordingActive) {
+        sessionStartTime = Date.now()
+        startWavRecording()
+      }
+      mainWindow?.webContents.send('sessions:changed')
+    }
+    return folder
   }
   return null
 })
@@ -702,7 +698,14 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 // ── IPC: Sessions ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('session:create', (_e, name?: string) => {
-  return sessionOps.createSession(name)
+  const session = sessionOps.createSession(name)
+  if (recordingActive) {
+    // Recording in progress — start a fresh take in the new session
+    finalizeWavRecording()
+    sessionStartTime = Date.now()
+    startWavRecording()
+  }
+  return session
 })
 
 ipcMain.handle('session:list', () => {
@@ -710,16 +713,43 @@ ipcMain.handle('session:list', () => {
 })
 
 ipcMain.handle('session:load', async (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return []
   sessionOps.setLastSession(file)
   return sessionOps.loadSessionAsync(file)
 })
 
+ipcMain.handle('session:set-active', (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return { ok: false }
+  sessionOps.setActiveSession(file)
+  if (recordingActive) {
+    // Recording in progress — keep cues monotonic and route audio to the new session
+    finalizeWavRecording()
+    sessionStartTime = Date.now() - sessionOps.getLastCueStartMs(file)
+    startWavRecording()
+  }
+  return { ok: true }
+})
+
 ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
+  if (!sessionOps.isSessionPath(file)) return
   sessionOps.renameSession(file, newName)
 })
 
 ipcMain.handle('session:delete', (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return { ok: false }
+  const wasActive = getActiveSessionFile() === file
+  if (wasActive && sessionWavFd !== null) finalizeWavRecording()
   sessionOps.deleteSession(file)
+  if (wasActive) {
+    const next = sessionOps.listSessions()[0]?.file ?? null
+    sessionOps.setLastSession(next ?? '')
+    sessionOps.setActiveSession(next)
+    if (recordingActive) {
+      // Still recording — continue the take in the next session if there is one
+      sessionStartTime = Date.now() - (next ? sessionOps.getLastCueStartMs(next) : 0)
+      startWavRecording()
+    }
+  }
   return { ok: true }
 })
 
@@ -842,15 +872,13 @@ ipcMain.handle('llm:get-embedding-status', () => ({
 ipcMain.handle('embedding:get-progress', () => {
   const musicFolder = store.get('musicFolder', '') as string
   const total = musicFolder ? getMusicFiles(musicFolder).length : 0
-  return getEmbeddingStats(total)
+  try {
+    return getEmbeddingStats(total)
+  } catch (e) {
+    console.error('[main] embedding stats unavailable:', e)
+    return { embedded: 0, total, percent: 0 }
+  }
 })
-
-// ── IPC: Hotwords (legacy stubs — transcribe-cpp doesn't use hotwords) ────────
-
-ipcMain.handle('settings:get-hotwords-file', () => '')
-ipcMain.handle('settings:set-hotwords-file', () => ({ ok: true }))
-ipcMain.handle('settings:pick-hotwords-file', async () => null)
-ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }))
 
 // Download state is exposed to the renderer so the app can show progress while the user keeps working.
 let sttDownload: { modelId: SttModelType; percent: number } | null = null
@@ -1018,17 +1046,27 @@ ipcMain.handle('discord:leave-channel', () => {
 })
 
 ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: number) => {
+  const musicFolder = store.get('musicFolder', '') as string
+  if (!musicFolder) return { ok: false }
+  const resolved = filename.startsWith('/') ? filename : join(musicFolder, filename)
+  if (!isAllowedMediaPath(resolved)) return { ok: false }
   streamTrack(filename, seekSeconds ?? 0)
   return { ok: true }
 })
 
 ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number) => {
+  if (!isAllowedMediaPath(absolutePath)) return { ok: false }
   streamSfx(absolutePath, volume)
   return { ok: true }
 })
 
 ipcMain.handle('discord:stop-stream', () => {
   stopStream()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:stop-sfx', (_e, absolutePath?: string) => {
+  stopSfx(absolutePath)
   return { ok: true }
 })
 
@@ -1116,6 +1154,7 @@ ipcMain.handle('sfx:pick-folder', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('sfxFolder', result.filePaths[0])
+    mainWindow?.webContents.send('sfx:changed')
     return result.filePaths[0]
   }
   return null
@@ -1123,6 +1162,7 @@ ipcMain.handle('sfx:pick-folder', async () => {
 
 ipcMain.handle('sfx:set-folder', (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
+  mainWindow?.webContents.send('sfx:changed')
   return { ok: true }
 })
 
@@ -1146,6 +1186,7 @@ ipcMain.handle('autopilot:get-config', () => ({
   sfxPerEffectCooldownSeconds: store.get('autopilotSfxPerEffectCooldown', 30),
   sfxGlobalCooldownSeconds: store.get('autopilotSfxGlobalCooldown', 10),
   sfxAutoVolume: store.get('autopilotSfxAutoVolume', 0.7),
+  recentlyPlayedMinutes: store.get('autopilotRecentlyPlayedMinutes', 10),
 }))
 
 ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => {
@@ -1162,5 +1203,7 @@ ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => 
   if (typeof config.sfxGlobalCooldownSeconds === 'number')
     store.set('autopilotSfxGlobalCooldown', config.sfxGlobalCooldownSeconds)
   if (typeof config.sfxAutoVolume === 'number') store.set('autopilotSfxAutoVolume', config.sfxAutoVolume)
+  if (typeof config.recentlyPlayedMinutes === 'number')
+    store.set('autopilotRecentlyPlayedMinutes', config.recentlyPlayedMinutes)
   return { ok: true }
 })

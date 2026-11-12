@@ -20,12 +20,20 @@ let total = 0
 let musicRoot = ''
 let onProgress: ProgressCallback | null = null
 let onComplete: CompleteCallback | null = null
+let onLibraryChanged: (() => void) | null = null
+/** Bumped on every start/stop so results from an aborted run are ignored. */
+let runGeneration = 0
+
+/** Called when files are removed from the watched folder (embeddings/metadata need pruning). */
+export function setOnLibraryChanged(cb: () => void): void {
+  onLibraryChanged = cb
+}
 
 function relPath(absPath: string): string {
   return absPath.slice(musicRoot.length + 1)
 }
 
-function processNext() {
+function processNext(gen: number) {
   while (active < CONCURRENCY && queue.length > 0) {
     const absPath = queue.shift()!
     active++
@@ -36,11 +44,12 @@ function processNext() {
       .then((meta) => setCached(rel, meta as FullTrackMetadata))
       .catch((e) => console.error(`[scanner] failed ${rel}:`, e))
       .finally(() => {
+        if (gen !== runGeneration) return
         active--
         done++
         onProgress?.(done, total, rel)
         if (queue.length > 0) {
-          processNext()
+          processNext(gen)
         } else if (active === 0) {
           invalidateMusicLibrary()
           onComplete?.()
@@ -53,7 +62,7 @@ function enqueue(absPath: string) {
   if (!queue.includes(absPath)) {
     queue.push(absPath)
     total++
-    processNext()
+    processNext(runGeneration)
   }
 }
 
@@ -78,6 +87,7 @@ export function startScanner(
   force = false,
 ) {
   stopScanner()
+  runGeneration++
   musicRoot = folder
   onProgress = progressCb
   onComplete = completeCb
@@ -122,9 +132,8 @@ export function startScanner(
 
     watcher.on('add', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) {
-        total++
         invalidateMusicLibrary()
-        enqueue(absPath)
+        enqueue(absPath) // enqueue() bumps `total`
       }
     })
 
@@ -136,6 +145,7 @@ export function startScanner(
       if (AUDIO_RE.test(absPath)) {
         invalidateMusicLibrary()
         removeCached(relPath(absPath))
+        onLibraryChanged?.()
       }
     })
   } catch (e) {
@@ -145,6 +155,7 @@ export function startScanner(
 }
 
 export function stopScanner() {
+  runGeneration++
   watcher?.close()
   watcher = null
   queue = []

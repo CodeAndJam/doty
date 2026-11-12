@@ -18,6 +18,7 @@ describe('useQwen reranker warmup', () => {
       configurable: true,
       value: {
         onRerankerStatus: vi.fn(() => unsub),
+        onRerankerDownloadProgress: vi.fn(() => unsub),
         rerankerScore,
       },
     })

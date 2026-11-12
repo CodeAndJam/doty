@@ -23,6 +23,19 @@ let embeddingModelReady = false
 let interpreterTimer: ReturnType<typeof setInterval> | null = null
 let transcriptBuffer = ''
 let lastScene: SceneResult | null = null
+let sceneModelPath: string | null = null
+let embeddingModelPath: string | null = null
+let disposed = false
+let interpreting = false
+let interpretPass = 0
+let interpretWatchdog: ReturnType<typeof setTimeout> | null = null
+
+function clearInterpretWatchdog() {
+  if (interpretWatchdog) {
+    clearTimeout(interpretWatchdog)
+    interpretWatchdog = null
+  }
+}
 let onSceneUpdate: ((scene: SceneResult) => void) | null = null
 let onEmbedding: ((id: number, vector: number[]) => void) | null = null
 let onEmbeddings: ((id: number, vectors: number[][]) => void) | null = null
@@ -55,9 +68,10 @@ function ensureChild(): UtilityProcess {
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { utilityProcess } = require('electron')
-  child = utilityProcess.fork(LLM_CHILD_PATH, [], { serviceName: 'doty-llm' })
+  const proc = utilityProcess.fork(LLM_CHILD_PATH, [], { serviceName: 'doty-llm' })
+  child = proc
 
-  child!.on('message', (msg: any) => {
+  proc.on('message', (msg: any) => {
     switch (msg.type) {
       case 'scene-model-ready':
         sceneModelReady = true
@@ -68,6 +82,9 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus('embedding-ready')
         break
       case 'scene-result':
+        if (typeof msg.id === 'number' && msg.id !== interpretPass) break // stale pass
+        interpreting = false
+        clearInterpretWatchdog()
         lastScene = msg.scene
         if (onSceneUpdate) onSceneUpdate(msg.scene)
         break
@@ -81,16 +98,35 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus(msg.status)
         break
       case 'error':
+        // Only scene errors carry a pass id; embedding/model-load errors must
+        // not cancel the watchdog of the pass that is still generating.
+        if (typeof msg.id === 'number') {
+          if (msg.id !== interpretPass) break // stale pass
+          interpreting = false
+          clearInterpretWatchdog()
+        }
         console.error('[scene-interpreter] LLM error:', msg.error)
         break
     }
   })
 
-  child!.on('exit', (code: number) => {
+  proc.on('exit', (code: number) => {
+    if (child !== proc) return // replaced/disposed already
     console.log(`[scene-interpreter] LLM process exited with code ${code}`)
     child = null
     sceneModelReady = false
     embeddingModelReady = false
+    interpreting = false
+    clearInterpretWatchdog()
+    // Respawn after an unexpected crash so scene/embedding work resumes.
+    if (!disposed && (sceneModelPath || embeddingModelPath)) {
+      setTimeout(() => {
+        if (disposed || child) return
+        const respawned = ensureChild()
+        if (sceneModelPath) respawned.postMessage({ type: 'load-scene-model', modelPath: sceneModelPath })
+        if (embeddingModelPath) respawned.postMessage({ type: 'load-embedding-model', modelPath: embeddingModelPath })
+      }, 2000)
+    }
   })
 
   return child!
@@ -98,12 +134,16 @@ function ensureChild(): UtilityProcess {
 
 /** Load the scene interpreter model (GGUF path) */
 export function loadSceneModel(modelPath: string): void {
+  sceneModelPath = modelPath
+  disposed = false
   const proc = ensureChild()
   proc.postMessage({ type: 'load-scene-model', modelPath })
 }
 
 /** Load the embedding model (GGUF path) */
 export function loadEmbeddingModel(modelPath: string): void {
+  embeddingModelPath = modelPath
+  disposed = false
   const proc = ensureChild()
   proc.postMessage({ type: 'load-embedding-model', modelPath })
 }
@@ -117,10 +157,20 @@ export function feedTranscript(text: string): void {
 export function startInterpreting(): void {
   if (interpreterTimer) return
   interpreterTimer = setInterval(() => {
-    if (!sceneModelReady || !child) return
+    if (!sceneModelReady || !child || interpreting) return
     const text = transcriptBuffer.trim()
     if (!text || text.length < 50) return // not enough context yet
-    child.postMessage({ type: 'interpret-scene', transcript: text })
+    interpreting = true
+    const pass = ++interpretPass
+    child.postMessage({ type: 'interpret-scene', id: pass, transcript: text })
+    // Never let one hung generation disable interpretation for the process lifetime
+    clearInterpretWatchdog()
+    interpretWatchdog = setTimeout(() => {
+      if (pass !== interpretPass) return
+      console.warn('[scene-interpreter] interpretation timed out, allowing the next pass')
+      interpreting = false
+      interpretWatchdog = null
+    }, 30_000)
   }, INTERPRET_INTERVAL_MS)
 }
 
@@ -147,6 +197,10 @@ export function requestEmbeddings(id: number, texts: string[]): void {
 /** Clean up */
 export function disposeInterpreter(): void {
   stopInterpreting()
+  clearInterpretWatchdog()
+  disposed = true
+  sceneModelPath = null
+  embeddingModelPath = null
   if (child) {
     child.postMessage({ type: 'dispose' })
     setTimeout(() => {

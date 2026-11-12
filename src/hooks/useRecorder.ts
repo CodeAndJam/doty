@@ -20,14 +20,12 @@ export function useRecorder(deviceId?: string) {
   const activeRef = useRef(false)
   const [micPermission, setMicPermission] = useState<MicPermission>('unknown')
 
-  const start = useCallback(async () => {
-    if (activeRef.current) return
+  const start = useCallback(async (): Promise<boolean> => {
+    if (activeRef.current) return true
 
     const permission = await ensureMicPermission()
     setMicPermission(permission)
-    if (permission !== 'granted') return
-
-    activeRef.current = true
+    if (permission !== 'granted') return false
 
     const audioConstraints: MediaTrackConstraints = {
       sampleRate: 16000,
@@ -39,36 +37,52 @@ export function useRecorder(deviceId?: string) {
     if (deviceId) audioConstraints.deviceId = { exact: deviceId }
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints })
-    streamRef.current = stream
 
-    const ctx = new AudioContext({ sampleRate: 16000 })
-    contextRef.current = ctx
+    try {
+      streamRef.current = stream
 
-    // Disable audio output — we only capture PCM, never play back
-    // setSinkId({ type: 'none' }) is available in Chromium 110+ / Electron 31+
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    if (typeof (ctx as any).setSinkId === 'function') {
+      const ctx = new AudioContext({ sampleRate: 16000 })
+      contextRef.current = ctx
+
+      // Disable audio output — we only capture PCM, never play back
+      // setSinkId({ type: 'none' }) is available in Chromium 110+ / Electron 31+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (ctx as any).setSinkId({ type: 'none' })
-    }
-
-    await ctx.audioWorklet.addModule('./pcm-capture.worklet.js')
-
-    const source = ctx.createMediaStreamSource(stream)
-    sourceRef.current = source
-
-    const worklet = new AudioWorkletNode(ctx, 'pcm-capture')
-    workletRef.current = worklet
-
-    worklet.port.onmessage = async (e) => {
-      if (!activeRef.current) return
-      if (e.data?.type === 'segment') {
-        await window.doty.sttTranscribeChunk(e.data.buffer)
+      if (typeof (ctx as any).setSinkId === 'function') {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (ctx as any).setSinkId({ type: 'none' })
       }
-    }
 
-    source.connect(worklet)
-    // Do NOT connect worklet to destination — we only want to capture, not play back
+      await ctx.audioWorklet.addModule('./pcm-capture.worklet.js')
+
+      const source = ctx.createMediaStreamSource(stream)
+      sourceRef.current = source
+
+      const worklet = new AudioWorkletNode(ctx, 'pcm-capture')
+      workletRef.current = worklet
+
+      worklet.port.onmessage = async (e) => {
+        if (!activeRef.current) return
+        if (e.data?.type === 'segment') {
+          await window.doty.sttTranscribeChunk(e.data.buffer)
+        }
+      }
+
+      source.connect(worklet)
+      // Do NOT connect worklet to destination — we only want to capture, not play back
+      activeRef.current = true
+      return true
+    } catch (e) {
+      // Release the mic and any half-built graph so start() can be retried
+      stream.getTracks().forEach((t) => t.stop())
+      workletRef.current?.disconnect()
+      sourceRef.current?.disconnect()
+      contextRef.current?.close()
+      workletRef.current = null
+      sourceRef.current = null
+      contextRef.current = null
+      streamRef.current = null
+      throw e
+    }
   }, [deviceId])
 
   const stop = useCallback(() => {

@@ -7,6 +7,7 @@ interface SfxChannel {
   id: string
   sfxId: string
   label: string
+  filename: string
   audio: HTMLAudioElement
   playing: boolean
   looping: boolean
@@ -86,8 +87,9 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
 
       const id = `sfx-${++channelCounter}`
       const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
-      const vol = loadSfxVolume(sfxId) ?? masterRef.current
-      audio.volume = vol
+      // channel.volume is the per-effect gain; the master volume is applied on top
+      const vol = loadSfxVolume(sfxId) ?? 1
+      audio.volume = vol * masterRef.current
       audio.loop = loop
 
       audio.onended = () => {
@@ -100,7 +102,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
       // Stream SFX to Discord as an overlay on top of music (fire-and-forget)
       window.doty.discordStreamSfx(filename).catch(() => {})
 
-      const channel: SfxChannel = { id, sfxId, label, audio, playing: true, looping: loop, volume: vol }
+      const channel: SfxChannel = { id, sfxId, label, filename, audio, playing: true, looping: loop, volume: vol }
       setChannels((prev) => [...prev, channel])
       return id
     },
@@ -108,6 +110,9 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   )
 
   const stop = useCallback((channelId: string) => {
+    // Only stop Discord if this exact effect is the one being streamed
+    const ch = channelsRef.current.find((c) => c.id === channelId)
+    if (ch) window.doty.discordStopSfx(ch.filename).catch(() => {})
     setChannels((prev) => {
       const ch = prev.find((c) => c.id === channelId)
       if (ch) {
@@ -119,6 +124,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   }, [])
 
   const stopAll = useCallback(() => {
+    window.doty.discordStopSfx().catch(() => {})
     channelsRef.current.forEach((ch) => {
       ch.audio.pause()
       ch.audio.currentTime = 0
@@ -162,7 +168,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   }, [])
 
   const getSfxVolume = useCallback(
-    (sfxId: string): number => sfxVolumes[sfxId] ?? loadSfxVolume(sfxId) ?? masterRef.current,
+    (sfxId: string): number => sfxVolumes[sfxId] ?? loadSfxVolume(sfxId) ?? 1,
     [sfxVolumes],
   )
 

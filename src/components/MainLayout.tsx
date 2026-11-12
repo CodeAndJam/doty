@@ -96,6 +96,9 @@ export default function MainLayout() {
   const { start, stop, micPermission } = useRecorder(micDeviceId)
   const { recommend, modelStatus, lastRanker } = useQwen()
   const recommendRef = useRef(recommend)
+  // Stable handle for the IPC effect below (a plain function is rebuilt every render)
+  const toggleRecordingRef = useRef<() => void>(() => {})
+  toggleRecordingRef.current = toggleRecording
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -137,6 +140,12 @@ export default function MainLayout() {
     }
     loadSessions()
   }, [])
+
+  // Tell the main process which session new transcript cues belong to.
+  // (session:load only records the last *viewed* session.)
+  useEffect(() => {
+    if (activeSession) window.doty.sessionSetActive(activeSession)
+  }, [activeSession])
 
   // Subscribe to reprocess events
   useEffect(() => {
@@ -261,9 +270,12 @@ export default function MainLayout() {
     })
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
-      if (status === 'crashed') {
+      if (status === 'crashed' || status === 'error') {
         setAsrStatus('crashed')
         setRecording(false)
+        // Release the mic and reset main's recording state (open WAV fd, embedding pause)
+        stop()
+        window.doty.sttStop().catch(() => {})
       } else {
         setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
       }
@@ -295,9 +307,24 @@ export default function MainLayout() {
       setCurrentScene(scene)
     })
 
-    // Listen for SFX recommendations from the backend (fallback)
-    const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
-      setSfxRecommendations(ids)
+    // Scene-interpreter pipeline (main process) — fast path + vector search
+    const unsubRec = window.doty.onRecommendations((files) => {
+      setRecommendations(files)
+    })
+    const unsubRecConfidence = window.doty.onRecommendationConfidence((confidence) => {
+      setLastConfidence(confidence)
+    })
+
+    // Folder/session changes coming from Settings or the main process
+    const unsubFolder = window.doty.onMusicFolderChanged((folder) => setMusicFolder(folder))
+    const unsubSessions = window.doty.onSessionsChanged(() => {
+      window.doty.sessionList().then(setSessions)
+      window.doty.sessionGetLast().then(async (last) => {
+        if (!last) return
+        setActiveSession(last)
+        const cues = await window.doty.sessionLoad(last)
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+      })
     })
 
     // Cmd+, opens Settings (standard macOS convention)
@@ -309,7 +336,7 @@ export default function MainLayout() {
       // Cmd+Shift+T toggles transcription
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
         e.preventDefault()
-        toggleRecording()
+        toggleRecordingRef.current()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -321,13 +348,16 @@ export default function MainLayout() {
       unsubModelSwitch()
       unsubParagraphBreak()
       unsubScene()
-      unsubSfxRec()
+      unsubRec()
+      unsubRecConfidence()
+      unsubFolder()
+      unsubSessions()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation, toggleRecording])
+  }, [runRecommendation, runSfxRecommendation, stop])
 
   function handleDmChange(text: string) {
     setDmPrompt(text)
@@ -360,12 +390,23 @@ export default function MainLayout() {
       setRecording(false)
       setSessionStartTime(null)
     } else {
-      const res = await window.doty.sttStart()
-      if (!res.ok) {
-        setShowSettings(true)
+      // Start the mic first: sttStart() opens the WAV file and pauses embeddings,
+      // so a mic failure must not leave main in a streaming state.
+      try {
+        const started = await start()
+        if (!started) return
+        const res = await window.doty.sttStart()
+        if (!res.ok) {
+          stop()
+          setShowSettings(true)
+          return
+        }
+      } catch (e) {
+        console.error('[main] failed to start recording:', e)
+        stop()
+        await window.doty.sttStop()
         return
       }
-      await start()
       setRecording(true)
       setSessionStartTime(Date.now())
     }
@@ -548,7 +589,11 @@ export default function MainLayout() {
                     const cues = await window.doty.sessionLoad(remaining[0].file)
                     setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
                   } else {
-                    setActiveSession(null)
+                    // Keep a recording destination: deleting the last session
+                    // must not leave the mic writing into a void.
+                    const s = await window.doty.sessionCreate()
+                    setSessions([s])
+                    setActiveSession(s.file)
                     setTranscripts([])
                   }
                 }

@@ -84,7 +84,7 @@ export default function Soundboard({
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
-  const prevAutopilotLenRef = useRef(0)
+  const lastAutoLogEntryRef = useRef<object | null>(null)
 
   // Accumulate decision log entries from recommendation results
   useEffect(() => {
@@ -147,22 +147,6 @@ export default function Soundboard({
     }
   }, [queue, loopMode, playTrack, stopPlayback])
 
-  // Watch queue.currentTrack
-  const lastQueueTrackRef = useRef<string | null>(null)
-  const lastQueueIndexRef = useRef<number>(-1)
-  useEffect(() => {
-    const cur = queue.currentTrack
-    const idx = queue.currentIndex
-    if (cur && (cur !== lastQueueTrackRef.current || idx !== lastQueueIndexRef.current)) {
-      playTrack(cur, true)
-      lastQueueTrackRef.current = cur
-      lastQueueIndexRef.current = idx
-    } else if (!cur) {
-      lastQueueTrackRef.current = null
-      lastQueueIndexRef.current = -1
-    }
-  }, [queue.currentTrack, queue.currentIndex, playTrack]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Data loading ─────────────────────────────────────────────────────
 
   // Fetch music metadata
@@ -193,12 +177,15 @@ export default function Soundboard({
     return unsub
   }, [])
 
-  // Load SFX list on mount
+  // Load SFX list on mount and whenever the folder changes
   useEffect(() => {
-    window.doty
-      .getSfxList()
-      .then(setAllSfx)
-      .catch(() => setAllSfx([]))
+    const load = () =>
+      window.doty
+        .getSfxList()
+        .then(setAllSfx)
+        .catch(() => setAllSfx([]))
+    load()
+    return window.doty.onSfxChanged(load)
   }, [])
 
   // Load SFX tags on mount
@@ -297,9 +284,15 @@ export default function Soundboard({
   }
 
   function handleQueuePlay(index: number) {
-    queue.setCurrentIndex(index)
     const track = queue.tracks[index]
-    if (track) handlePlayTrack(track, true)
+    if (!track) return
+    queue.setCurrentIndex(index)
+    if (playing === track) {
+      // Same track — toggle pause/resume (matches the pause icon in the queue)
+      playTrack(track)
+    } else {
+      handlePlayTrack(track, true)
+    }
   }
 
   // ── SFX handlers ─────────────────────────────────────────────────────
@@ -356,8 +349,9 @@ export default function Soundboard({
       console.log('[autopilot] auto-triggering SFX:', sfxId, 'volume:', volume)
       const sfx = allSfx.find((s) => s.id === sfxId)
       if (sfx) {
-        sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
-        sfxPlayer.setSfxVolume(sfxId, volume)
+        const channelId = sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
+        // Per-trigger gain only — never overwrite the DM's saved SFX volume
+        if (channelId) sfxPlayer.setChannelVolume(channelId, volume)
         window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
       }
     },
@@ -373,31 +367,37 @@ export default function Soundboard({
     prevSettingsOpenRef.current = settingsOpen
   }, [settingsOpen, autopilot.reloadConfig])
 
-  // Feed confidence to autopilot when recommendations change
+  // Feed confidence to autopilot when recommendations change.
+  // Keep the callbacks in refs: they are rebuilt every render, so depending on
+  // them directly would re-fire this effect (and its state writes) forever.
+  const onRecommendationRef = useRef(autopilot.onRecommendation)
+  const onSfxRecommendationRef = useRef(autopilot.onSfxRecommendation)
+  onRecommendationRef.current = autopilot.onRecommendation
+  onSfxRecommendationRef.current = autopilot.onSfxRecommendation
+
   useEffect(() => {
     if (recommendations.length > 0 && lastConfidence > 0) {
-      autopilot.onRecommendation(recommendations[0], lastConfidence)
+      onRecommendationRef.current(recommendations[0], lastConfidence)
     }
-  }, [recommendations, lastConfidence, autopilot.onRecommendation])
+  }, [recommendations, lastConfidence])
 
   // Feed SFX recommendations to autopilot
   useEffect(() => {
     if (sfxRecommendations.length > 0) {
-      autopilot.onSfxRecommendation(sfxRecommendations)
+      onSfxRecommendationRef.current(sfxRecommendations)
     }
-  }, [sfxRecommendations, autopilot.onSfxRecommendation])
+  }, [sfxRecommendations])
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
+    // The source array is capped and prepend-only; use the last merged object
+    // identity so entries sharing a millisecond are not dropped.
     const apLog = autopilot.decisionLog
-    if (apLog.length <= prevAutopilotLenRef.current) {
-      prevAutopilotLenRef.current = apLog.length
-      return
-    }
-    // New entries are at the front of the array
-    const newCount = apLog.length - prevAutopilotLenRef.current
-    prevAutopilotLenRef.current = apLog.length
-    const newEntries: DecisionLogEntry[] = apLog.slice(0, newCount).map((e) => ({
+    const lastIdx = lastAutoLogEntryRef.current ? apLog.indexOf(lastAutoLogEntryRef.current as never) : -1
+    const newEntries = lastIdx === -1 ? apLog : apLog.slice(0, lastIdx)
+    if (newEntries.length === 0) return
+    lastAutoLogEntryRef.current = apLog[0]
+    const mapped: DecisionLogEntry[] = newEntries.map((e) => ({
       timestamp: e.time,
       ranker: null,
       confidence: e.confidence,
@@ -406,7 +406,7 @@ export default function Soundboard({
       action: e.action,
       reason: e.reason,
     }))
-    decisionLogRef.current = [...newEntries, ...decisionLogRef.current].slice(0, 50)
+    decisionLogRef.current = [...mapped, ...decisionLogRef.current].slice(0, 50)
     setDecisionLog([...decisionLogRef.current])
   }, [autopilot.decisionLog])
 
@@ -946,6 +946,7 @@ export default function Soundboard({
 
       {browsingSfx && (
         <SfxBrowsePanel
+          sfxPlayer={sfxPlayer}
           sfxRecommendations={sfxRecommendations}
           sfxPinned={sfxPinned}
           onTogglePin={toggleSfxPin}

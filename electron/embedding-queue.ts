@@ -8,6 +8,7 @@ import { isEmbeddingModelReady, requestEmbedding } from './scene-interpreter'
 import { getEmbeddingStats, getTracksNeedingEmbedding, upsertTrackEmbedding } from './track-vectors'
 
 const COOLDOWN_MS = 500 // pause between tracks to avoid heat
+const MODEL_WAIT_MS = 5000 // poll slowly while the embedding model is absent
 const _BATCH_SIZE = 10 // process this many before re-checking state
 
 let running = false
@@ -17,6 +18,7 @@ let onProgress: ((stats: { embedded: number; total: number; percent: number }) =
 let pendingEmbedCallback: ((id: number, vector: number[]) => void) | null = null
 let currentEmbedId = 0
 let timer: ReturnType<typeof setTimeout> | null = null
+let embedTimeout: ReturnType<typeof setTimeout> | null = null
 
 export function setEmbeddingFiles(files: string[]): void {
   allFiles = files
@@ -54,51 +56,75 @@ export function stopEmbeddingQueue(): void {
     clearTimeout(timer)
     timer = null
   }
+  if (embedTimeout) {
+    clearTimeout(embedTimeout)
+    embedTimeout = null
+  }
+  pendingEmbedCallback = null
 }
 
-function scheduleNext(): void {
+function scheduleNext(delay = COOLDOWN_MS): void {
   if (!running || paused) return
   if (timer) clearTimeout(timer)
-  timer = setTimeout(processNext, COOLDOWN_MS)
+  timer = setTimeout(processNext, delay)
 }
 
 async function processNext(): Promise<void> {
   if (!running || paused) return
   if (!isEmbeddingModelReady()) {
-    // Wait for embedding model to load
-    scheduleNext()
+    // Wait for the embedding model to load (slow poll, not a busy loop)
+    scheduleNext(MODEL_WAIT_MS)
     return
   }
 
-  const needsWork = getTracksNeedingEmbedding(allFiles, 1)
-  if (needsWork.length === 0) {
-    // All done
+  try {
+    const needsWork = getTracksNeedingEmbedding(allFiles, 1)
+    if (needsWork.length === 0) {
+      // All done
+      running = false
+      reportProgress()
+      return
+    }
+
+    const filename = needsWork[0]
+    const tags = getTags(filename)
+
+    // Tags-first: if track has tags, embed directly without LLM
+    const description = buildDescription(filename, tags)
+
+    // Request embedding from the LLM utilityProcess
+    const embedId = ++currentEmbedId
+
+    // Set up one-shot callback for this embedding
+    const originalCb = pendingEmbedCallback
+    pendingEmbedCallback = (id: number, vector: number[]) => {
+      if (id !== embedId) return
+      if (embedTimeout) {
+        clearTimeout(embedTimeout)
+        embedTimeout = null
+      }
+      pendingEmbedCallback = originalCb
+      const source = tags.length > 0 ? ('tags' as const) : ('llm' as const)
+      upsertTrackEmbedding(filename, description, vector, source)
+      reportProgress()
+      scheduleNext()
+    }
+
+    // A lost embedding reply must not stall the queue forever.
+    if (embedTimeout) clearTimeout(embedTimeout)
+    embedTimeout = setTimeout(() => {
+      embedTimeout = null
+      pendingEmbedCallback = originalCb
+      console.warn('[embedding-queue] embedding timed out for', filename)
+      scheduleNext()
+    }, 15_000)
+
+    requestEmbedding(embedId, `search_document: ${description}`)
+  } catch (e) {
+    // e.g. sqlite-vec unavailable — stop instead of retrying at 2 Hz
+    console.error('[embedding-queue] work failed, stopping queue:', e)
     running = false
-    reportProgress()
-    return
   }
-
-  const filename = needsWork[0]
-  const tags = getTags(filename)
-
-  // Tags-first: if track has tags, embed directly without LLM
-  const description = buildDescription(filename, tags)
-
-  // Request embedding from the LLM utilityProcess
-  const embedId = ++currentEmbedId
-
-  // Set up one-shot callback for this embedding
-  const originalCb = pendingEmbedCallback
-  pendingEmbedCallback = (id: number, vector: number[]) => {
-    if (id !== embedId) return
-    pendingEmbedCallback = originalCb
-    const source = tags.length > 0 ? ('tags' as const) : ('llm' as const)
-    upsertTrackEmbedding(filename, description, vector, source)
-    reportProgress()
-    scheduleNext()
-  }
-
-  requestEmbedding(embedId, `search_document: ${description}`)
 }
 
 /** Build a text description for embedding (tags-first, fallback to filename) */

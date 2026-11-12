@@ -30,7 +30,9 @@ function decodeAudio(filePath: string): Promise<{ samples: Float32Array; duratio
 
     const ff = spawn(
       ffmpegPath,
-      ['-i', filePath, '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
+      // Cap analysis to the first 10 minutes: BPM/key/energy are stable there and
+      // a full 3-hour set would otherwise buffer several GB per concurrent worker.
+      ['-i', filePath, '-t', '600', '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
       { stdio: ['ignore', 'pipe', 'ignore'] },
     )
 
@@ -63,6 +65,7 @@ async function extractTags(filePath: string) {
       sampleRate: format.sampleRate || null,
       channels: format.numberOfChannels || null,
       codec: format.codec || null,
+      duration: format.duration || null,
     }
   } catch (e) {
     console.error('[analyze-worker] tag extraction failed:', e)
@@ -77,6 +80,7 @@ async function extractTags(filePath: string) {
       sampleRate: null,
       channels: null,
       codec: null,
+      duration: null,
     }
   }
 }
@@ -134,9 +138,10 @@ async function run() {
     scale,
     danceability,
     energy,
-    duration: Math.round(duration),
     mtime,
     ...tags,
+    // Analysis uses a 10-minute prefix; report the real file duration from tags
+    duration: Math.round(tags.duration ?? duration),
   })
 }
 

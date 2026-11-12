@@ -61,14 +61,20 @@ const RERANK_CANDIDATES = 20
 
 export function useQwen() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
-  const [downloadProgress] = useState<RerankerDownloadProgress | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<RerankerDownloadProgress | null>(null)
   const [lastRanker, setLastRanker] = useState<RankerType>(null)
 
   useEffect(() => {
     // Listen for status from main process
     const unsub = window.doty.onRerankerStatus((status: string) => {
       _currentStatus = status as Status
+      // A post-warmup worker error must allow the next recommendation to respawn it
+      if (status === 'error') _warmupRequested = false
       setModelStatus(status as Status)
+    })
+    const unsubProgress = window.doty.onRerankerDownloadProgress((p) => {
+      setDownloadProgress(p)
+      if (p.status === 'done' || p.status === 'ready') setDownloadProgress(null)
     })
 
     // Warm the model during idle time so startup and model downloads stay snappy.
@@ -84,6 +90,7 @@ export function useQwen() {
 
     return () => {
       unsub()
+      unsubProgress()
       if (idleId !== undefined) window.cancelIdleCallback(idleId)
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
@@ -136,9 +143,4 @@ export function useQwen() {
   }, [])
 
   return { recommend, modelStatus, downloading: false, downloadProgress, lastRanker }
-}
-
-/** No-op — kept for API compatibility */
-export function onQwenLog(_cb: (msg: string) => void): () => void {
-  return () => {}
 }

@@ -61,12 +61,15 @@ describe('music-protocol', () => {
 
   describe('handleMusicRequest', () => {
     it('returns 404 for non-existent file', () => {
-      const resp = handleMusicRequest({ url: 'music://play/nonexistent.mp3', rangeHeader: null }, tmpDir)
+      const resp = handleMusicRequest(
+        { url: 'music://play/nonexistent.mp3', rangeHeader: null },
+        { musicFolder: tmpDir },
+      )
       expect(resp.status).toBe(404)
     })
 
     it('returns 200 with full file for request without Range header', () => {
-      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: null }, tmpDir)
+      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: null }, { musicFolder: tmpDir })
       expect(resp.status).toBe(200)
       expect(resp.headers.get('Content-Type')).toBe('audio/mpeg')
       expect(resp.headers.get('Content-Length')).toBe('1000')
@@ -74,7 +77,10 @@ describe('music-protocol', () => {
     })
 
     it('returns 206 with partial content for Range request', () => {
-      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=100-199' }, tmpDir)
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=100-199' },
+        { musicFolder: tmpDir },
+      )
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Type')).toBe('audio/mpeg')
       expect(resp.headers.get('Content-Length')).toBe('100')
@@ -83,17 +89,48 @@ describe('music-protocol', () => {
     })
 
     it('handles open-ended Range (bytes=500-)', () => {
-      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=500-' }, tmpDir)
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=500-' },
+        { musicFolder: tmpDir },
+      )
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('500')
       expect(resp.headers.get('Content-Range')).toBe('bytes 500-999/1000')
     })
 
     it('handles Range starting at 0', () => {
-      const resp = handleMusicRequest({ url: `music://play/${testFile}`, rangeHeader: 'bytes=0-' }, tmpDir)
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=0-' },
+        { musicFolder: tmpDir },
+      )
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('1000')
       expect(resp.headers.get('Content-Range')).toBe('bytes 0-999/1000')
+    })
+
+    it('returns 403 for a path outside the configured folders', () => {
+      const resp = handleMusicRequest(
+        { url: 'music://play/../../etc/passwd', rangeHeader: null },
+        { musicFolder: tmpDir },
+      )
+      expect(resp.status).toBe(403)
+    })
+
+    it('serves absolute SFX paths only from the SFX folder', () => {
+      const sfxDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-sfx-test-'))
+      const sfxFile = path.join(sfxDir, 'boom.mp3')
+      fs.writeFileSync(sfxFile, testContent)
+      const allowed = handleMusicRequest(
+        { url: `music://play/${sfxFile.replace(/^\//, '')}`, rangeHeader: null },
+        { musicFolder: tmpDir, sfxFolder: sfxDir },
+      )
+      expect(allowed.status).toBe(200)
+      const denied = handleMusicRequest(
+        { url: 'music://play/etc/passwd', rangeHeader: null },
+        { musicFolder: tmpDir, sfxFolder: sfxDir },
+      )
+      expect(denied.status).toBe(403)
+      fs.rmSync(sfxDir, { recursive: true, force: true })
     })
 
     it('returns correct body bytes for a Range request', async () => {
@@ -102,7 +139,10 @@ describe('music-protocol', () => {
       const knownContent = Buffer.from('ABCDEFGHIJKLMNOPQRSTUVWXYZ')
       fs.writeFileSync(path.join(tmpDir, knownFile), knownContent)
 
-      const resp = handleMusicRequest({ url: `music://play/${knownFile}`, rangeHeader: 'bytes=10-14' }, tmpDir)
+      const resp = handleMusicRequest(
+        { url: `music://play/${knownFile}`, rangeHeader: 'bytes=10-14' },
+        { musicFolder: tmpDir },
+      )
       expect(resp.status).toBe(206)
       expect(resp.headers.get('Content-Length')).toBe('5')
 

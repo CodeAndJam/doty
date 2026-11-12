@@ -49,17 +49,22 @@ const MOOD_TRIGGERS: MoodTrigger[] = [
   },
 ]
 
-let lastFastMood: string | null = null
 let lastSlowRecommendation: Recommendation = { files: [], confidence: 0, source: 'none', scene: null }
 let cooldownUntil = 0 // timestamp when cooldown expires
 
 const COOLDOWN_MS = 60000 // 60s default cooldown between switches
 
+export interface FastTrigger {
+  mood: string
+  confidence: number
+}
+
 /**
  * Fast-path: check recent transcript for high-confidence mood transitions.
- * Returns a recommendation only if a TRANSITION is detected (mood changed).
+ * Returns the detected mood so the caller can request a matching embedding now,
+ * instead of waiting for the next slow-path interpretation.
  */
-export function fastPathCheck(recentText: string): Recommendation | null {
+export function fastPathCheck(recentText: string): FastTrigger | null {
   if (!recentText || recentText.length < 10) return null
 
   const lower = recentText.toLowerCase()
@@ -76,10 +81,10 @@ export function fastPathCheck(recentText: string): Recommendation | null {
 
   if (!bestTrigger || bestScore === 0) return null
 
-  // Only fire if mood CHANGED (transition detector, not steady-state)
+  // Don't duplicate the mood the slow path already reported
   const currentSlowMood = getLastScene()?.mood
-  if (bestTrigger.mood === lastFastMood && bestTrigger.mood === currentSlowMood) {
-    return null // same mood as before — not a transition
+  if (bestTrigger.mood === currentSlowMood) {
+    return null
   }
 
   // Confidence based on number of keyword matches
@@ -88,15 +93,12 @@ export function fastPathCheck(recentText: string): Recommendation | null {
   // Must exceed 0.8 threshold to override slow-path
   if (confidence <= 0.8) return null
 
-  // Check cooldown (unless confidence > 0.95 — dramatic override)
+  // Hard cooldown: one fast trigger per window, even for 3+ keyword matches
   const now = Date.now()
-  if (now < cooldownUntil && confidence <= 0.95) return null
+  if (now < cooldownUntil) return null
 
-  lastFastMood = bestTrigger.mood
-
-  // Search for tracks matching this mood — use embedded search if available
-  // For fast-path, we do a quick embedding search with the mood as query
-  return null // ponytail: fast-path vector search done async via requestFastSearch below
+  // The caller embeds this mood and runs the normal vector search
+  return { mood: bestTrigger.mood, confidence }
 }
 
 /**

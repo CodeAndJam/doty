@@ -1,24 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSfxPlayer } from '../hooks/useSfxPlayer'
+import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
 import type { SfxCategory, SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS } from '../types'
 import { CloseIcon, PinIcon, SearchIcon, StopIcon } from './Icons'
 import SfxCard from './SfxCard'
 
 interface SfxBrowsePanelProps {
+  sfxPlayer: UseSfxPlayerReturn
   sfxRecommendations: string[]
   sfxPinned: string[]
   onTogglePin: (sfxId: string) => void
   onClose: () => void
 }
 
-export default function SfxBrowsePanel({ sfxRecommendations, sfxPinned, onTogglePin, onClose }: SfxBrowsePanelProps) {
+export default function SfxBrowsePanel({
+  sfxPlayer,
+  sfxRecommendations,
+  sfxPinned,
+  onTogglePin,
+  onClose,
+}: SfxBrowsePanelProps) {
   const [allSfx, setAllSfx] = useState<SfxMeta[]>([])
   const [selectedCategory, setSelectedCategory] = useState<SfxCategory | 'all' | 'recommended'>('all')
   const [search, setSearch] = useState('')
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
-  const sfxPlayer = useSfxPlayer()
 
   // Load SFX list on mount
   useEffect(() => {

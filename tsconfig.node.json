@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
+    "target": "ES2022",
     "module": "commonjs",
-    "lib": ["ES2020"],
+    "lib": ["ES2022"],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -15,7 +15,7 @@
     "electron/voxtral-streaming.test.ts",
     "electron/voxtral-streaming-realtime.test.ts",
     "electron/voxtral-session.test.ts",
-    "electron/stt-models.test.ts",
+    "electron/voxtral-latency.test.ts",
     "electron/voxtral-integration.test.ts",
     "electron/reranker-integration.test.ts",
     "electron/asr-integration.test.ts"

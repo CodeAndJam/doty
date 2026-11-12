@@ -14,19 +14,23 @@ let worker: Worker | null = null
 let workerReady = false
 let streaming = false
 let streamStarted = false
+/** Incremented on every stop so a pending model switch knows the user stopped. */
+let stopToken = 0
+/** True while a model/language switch is replacing the worker. */
+let restarting = false
 // Audio captured while the model is still loading: a cold Metal load is ~10s
 // and the first words of the session must not be lost.
 const pending = new AudioQueue(60) // ~30s of 500ms chunks
 
 function postChunk(samples: Float32Array): void {
   if (!worker) return
-  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
   worker.postMessage({ type: 'feed', buffer: buf }, [buf])
 }
 
 /** Tell the worker to start a session, then replay whatever audio was queued. */
 function beginWorkerStream(): void {
-  if (!worker || !streaming || streamStarted) return
+  if (restarting || !worker || !streaming || streamStarted) return
   streamStarted = true
   worker.postMessage({ type: 'stream-start' })
   for (const samples of pending.drain()) postChunk(samples)
@@ -60,6 +64,7 @@ function ensureWorker(): Worker {
     switch (msg.type) {
       case 'ready':
         workerReady = true
+        restarting = false
         // Persist the effective language so Settings never claims a focus the model rejected.
         if (typeof msg.language === 'string') store.set('sttLanguage', msg.language)
         if (onAsrStatus) onAsrStatus('ready')
@@ -85,6 +90,12 @@ function ensureWorker(): Worker {
         break
       case 'error':
         console.error('[asr] worker error:', msg.error)
+        restarting = false
+        if (streaming && !streamStarted) {
+          // The load failed before the stream began: do not leave the UI recording
+          streaming = false
+          pending.clear()
+        }
         if (onAsrStatus) onAsrStatus('error')
         break
     }
@@ -97,6 +108,7 @@ function ensureWorker(): Worker {
     if (worker === w) {
       worker = null
       workerReady = false
+      restarting = false
     }
     if (onAsrStatus) onAsrStatus('crashed')
   })
@@ -105,6 +117,7 @@ function ensureWorker(): Worker {
     if (worker !== w) return
     worker = null
     workerReady = false
+    restarting = false
   })
 
   return w
@@ -132,6 +145,7 @@ export function initRecognizer(): boolean {
 export function startStream(): void {
   streaming = true
   streamStarted = false
+  if (restarting) return // the new worker's ready handler will begin the stream
   pending.clear()
   if (!worker && !initRecognizer()) {
     streaming = false
@@ -169,6 +183,7 @@ export function feedChunk(samples: Float32Array): void {
 
 /** Finalize the stream — flush remaining audio and get final text */
 export function finalizeStream(): void {
+  stopToken++
   const started = streamStarted
   streaming = false
   streamStarted = false
@@ -202,7 +217,7 @@ export function transcribeFloat32(samples: Float32Array, _sampleRate = 16000): P
         }
       }
       worker.on('message', handler)
-      const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+      const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
       worker.postMessage({ type: 'transcribe', id, buffer: buf }, [buf])
     }
   })
@@ -213,37 +228,44 @@ export function flushRecognizer(): void {
   finalizeStream()
 }
 
-/** Restart with potentially different model. Seamlessly resumes streaming if active. */
+/** Restart with potentially different model. Keeps the session (and its queued audio) alive. */
 export function restartRecognizer(): void {
   const wasStreaming = streaming
+  const token = stopToken
 
-  if (worker) {
-    // Finalize current stream to flush pending text before switching
-    if (streaming) {
-      worker.postMessage({ type: 'finalize' })
-      streaming = false
-    }
-    worker.postMessage({ type: 'dispose' })
-    setTimeout(() => {
-      worker?.terminate()
-      worker = null
-      workerReady = false
-      initRecognizer()
-      // Re-start streaming once new model is ready
-      if (wasStreaming) {
-        const waitForReady = () => {
-          if (workerReady) {
-            startStream()
-          } else {
-            setTimeout(waitForReady, 50)
-          }
-        }
-        waitForReady()
-      }
-    }, 200)
-  } else {
-    initRecognizer()
+  if (!worker) {
+    restarting = true
+    if (!initRecognizer()) restarting = false
+    return
   }
+  restarting = true
+
+  if (streaming) {
+    // Flush the old model, but keep `streaming` true so audio arriving during the
+    // switch is queued (and `streamStarted` false makes feedChunk queue it).
+    worker.postMessage({ type: 'finalize' })
+    streamStarted = false
+  }
+  worker.postMessage({ type: 'dispose' })
+
+  setTimeout(() => {
+    worker?.terminate()
+    worker = null
+    workerReady = false
+    restarting = true
+    streamStarted = false
+    if (!initRecognizer()) restarting = false
+
+    if (wasStreaming) {
+      // The worker's `ready` handler calls beginWorkerStream() and drains `pending`.
+      // If the new model never loads, fail loudly instead of polling forever.
+      setTimeout(() => {
+        if (token !== stopToken || !streaming || workerReady) return
+        streaming = false
+        if (onAsrStatus) onAsrStatus('error')
+      }, 60_000)
+    }
+  }, 200)
 }
 
 /** Free the worker */

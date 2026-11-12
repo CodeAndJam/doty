@@ -73,11 +73,15 @@ contextBridge.exposeInMainWorld('doty', {
   setMusicFolder: (path: string) => ipcRenderer.invoke('music:set-folder', path),
   listMusic: () => ipcRenderer.invoke('music:list'),
   getAllMetadata: () => ipcRenderer.invoke('music:get-all-metadata'),
-  recommendManual: (prompt: string) => ipcRenderer.invoke('music:recommend-manual', prompt),
   onRecommendations: (cb: (files: string[]) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, files: string[]) => cb(files)
     ipcRenderer.on('music:recommendations', handler)
     return () => ipcRenderer.removeListener('music:recommendations', handler)
+  },
+  onRecommendationConfidence: (cb: (confidence: number) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, confidence: number) => cb(confidence)
+    ipcRenderer.on('recommend:confidence', handler)
+    return () => ipcRenderer.removeListener('recommend:confidence', handler)
   },
 
   // Model
@@ -95,6 +99,11 @@ contextBridge.exposeInMainWorld('doty', {
     return () => {
       ipcRenderer.removeListener('reranker:ipc-status', handler)
     }
+  },
+  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: { file: string; progress: number; status: string }) => cb(p)
+    ipcRenderer.on('reranker:download-progress', handler)
+    return () => ipcRenderer.removeListener('reranker:download-progress', handler)
   },
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
@@ -125,17 +134,6 @@ contextBridge.exposeInMainWorld('doty', {
   getSttLanguage: () => ipcRenderer.invoke('stt:get-language'),
   setSttLanguage: (language: string) => ipcRenderer.invoke('stt:set-language', language),
   getSttModelStatus: () => ipcRenderer.invoke('stt:get-model-status'),
-  downloadWhisper: (model: string) => ipcRenderer.invoke('stt:download-whisper', model),
-  onSttDownloadProgress: (
-    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
-  ) => {
-    const handler = (
-      _e: Electron.IpcRendererEvent,
-      p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean },
-    ) => cb(p)
-    ipcRenderer.on('stt:download-progress', handler)
-    return () => ipcRenderer.removeListener('stt:download-progress', handler)
-  },
 
   // Transcripts
   getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),
@@ -149,6 +147,7 @@ contextBridge.exposeInMainWorld('doty', {
   sessionRename: (file: string, newName: string) => ipcRenderer.invoke('session:rename', file, newName),
   sessionDelete: (file: string) => ipcRenderer.invoke('session:delete', file),
   sessionGetLast: () => ipcRenderer.invoke('session:get-last'),
+  sessionSetActive: (file: string) => ipcRenderer.invoke('session:set-active', file),
 
   // Reprocess
   reprocessStart: (sessionFile: string, modelId: string) => ipcRenderer.invoke('reprocess:start', sessionFile, modelId),
@@ -169,19 +168,6 @@ contextBridge.exposeInMainWorld('doty', {
     return () => ipcRenderer.removeListener('reprocess:error', handler)
   },
 
-  // Hotwords
-  getHotwordsFile: () => ipcRenderer.invoke('settings:get-hotwords-file'),
-  setHotwordsFile: (path: string) => ipcRenderer.invoke('settings:set-hotwords-file', path),
-  pickHotwordsFile: () => ipcRenderer.invoke('settings:pick-hotwords-file'),
-  createDefaultHotwords: () => ipcRenderer.invoke('settings:create-default-hotwords'),
-
-  // Qwen recommendation model status
-  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, s: { status: 'loading' | 'ready' }) => cb(s)
-    ipcRenderer.on('qwen:status', handler)
-    return () => ipcRenderer.removeListener('qwen:status', handler)
-  },
-
   // Scanner
   triggerScan: () => ipcRenderer.invoke('music:scan'),
   onScanProgress: (cb: (p: { done: number; total: number; current: string }) => void) => {
@@ -193,6 +179,21 @@ contextBridge.exposeInMainWorld('doty', {
     const handler = () => cb()
     ipcRenderer.on('scan:complete', handler)
     return () => ipcRenderer.removeListener('scan:complete', handler)
+  },
+  onMusicFolderChanged: (cb: (folder: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, folder: string) => cb(folder)
+    ipcRenderer.on('music:folder-changed', handler)
+    return () => ipcRenderer.removeListener('music:folder-changed', handler)
+  },
+  onSessionsChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sessions:changed', handler)
+    return () => ipcRenderer.removeListener('sessions:changed', handler)
+  },
+  onSfxChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sfx:changed', handler)
+    return () => ipcRenderer.removeListener('sfx:changed', handler)
   },
 
   // Tags
@@ -240,6 +241,7 @@ contextBridge.exposeInMainWorld('doty', {
   discordStreamSfx: (absolutePath: string, volume?: number) =>
     ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
   discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
+  discordStopSfx: (absolutePath?: string) => ipcRenderer.invoke('discord:stop-sfx', absolutePath),
   discordPauseStream: () => ipcRenderer.invoke('discord:pause-stream'),
   discordResumeStream: () => ipcRenderer.invoke('discord:resume-stream'),
   discordSetVolume: (volume: number) => ipcRenderer.invoke('discord:set-volume', volume),

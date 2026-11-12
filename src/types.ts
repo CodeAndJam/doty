@@ -202,8 +202,8 @@ export interface DotyAPI {
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
   getAllMetadata: () => Promise<Record<string, TrackMeta>>
-  recommendManual: (prompt: string) => Promise<{ ok: boolean }>
   onRecommendations: (cb: (files: string[]) => void) => () => void
+  onRecommendationConfidence: (cb: (confidence: number) => void) => () => void
 
   // Model
   modelStatus: () => Promise<{ ready: boolean; onboardingSkipped: boolean }>
@@ -226,13 +226,13 @@ export interface DotyAPI {
   rerankerStatus: () => Promise<{ cached: boolean }>
   rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
   onRerankerStatus: (cb: (status: string) => void) => () => void
+  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
   onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => () => void
   onModelDownloadCancelled: (cb: (e: { modelId: string }) => void) => () => void
-  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void
 
   // STT model selection
   getSttModel: () => Promise<string>
@@ -240,10 +240,6 @@ export interface DotyAPI {
   getSttLanguage: () => Promise<string>
   setSttLanguage: (language: string) => Promise<{ ok: boolean; reason?: string }>
   getSttModelStatus: () => Promise<Record<string, boolean>>
-  downloadWhisper: (model: string) => Promise<{ ok: boolean; alreadyDownloaded?: boolean }>
-  onSttDownloadProgress: (
-    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
-  ) => () => void
 
   // Transcripts
   getTranscriptFolder: () => Promise<string>
@@ -257,6 +253,7 @@ export interface DotyAPI {
   sessionRename: (file: string, newName: string) => Promise<void>
   sessionDelete: (file: string) => Promise<{ ok: boolean }>
   sessionGetLast: () => Promise<string | null>
+  sessionSetActive: (file: string) => Promise<{ ok: boolean }>
 
   // Reprocess
   reprocessStart: (sessionFile: string, modelId: string) => Promise<{ ok: boolean; reason?: string }>
@@ -265,16 +262,13 @@ export interface DotyAPI {
   onReprocessDone: (cb: (r: { file: string; cueCount: number }) => void) => () => void
   onReprocessError: (cb: (e: { message: string }) => void) => () => void
 
-  // Hotwords
-  getHotwordsFile: () => Promise<string>
-  setHotwordsFile: (path: string) => Promise<{ ok: boolean }>
-  pickHotwordsFile: () => Promise<string | null>
-  createDefaultHotwords: () => Promise<{ ok: boolean; path?: string; reason?: string }>
-
   // Scanner
   triggerScan: () => Promise<{ ok: boolean }>
   onScanProgress: (cb: (p: ScanProgress) => void) => () => void
   onScanComplete: (cb: () => void) => () => void
+  onMusicFolderChanged: (cb: (folder: string) => void) => () => void
+  onSessionsChanged: (cb: () => void) => () => void
+  onSfxChanged: (cb: () => void) => () => void
 
   // Tags
   getTags: (filename: string) => Promise<string[]>
@@ -311,6 +305,7 @@ export interface DotyAPI {
   discordStreamTrack: (filename: string, seekSeconds?: number) => Promise<{ ok: boolean }>
   discordStreamSfx: (absolutePath: string, volume?: number) => Promise<{ ok: boolean }>
   discordStopStream: () => Promise<{ ok: boolean }>
+  discordStopSfx: (absolutePath?: string) => Promise<{ ok: boolean }>
   discordPauseStream: () => Promise<{ ok: boolean }>
   discordResumeStream: () => Promise<{ ok: boolean }>
   discordSetVolume: (volume: number) => Promise<{ ok: boolean }>

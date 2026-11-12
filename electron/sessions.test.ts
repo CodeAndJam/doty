@@ -14,7 +14,20 @@ vi.mock('./store', () => ({
   },
 }))
 
-import { deleteSession, loadSessionAsync } from './sessions'
+import { deleteSession, getLastCueStartMs, loadSessionAsync } from './sessions'
+
+describe('getLastCueStartMs', () => {
+  it('returns the start of the last cue, not its end', () => {
+    const file = path.join(os.tmpdir(), `test-cue-${Date.now()}.vtt`)
+    fs.writeFileSync(
+      file,
+      'WEBVTT\n\n00:00:01.000 --> 00:00:04.000\nfirst\n\n00:00:10.500 --> 00:00:13.500\nsecond\n\n',
+    )
+    expect(getLastCueStartMs(file)).toBe(10_500)
+    expect(getLastCueStartMs(path.join(os.tmpdir(), 'does-not-exist.vtt'))).toBe(0)
+    fs.unlinkSync(file)
+  })
+})
 
 describe('loadSessionAsync', () => {
   let tmpFile: string

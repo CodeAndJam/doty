@@ -12,7 +12,7 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Nemotron 3.5 Streaming, ~0.4 s latency); Parakeet Ultra is available in Settings when accuracy matters more than the typing effect. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
 
 ### AI music recommendations
-As the conversation flows, Doty uses a cross-encoder model (ms-marco-MiniLM-L-6-v2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
+As the conversation flows, Doty uses a multilingual cross-encoder (mmarco-mMiniLMv2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
 
 ### DM scene prompt
 Type a scene description like "dark dungeon", "tavern celebration", or "dragon fight" into the prompt bar and Doty immediately re-ranks your library to match. The DM prompt takes priority over the transcript, so you can steer the mood at any time.
@@ -44,25 +44,25 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 
 ### Requirements
 
-- macOS (Apple Silicon or Intel)
-- ~800 MB disk space for AI models (downloaded on first launch)
+- macOS (Apple Silicon)
+- About 2 GB disk space for the default AI models (larger ASR models need more)
 
 ### First launch
 
 1. Open Doty. It downloads the speech model in the background (~740 MB) to `~/.doty/models/`. You can skip onboarding and keep using the app while it downloads.
 2. Open Settings (gear icon or `Cmd+,`) and set your **Music folder** — point it at your local music library (mp3, flac, wav, m4a, ogg, aac supported).
 3. Doty will scan and analyse your tracks. This takes a few minutes on first run depending on library size.
-4. The **MiniLM-L-6-v2** recommendation model (~80 MB) downloads automatically on the first recommendation and is cached to `~/.doty/hf-cache/`.
+4. The recommendation reranker downloads automatically on first use and is cached to `~/.doty/hf-cache/`.
 
 ## User guide
 
 ### Basic workflow
 
 1. Open Settings and select your **music folder** and **microphone**.
-2. Click **Begin Transcription** to start listening.
+2. Click the **Standby** status toggle to start listening.
 3. Doty transcribes what it hears and automatically recommends matching tracks in the soundboard.
 4. Click any track card to play it. Use the player bar at the bottom to control playback.
-5. Type a scene description in the **prompt bar** at the bottom to manually steer recommendations.
+5. Type a scene description in the **prompt bar** above the soundboard to manually steer recommendations.
 
 ### Settings
 
@@ -74,21 +74,17 @@ Open with the gear icon (top right) or `Cmd+,`.
 | Sound Conduit | Audio output device for playback |
 | Music Archive | Folder containing your music files |
 | Transcript Vault | Folder where session transcripts are saved |
-| Arcane Lexicon | Hotwords file with campaign names to boost transcription accuracy |
 | Recommendations | Number of tracks to suggest per query (1–20) |
 | Crossfade | Fade duration between tracks (0–5 seconds) |
 
 ### Soundboard
 
-The soundboard shows three sections:
+The soundboard shows two sections:
 
 - **Pinned** — your favourite tracks, always at the top. Click the pin icon on any track to pin/unpin it. Reorder pinned tracks with the arrow buttons.
 - **Suggestions** — AI-recommended tracks based on the current transcript and/or DM prompt.
-- **All Tracks** — everything else in your library.
 
-Right-click or use the context menu on any track to:
-- **Play Next** — insert it after the current track in the queue
-- **Add to Queue** — append it to the end of the queue
+Use the browse button to search the rest of your library. On any track card, **NEXT** inserts it after the current track and **QUEUE** appends it to the end.
 
 ### Queue
 
@@ -115,6 +111,14 @@ To stream music to a Discord voice channel:
 The Discord volume slider (visible when in a voice channel) is independent from your local playback volume.
 
 ## Troubleshooting
+
+### macOS says "Doty is damaged and can't be opened"
+
+This appears when the downloaded bundle has no valid code signature (for example the 3.2.1 build). Releases are now ad-hoc signed, which replaces that error with the standard "Apple could not verify" prompt. For older downloads, clear the quarantine flag and open the app again:
+
+```bash
+xattr -cr /Applications/Doty.app
+```
 
 ### macOS won't open the app: Apple could not verify Doty is free of malware
 
@@ -172,7 +176,7 @@ pnpm run rebuild
 | Model | Size | Location | Purpose |
 |---|---|---|---|
 | Nemotron 3.5 / Parakeet Ultra (GGUF) | ~740 MB | `~/.doty/models/` | Speech-to-text |
-| ms-marco-MiniLM-L-6-v2 (ONNX) | ~80 MB | `~/.doty/hf-cache/` | Track recommendation reranking |
+| mmarco-mMiniLMv2-L12-H384-v1 (ONNX) | downloaded on first use | `~/.doty/hf-cache/` | Track recommendation reranking |
 
 These are downloaded on first use and never committed to the repository.
 
@@ -222,11 +226,11 @@ src/                React renderer
 | STT | transcribe-cpp (Nemotron / Parakeet Ultra / Parakeet Unified / Voxtral GGUF) |
 | Live chunking | energy endpointing + 10 s windows for batch models |
 | Punctuation | model-native |
-| Recommendations | @huggingface/transformers (ms-marco-MiniLM-L-6-v2) |
+| Recommendations | @huggingface/transformers (mmarco-mMiniLMv2) |
 | Audio analysis | essentia.js + ffmpeg-static |
 | Database | better-sqlite3 |
 | Discord | discord.js + @discordjs/voice + prism-media |
-| Process isolation | Electron `utilityProcess` (separate heap for ASR and reranker) |
+| Process isolation | Electron `utilityProcess` for the scene interpreter, worker thread for STT and analysis |
 
 ### Building a DMG
 

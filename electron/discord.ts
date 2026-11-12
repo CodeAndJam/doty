@@ -85,6 +85,8 @@ let stateListeners: StateListener[] = []
  * misinterpreted as the SFX finishing.
  */
 let sfxPlaying = false
+/** Path of the SFX currently being streamed (null when none). */
+let currentSfxPath: string | null = null
 let sfxTransitioning = false
 let sfxQueue: { path: string; volume: number }[] = []
 
@@ -225,6 +227,13 @@ export async function connect(token?: string): Promise<void> {
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   })
 
+  // Persistent listener: after the one-shot connect listener is consumed, a
+  // later 'error' emit would otherwise throw "Unhandled error event".
+  client.on('error', (err) => {
+    console.error('[discord] Client error:', err.message)
+    setState({ status: 'error', error: err.message })
+  })
+
   // Load persisted volume
   discordVolume = (store.get('discordVolume', 1.0) as number) ?? 1.0
 
@@ -351,6 +360,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 
       if (sfxPlaying) {
         sfxPlaying = false
+        currentSfxPath = null
         log(`SFX finished, queue=${sfxQueue.length}`)
         if (sfxQueue.length > 0) {
           const next = sfxQueue.shift()!
@@ -379,6 +389,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
       if (sfxPlaying || sfxTransitioning) {
         sfxPlaying = false
         sfxTransitioning = false
+        currentSfxPath = null
         sfxQueue = []
         resumeMusicAfterSfx()
       }
@@ -455,6 +466,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 export function leaveChannel(): void {
   sfxPlaying = false
   sfxTransitioning = false
+  currentSfxPath = null
   sfxQueue = []
   currentResource = null
   if (player) {
@@ -530,12 +542,14 @@ function playNextSfx(absolutePath: string, volume: number): void {
     // the displaced resource will fire synchronously or on next tick.
     sfxTransitioning = true
     sfxPlaying = false
+    currentSfxPath = absolutePath
     player.play(resource)
     log(`SFX starting: ${absolutePath.split('/').pop()} (vol=${volume.toFixed(2)})`)
   } catch (err) {
     log(`SFX play error: ${err}`)
     sfxTransitioning = false
     sfxPlaying = false
+    currentSfxPath = null
     resumeMusicAfterSfx()
   }
 }
@@ -624,9 +638,39 @@ export function stopStream(): void {
   currentResource = null
   sfxPlaying = false
   sfxTransitioning = false
+  currentSfxPath = null
   sfxQueue = []
   if (player) {
     player.stop(true)
+  }
+}
+
+/**
+ * Stop the currently playing Discord SFX (and clear the SFX queue) while
+ * leaving music control state intact.
+ */
+export function stopSfx(absolutePath?: string): void {
+  if (!player) return
+  if (absolutePath) {
+    // Remove a queued copy even when another effect is currently playing
+    const queueLength = sfxQueue.length
+    sfxQueue = sfxQueue.filter((e) => e.path !== absolutePath)
+    if (currentSfxPath !== absolutePath) {
+      // Do not cut a different effect that Discord is streaming
+      if (sfxQueue.length !== queueLength) log('SFX removed from Discord queue')
+      return
+    }
+  }
+  const wasActive = sfxPlaying || sfxTransitioning || sfxQueue.length > 0
+  sfxQueue = []
+  sfxPlaying = false
+  sfxTransitioning = false
+  currentSfxPath = null
+  if (!wasActive) return
+  player.stop(true)
+  if (currentTrack) {
+    log('SFX stopped by user')
+    resumeMusicAfterSfx()
   }
 }
 

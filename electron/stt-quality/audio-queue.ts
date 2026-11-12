@@ -17,7 +17,9 @@ export class AudioQueue {
 
   /** Copies the samples: the caller's buffer is reused by the audio worklet. */
   push(samples: Float32Array): void {
-    if (this.items.length >= this.max) return
+    // Keep the most recent window: it stays contiguous with the live audio once
+    // the model is ready, instead of replaying stale audio and dropping the tail.
+    if (this.items.length >= this.max) this.items.shift()
     this.items.push(samples.slice())
   }
 

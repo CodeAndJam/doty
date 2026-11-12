@@ -84,9 +84,10 @@ function ensureWorker(): Promise<void> {
     // Ignore events from a worker that has already been torn down.
     w.on('error', (err) => {
       if (worker !== w) return
-      if (!ready) fail(err)
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (!ready) fail(error)
       else {
-        reset(err)
+        reset(error)
         onStatus('error')
       }
     })

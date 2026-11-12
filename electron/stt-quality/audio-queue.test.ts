@@ -18,13 +18,13 @@ describe('AudioQueue', () => {
     expect(q.drain()[0][0]).toBe(0.5)
   })
 
-  it('drops audio past the cap instead of growing without bound', () => {
+  it('keeps the newest audio when past the cap', () => {
     const q = new AudioQueue(2)
     q.push(new Float32Array([1]))
     q.push(new Float32Array([2]))
     q.push(new Float32Array([3]))
     expect(q.length).toBe(2)
-    expect(q.drain().map((c) => c[0])).toEqual([1, 2])
+    expect(q.drain().map((c) => c[0])).toEqual([2, 3])
   })
 
   it('clears queued audio', () => {
