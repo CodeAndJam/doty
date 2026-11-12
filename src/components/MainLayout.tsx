@@ -45,12 +45,42 @@ export default function MainLayout() {
   const [_reprocessProgress, setReprocessProgress] = useState<number | null>(null)
   const [_reprocessingFile, setReprocessingFile] = useState<string | null>(null)
   const [sttModelList, setSttModelList] = useState<Array<{ id: string; label: string; ready: boolean }>>([])
+  const [sttReady, setSttReady] = useState<boolean | null>(null)
+  const [sttDownload, setSttDownload] = useState<{ modelId: string; percent: number } | null>(null)
+  const [sttDownloadError, setSttDownloadError] = useState<string | null>(null)
 
-  // Load STT model list for reprocess picker
+  // Speech model availability + background download progress
   useEffect(() => {
-    window.doty
-      .getSttModelList()
-      .then((list) => setSttModelList(list.map((m) => ({ id: m.id, label: m.label, ready: m.ready }))))
+    const loadModelList = () =>
+      window.doty
+        .getSttModelList()
+        .then((list) => setSttModelList(list.map((m) => ({ id: m.id, label: m.label, ready: m.ready }))))
+
+    loadModelList()
+    window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
+    window.doty.getSttDownloadState().then(({ downloading, error }) => {
+      setSttDownload(downloading)
+      setSttDownloadError(error?.error ?? null)
+    })
+
+    const unsubStatus = window.doty.onModelStatus(({ ready }) => {
+      setSttReady(ready)
+      if (ready) {
+        setSttDownload(null)
+        setSttDownloadError(null)
+        loadModelList()
+      }
+    })
+    const unsubProgress = window.doty.onModelProgress((p) => {
+      setSttDownloadError(null)
+      setSttDownload({ modelId: p.modelId ?? '', percent: p.percent })
+    })
+    const unsubDownloadError = window.doty.onModelDownloadError(({ error }) => setSttDownloadError(error))
+    return () => {
+      unsubStatus()
+      unsubProgress()
+      unsubDownloadError()
+    }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -59,7 +89,7 @@ export default function MainLayout() {
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
   const { start, stop, micPermission } = useRecorder(micDeviceId)
-  const { recommend, modelStatus, downloadProgress, lastRanker } = useQwen()
+  const { recommend, modelStatus, lastRanker } = useQwen()
   const recommendRef = useRef(recommend)
 
   // Keep refs in sync with latest values
@@ -325,7 +355,11 @@ export default function MainLayout() {
       setRecording(false)
       setSessionStartTime(null)
     } else {
-      await window.doty.sttStart()
+      const res = await window.doty.sttStart()
+      if (!res.ok) {
+        setShowSettings(true)
+        return
+      }
       await start()
       setRecording(true)
       setSessionStartTime(Date.now())
@@ -357,14 +391,27 @@ export default function MainLayout() {
             onClick={toggleRecording}
             className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
             style={{
-              border: `1px solid ${recording ? 'rgba(239,68,68,0.3)' : 'rgba(74,138,106,0.3)'}`,
+              border: `1px solid ${recording ? 'rgba(239,68,68,0.3)' : sttReady === false ? 'rgba(200,146,42,0.3)' : 'rgba(74,138,106,0.3)'}`,
               background: recording ? 'rgba(239,68,68,0.06)' : 'transparent',
             }}
-            title={recording ? 'Stop transcription' : 'Start transcription'}
+            title={
+              sttReady === false
+                ? 'No speech model installed — open Settings to download one'
+                : recording
+                  ? 'Stop transcription'
+                  : 'Start transcription'
+            }
           >
             <div
-              className={`w-1.5 h-1.5 rounded-full ${recording ? 'bg-red-500 animate-pulse' : 'bg-rune'}`}
-              style={{ boxShadow: recording ? '0 0 6px rgba(239,68,68,0.8)' : '0 0 6px rgba(74,138,106,0.8)' }}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background: recording ? '#ef4444' : sttReady === false ? '#c8922a' : '#4a8a6a',
+                boxShadow: recording
+                  ? '0 0 6px rgba(239,68,68,0.8)'
+                  : sttReady === false
+                    ? '0 0 6px rgba(200,146,42,0.8)'
+                    : '0 0 6px rgba(74,138,106,0.8)',
+              }}
             />
             <span
               className="text-xs tracking-widest uppercase font-mono"
@@ -372,23 +419,58 @@ export default function MainLayout() {
                 color:
                   asrStatus === 'crashed'
                     ? '#f59e0b'
-                    : recording
-                      ? asrStatus === 'loading'
-                        ? '#c8922a'
-                        : '#ef4444'
-                      : '#4a8a6a',
+                    : sttReady === false
+                      ? '#c8922a'
+                      : recording
+                        ? asrStatus === 'loading'
+                          ? '#c8922a'
+                          : '#ef4444'
+                        : '#4a8a6a',
                 fontSize: '11px',
               }}
             >
               {asrStatus === 'crashed'
                 ? 'Crashed — click to restart'
-                : recording
-                  ? asrStatus === 'loading'
-                    ? 'Awakening...'
-                    : 'Inscribing'
-                  : 'Standby'}
+                : sttReady === false
+                  ? 'No model'
+                  : recording
+                    ? asrStatus === 'loading'
+                      ? 'Awakening...'
+                      : 'Inscribing'
+                    : 'Standby'}
             </span>
           </button>
+          {(sttDownload || sttDownloadError) && (
+            <button
+              type="button"
+              onClick={() => setShowSettings(true)}
+              className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+              style={{ border: '1px solid rgba(200,146,42,0.3)' }}
+              title={
+                sttDownloadError
+                  ? `Model download failed: ${sttDownloadError}. Open Settings to retry.`
+                  : 'Downloading speech model — the rest of Doty stays usable'
+              }
+            >
+              <span style={{ color: '#c8922a', fontSize: '11px', fontFamily: 'monospace' }}>
+                {sttDownloadError ? 'Model failed — retry in Settings' : `Model ${sttDownload?.percent ?? 0}%`}
+              </span>
+            </button>
+          )}
+          {showRerankerDownload && (
+            <span
+              className="px-2 py-1"
+              style={{
+                border: '1px solid rgba(200,146,42,0.3)',
+                color: '#c8922a',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+              }}
+              title="The reranker model downloads in the background. Recommendations use heuristics until it is ready."
+            >
+              Ranker warming up
+            </span>
+          )}
           <button
             type="button"
             onClick={() => setShowTranscript((v) => !v)}
@@ -557,104 +639,6 @@ export default function MainLayout() {
             window.doty.setRecommendationCount(count)
           }}
         />
-      )}
-
-      {/* Reranker model download overlay */}
-      {showRerankerDownload && (
-        <div
-          className="fixed inset-0 z-40 flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(4px)' }}
-        >
-          <div
-            className="max-w-md w-full mx-8"
-            style={{
-              background: 'linear-gradient(160deg, #0f0d09, #080705)',
-              border: '1px solid #2e2416',
-              boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
-              padding: '28px',
-            }}
-          >
-            {/* Corner ornaments */}
-            <div
-              className="absolute top-0 left-0 w-4 h-4"
-              style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }}
-            />
-            <div
-              className="absolute top-0 right-0 w-4 h-4"
-              style={{ borderTop: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }}
-            />
-            <div
-              className="absolute bottom-0 left-0 w-4 h-4"
-              style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderLeft: '1px solid rgba(200,146,42,0.5)' }}
-            />
-            <div
-              className="absolute bottom-0 right-0 w-4 h-4"
-              style={{ borderBottom: '1px solid rgba(200,146,42,0.5)', borderRight: '1px solid rgba(200,146,42,0.5)' }}
-            />
-
-            <div className="flex items-center gap-3 mb-4">
-              <div
-                className="w-10 h-10 flex items-center justify-center"
-                style={{
-                  background: 'rgba(200,146,42,0.1)',
-                  border: '1px solid rgba(200,146,42,0.2)',
-                }}
-              >
-                <svg
-                  className="w-5 h-5"
-                  style={{ color: '#c8922a' }}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"
-                  />
-                </svg>
-              </div>
-              <div>
-                <h2
-                  style={{ fontFamily: "'Cinzel', serif", fontSize: '15px', letterSpacing: '0.15em', color: '#c8922a' }}
-                >
-                  Summoning Reranker
-                </h2>
-                <p
-                  style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", marginTop: '2px' }}
-                >
-                  MiniLM-L-6-v2 Reranker (~80 MB) — first time only
-                </p>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
-                <div
-                  style={{
-                    height: '100%',
-                    width: `${downloadProgress?.progress ?? 0}%`,
-                    background: '#c8922a',
-                    boxShadow: '0 0 6px rgba(200,146,42,0.6)',
-                    transition: 'width 0.3s',
-                  }}
-                />
-              </div>
-              <div
-                className="flex justify-between mt-1.5"
-                style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}
-              >
-                <span className="truncate max-w-[70%]">{downloadProgress?.file ?? 'Preparing...'}</span>
-                <span>{downloadProgress?.progress ? `${downloadProgress.progress.toFixed(0)}%` : ''}</span>
-              </div>
-            </div>
-
-            <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}>
-              This model enables intelligent music recommendations. It downloads once and runs entirely on your machine.
-            </p>
-          </div>
-        </div>
       )}
     </div>
   )

@@ -88,6 +88,7 @@ export default function Settings({
   >([])
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
+  const [whisperDownloadError, setWhisperDownloadError] = useState<string | null>(null)
   const [llmModel, setLlmModel] = useState('')
   const [llmModelList, setLlmModelList] = useState<
     Array<{ id: string; label: string; description: string; size: string; ready: boolean }>
@@ -131,6 +132,13 @@ export default function Settings({
       if (f) refreshTrackCount()
     })
     window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
+    window.doty.getSttDownloadState().then(({ downloading, error }) => {
+      if (downloading) {
+        setWhisperDownloading(downloading.modelId)
+        setWhisperProgress(downloading.percent)
+      }
+      if (error) setWhisperDownloadError(error.error)
+    })
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
     window.doty.getHotwordsFile().then(setHotwordsFile)
     window.doty.getSfxFolder().then(setSfxFolder)
@@ -170,6 +178,11 @@ export default function Settings({
         window.doty.getSttModelStatus().then(setSttModelStatus)
         window.doty.getSttModelList().then(setSttModelList)
       }
+    })
+    const unsubModelStatus = window.doty.onModelStatus(({ ready }) => setSttReady(ready))
+    const unsubModelError = window.doty.onModelDownloadError(({ error }) => {
+      setWhisperDownloadError(error)
+      setWhisperDownloading(null)
     })
 
     const unsubLlmProgress = window.doty.onLlmDownloadProgress((p) => {
@@ -211,6 +224,8 @@ export default function Settings({
       unsubProgress()
       unsubComplete()
       unsubWhisper()
+      unsubModelStatus()
+      unsubModelError()
       unsubLlmProgress()
       unsubEmbeddingProgress()
     }
@@ -829,9 +844,12 @@ export default function Settings({
                         onClick={async () => {
                           setWhisperDownloading(m.id)
                           setWhisperProgress(0)
+                          setWhisperDownloadError(null)
                           try {
-                            await window.doty.downloadModel(m.id)
+                            const res = await window.doty.downloadModel(m.id)
+                            if (!res.ok) setWhisperDownloadError(res.reason ?? 'Download failed')
                           } catch (e) {
+                            setWhisperDownloadError(String(e))
                             console.error('Model download failed:', e)
                           }
                           setWhisperDownloading(null)
@@ -874,6 +892,11 @@ export default function Settings({
                   />
                 </div>
               </div>
+            )}
+            {whisperDownloadError && (
+              <p style={{ marginTop: '6px', fontSize: '11px', color: '#e07a5f', fontFamily: 'monospace' }}>
+                Download failed: {whisperDownloadError}
+              </p>
             )}
           </div>
 

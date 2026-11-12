@@ -26,6 +26,7 @@
 ## Done
 
 - [x] `pnpm audit` clean (0 vulns): all deps on current major, 10-day release hold via `minimumReleaseAge`, transitive CVEs pinned via overrides
+- [x] Onboarding: skip the speech-model install and download it in the background while the app stays usable; atomic model downloads (`.part` + rename)
 - [x] Recommendation transparency: ranker type + confidence badge on Suggestions header, collapsible Decision Log panel for beta testing
 - [x] Discord: asarUnpack config for @discordjs/opus, sodium-native, opusscript, prism-media
 - [x] Upgrade chokidar v3 to v4 (drops fsevents dependency, uses native fs.watch)

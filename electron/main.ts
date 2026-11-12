@@ -91,7 +91,18 @@ function downloadFile(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
-    const file = fs.createWriteStream(destPath)
+    // Write to a temp file and rename on success so a cancelled download never
+    // leaves a truncated model that looks installed on the next launch.
+    const tmpPath = `${destPath}.part`
+    const file = fs.createWriteStream(tmpPath)
+    const cleanup = () => {
+      file.destroy()
+      try {
+        fs.unlinkSync(tmpPath)
+      } catch {
+        /* already gone */
+      }
+    }
     let redirectCount = 0
     const get = (u: string) => {
       if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
@@ -101,7 +112,10 @@ function downloadFile(
           if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
             return get(res.headers.location!)
           }
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
+          if (res.statusCode !== 200) {
+            cleanup()
+            return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
+          }
           const total = parseInt(res.headers['content-length'] || '0', 10)
           let downloaded = 0
           res.on('data', (chunk: Buffer) => {
@@ -115,11 +129,31 @@ function downloadFile(
               )
             }
           })
-          res.on('end', () => file.close(() => resolve()))
-          res.on('error', reject)
+          res.on('end', () =>
+            file.close(() => {
+              try {
+                fs.renameSync(tmpPath, destPath)
+                resolve()
+              } catch (e) {
+                cleanup()
+                reject(e)
+              }
+            }),
+          )
+          res.on('error', (e: Error) => {
+            cleanup()
+            reject(e)
+          })
         })
-        .on('error', reject)
+        .on('error', (e: Error) => {
+          cleanup()
+          reject(e)
+        })
     }
+    file.on('error', (e) => {
+      cleanup()
+      reject(e)
+    })
     get(url)
   })
 }
@@ -638,6 +672,7 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
+  if (!isAnySttModelReady()) return { ok: false, reason: 'no-model' }
   sessionStartTime = Date.now()
   startWavRecording()
   startStream()
@@ -817,7 +852,10 @@ ipcMain.handle('reprocess:cancel', () => {
 
 // isAnySttModelReady imported from model-paths
 
-ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
+ipcMain.handle('model:status', () => ({
+  ready: isAnySttModelReady(),
+  onboardingSkipped: store.get('sttOnboardingSkipped', false),
+}))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
@@ -950,31 +988,51 @@ ipcMain.handle('settings:set-hotwords-file', () => ({ ok: true }))
 ipcMain.handle('settings:pick-hotwords-file', async () => null)
 ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }))
 
+// Download state is exposed to the renderer so the app can show progress while the user keeps working.
+let sttDownload: { modelId: SttModelType; percent: number } | null = null
+let sttDownloadError: { modelId: SttModelType; error: string } | null = null
+
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
-    initRecognizer()
+    restartRecognizer()
     mainWindow?.webContents.send('model:status', { ready: true })
     return { ok: true }
   }
 
+  if (sttDownload) return { ok: false, reason: 'download already in progress' }
+
   // Download single GGUF file
   const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  sttDownload = { modelId: modelInfo.id, percent: 0 }
+  sttDownloadError = null
   try {
     await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
-      mainWindow?.webContents.send('model:progress', { percent, downloadedMB, totalMB })
+      sttDownload = { modelId: modelInfo.id, percent }
+      mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
     })
 
     store.set('sttModel', modelInfo.id)
-    initRecognizer()
+    restartRecognizer()
     mainWindow?.webContents.send('model:status', { ready: true })
     downloadRerankerModel().catch(() => {})
     return { ok: true }
   } catch (e) {
+    sttDownloadError = { modelId: modelInfo.id, error: String(e) }
+    mainWindow?.webContents.send('model:download-error', sttDownloadError)
     return { ok: false, reason: String(e) }
+  } finally {
+    sttDownload = null
   }
+})
+
+ipcMain.handle('stt:get-download-state', () => ({ downloading: sttDownload, error: sttDownloadError }))
+
+ipcMain.handle('stt:skip-onboarding', () => {
+  store.set('sttOnboardingSkipped', true)
+  return { ok: true }
 })
 
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────

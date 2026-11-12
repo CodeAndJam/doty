@@ -11,6 +11,7 @@ interface StoreData {
   sfxFolder?: string
   sfxRecommendationCount?: number
   sttModel?: string // 'parakeet' | 'whisper-medium' | 'whisper-large-v3'
+  sttOnboardingSkipped?: boolean // user chose to set up speech recognition later
   discordToken?: string // encrypted via safeStorage
   discordVolume?: number // 0..1, independent of local volume
   discordAutoConnect?: boolean // auto-connect to last channel on startup
