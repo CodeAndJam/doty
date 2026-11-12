@@ -40,7 +40,7 @@ On first scan, Doty analyses every track in your library using essentia.js to ex
 
 ### Download the app
 
-Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/releases) page, open it, and drag Doty to your Applications folder.
+Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/releases) page, open it, and drag Doty to your Applications folder. If macOS refuses to open it, see [Troubleshooting](#troubleshooting).
 
 ### Requirements
 
@@ -114,7 +114,20 @@ To stream music to a Discord voice channel:
 
 The Discord volume slider (visible when in a voice channel) is independent from your local playback volume.
 
-**Troubleshooting:**
+## Troubleshooting
+
+### macOS won't open the app: Apple could not verify Doty is free of malware
+
+Doty is not signed with an Apple Developer ID, so Gatekeeper blocks the first launch. Clear the quarantine flag and open the app again:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Doty.app
+```
+
+Alternatively: right-click (or Control-click) Doty in Applications, choose **Open**, then confirm **Open** in the dialog. macOS remembers the choice for later launches.
+
+### Discord
+
 - "Invalid token" — make sure you copied the Bot token (not the Application ID or Client Secret). Reset the token in the Developer Portal and copy it fresh.
 - "Operation was aborted" when joining a channel — the bot lacks permission to join that channel. Add the bot to the channel's permissions with `View Channel`, `Connect`, and `Speak`.
 - No audio in Discord — make sure a track is playing locally. Also check the bot's volume in your Discord client (right-click the bot in the voice channel).
