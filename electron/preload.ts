@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-export type ProgressPayload = { percent: number; downloadedMB: number; totalMB: number }
+export type ProgressPayload = { modelId?: string; percent: number; downloadedMB: number; totalMB: number }
 
 contextBridge.exposeInMainWorld('doty', {
   // Microphone Permission
@@ -83,6 +83,8 @@ contextBridge.exposeInMainWorld('doty', {
   // Model
   modelStatus: () => ipcRenderer.invoke('model:status'),
   downloadModel: (modelId?: string) => ipcRenderer.invoke('model:download', modelId),
+  getSttDownloadState: () => ipcRenderer.invoke('stt:get-download-state'),
+  skipModelOnboarding: () => ipcRenderer.invoke('stt:skip-onboarding'),
   getSttModelList: () => ipcRenderer.invoke('stt:get-model-list'),
   rerankerStatus: () => ipcRenderer.invoke('reranker:status'),
   rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => ipcRenderer.invoke('reranker:score', pairs),
@@ -104,6 +106,11 @@ contextBridge.exposeInMainWorld('doty', {
     const handler = (_e: Electron.IpcRendererEvent, s: { ready: boolean }) => cb(s)
     ipcRenderer.on('model:status', handler)
     return () => ipcRenderer.removeListener('model:status', handler)
+  },
+  onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, e: { modelId: string; error: string }) => cb(e)
+    ipcRenderer.on('model:download-error', handler)
+    return () => ipcRenderer.removeListener('model:download-error', handler)
   },
 
   // STT model selection

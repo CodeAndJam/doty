@@ -9,8 +9,8 @@ export default function App() {
   const [appState, setAppState] = useState<AppState>('loading')
 
   useEffect(() => {
-    window.doty.modelStatus().then(({ ready }) => {
-      setAppState(ready ? 'ready' : 'download-model')
+    window.doty.modelStatus().then(({ ready, onboardingSkipped }) => {
+      setAppState(ready || onboardingSkipped ? 'ready' : 'download-model')
     })
 
     const unsub = window.doty.onModelStatus(({ ready }) => {
@@ -28,7 +28,20 @@ export default function App() {
   }
 
   if (appState === 'download-model') {
-    return <ModelDownload onComplete={() => setAppState('ready')} />
+    return (
+      <ModelDownload
+        onComplete={() => {
+          // Entering the app is the decision: never show this wall again, even if the
+          // download is interrupted by a quit or network failure.
+          window.doty.skipModelOnboarding().catch(() => {})
+          setAppState('ready')
+        }}
+        onSkip={() => {
+          window.doty.skipModelOnboarding().catch(() => {})
+          setAppState('ready')
+        }}
+      />
+    )
   }
 
   return <MainLayout />

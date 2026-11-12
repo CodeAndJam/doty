@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
@@ -50,6 +49,7 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import { downloadFile } from './download-file'
 import {
   handleEmbeddingResult,
   pauseEmbedding,
@@ -81,48 +81,6 @@ import * as sessionOps from './sessions'
 import { store } from './store'
 import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
-
-// ── Download helper ───────────────────────────────────────────────────────────
-/** Download a file from a URL with progress reporting. Follows up to 10 redirects. */
-function downloadFile(
-  url: string,
-  destPath: string,
-  onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(join(destPath, '..'), { recursive: true })
-    const file = fs.createWriteStream(destPath)
-    let redirectCount = 0
-    const get = (u: string) => {
-      if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
-      const mod = u.startsWith('https') ? https : require('node:http')
-      mod
-        .get(u, (res: any) => {
-          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
-            return get(res.headers.location!)
-          }
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
-          const total = parseInt(res.headers['content-length'] || '0', 10)
-          let downloaded = 0
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length
-            file.write(chunk)
-            if (total > 0 && onProgress) {
-              onProgress(
-                Math.round((downloaded / total) * 100),
-                Math.round(downloaded / 1024 / 1024),
-                Math.round(total / 1024 / 1024),
-              )
-            }
-          })
-          res.on('end', () => file.close(() => resolve()))
-          res.on('error', reject)
-        })
-        .on('error', reject)
-    }
-    get(url)
-  })
-}
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
 
@@ -468,6 +426,25 @@ function requestSceneEmbedding(sceneText: string) {
   requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
 }
 
+/**
+ * Load the models that support recommendations (reranker, scene interpreter,
+ * embeddings) when their files exist. Safe to call after a late STT download:
+ * every load is guarded by an existsSync check.
+ */
+function initAuxModels(): void {
+  downloadRerankerModel().catch(() => {})
+  const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
+  const llmPath = getLlmModelPath(llmModelId)
+  if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
+    loadSceneModel(llmPath)
+    startInterpreting()
+  }
+  const embPath = getEmbeddingModelPath()
+  if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
+    loadEmbeddingModel(embPath)
+  }
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -557,25 +534,12 @@ app.whenReady().then(async () => {
   })
 
   if (ready) {
-    // Pre-download reranker model in main process (worker fetch stalls in Electron)
-    downloadRerankerModel().catch(() => {})
+    initAuxModels()
     // Init ASR immediately — transcribe-cpp loads in ~160ms
     try {
       initRecognizer()
     } catch (e) {
       console.error('ASR init error:', e)
-    }
-    // Init scene interpreter if model is available (and non-empty)
-    const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
-    const llmPath = getLlmModelPath(llmModelId)
-    if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
-      loadSceneModel(llmPath)
-      startInterpreting()
-    }
-    // Init embedding model if available (and non-empty)
-    const embPath = getEmbeddingModelPath()
-    if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
-      loadEmbeddingModel(embPath)
     }
   }
 
@@ -638,6 +602,7 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
+  if (!isAnySttModelReady()) return { ok: false, reason: 'no-model' }
   sessionStartTime = Date.now()
   startWavRecording()
   startStream()
@@ -817,7 +782,10 @@ ipcMain.handle('reprocess:cancel', () => {
 
 // isAnySttModelReady imported from model-paths
 
-ipcMain.handle('model:status', () => ({ ready: isAnySttModelReady() }))
+ipcMain.handle('model:status', () => ({
+  ready: isAnySttModelReady(),
+  onboardingSkipped: store.get('sttOnboardingSkipped', false),
+}))
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
@@ -950,31 +918,58 @@ ipcMain.handle('settings:set-hotwords-file', () => ({ ok: true }))
 ipcMain.handle('settings:pick-hotwords-file', async () => null)
 ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }))
 
+// Download state is exposed to the renderer so the app can show progress while the user keeps working.
+let sttDownload: { modelId: SttModelType; percent: number } | null = null
+let sttDownloadError: { modelId: SttModelType; error: string } | null = null
+
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
-    initRecognizer()
+    restartRecognizer()
+    initAuxModels()
     mainWindow?.webContents.send('model:status', { ready: true })
     return { ok: true }
   }
+
+  if (sttDownload) return { ok: false, reason: 'download already in progress' }
 
   // Download single GGUF file
   const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  sttDownload = { modelId: modelInfo.id, percent: 0 }
+  sttDownloadError = null
   try {
     await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
-      mainWindow?.webContents.send('model:progress', { percent, downloadedMB, totalMB })
+      sttDownload = { modelId: modelInfo.id, percent }
+      mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
     })
 
     store.set('sttModel', modelInfo.id)
-    initRecognizer()
     mainWindow?.webContents.send('model:status', { ready: true })
-    downloadRerankerModel().catch(() => {})
+    // The file is complete and selected: report success even if a local model
+    // fails to initialise, otherwise the UI claims the download failed.
+    try {
+      restartRecognizer()
+      initAuxModels()
+    } catch (err) {
+      console.error('[model] post-download init error:', err)
+    }
     return { ok: true }
   } catch (e) {
-    return { ok: false, reason: String(e) }
+    sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
+    mainWindow?.webContents.send('model:download-error', sttDownloadError)
+    return { ok: false, reason: sttDownloadError.error }
+  } finally {
+    sttDownload = null
   }
+})
+
+ipcMain.handle('stt:get-download-state', () => ({ downloading: sttDownload, error: sttDownloadError }))
+
+ipcMain.handle('stt:skip-onboarding', () => {
+  store.set('sttOnboardingSkipped', true)
+  return { ok: true }
 })
 
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
