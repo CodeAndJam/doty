@@ -20,7 +20,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",
     "format": "biome format --write .",
-    "prepare": "husky"
+    "prepare": "husky",
+    "verify:dmg": "bash build/verify-dmg.sh"
   },
   "build": {
     "appId": "com.codeandjam.doty",
@@ -76,7 +77,8 @@
     "dmg": {
       "title": "Doty ${version}"
     },
-    "afterPack": "build/afterPack.cjs"
+    "afterPack": "build/afterPack.cjs",
+    "afterSign": "build/afterSign.cjs"
   },
   "engines": {
     "node": ">=22.22.0"
