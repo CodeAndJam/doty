@@ -137,8 +137,10 @@ export default function Soundboard({
         if (queue.currentTrack) playTrack(queue.currentTrack, true)
       } else if (loopMode === 'queue' || !isLast) {
         const track = queue.next(loopMode === 'queue')
-        if (track) playTrack(track, true)
-        else stopPlayback()
+        if (track) {
+          playTrack(track, true)
+          autopilot.notePlayed(track)
+        } else stopPlayback()
       } else {
         stopPlayback()
       }
@@ -223,13 +225,19 @@ export default function Soundboard({
   function handleSkipNext() {
     if (queue.tracks.length === 0) return
     const track = queue.next(loopMode === 'queue')
-    if (track) playTrack(track, true)
+    if (track) {
+      playTrack(track, true)
+      autopilot.notePlayed(track)
+    }
   }
 
   function handleSkipPrev() {
     if (queue.tracks.length === 0) return
     const track = queue.prev(loopMode === 'queue')
-    if (track) playTrack(track, true)
+    if (track) {
+      playTrack(track, true)
+      autopilot.notePlayed(track)
+    }
   }
 
   useEffect(() => {
@@ -255,6 +263,7 @@ export default function Soundboard({
   function handlePlayTrack(filename: string, forceRestart?: boolean) {
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
+    autopilot.notePlayed(filename)
     autopilot.onManualAction()
   }
 

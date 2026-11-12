@@ -5,6 +5,41 @@ import { confidenceLabel } from '../lib/autopilot'
 import type { ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
 
+const LANGUAGE_LABELS: Record<string, string> = {
+  pt: 'Português',
+  'pt-PT': 'Português (Portugal)',
+  'pt-BR': 'Português (Brasil)',
+  en: 'English',
+  'en-US': 'English (US)',
+  'en-GB': 'English (UK)',
+  es: 'Español',
+  'es-ES': 'Español (España)',
+  'es-US': 'Español (Latinoamérica)',
+  fr: 'Français',
+  'fr-FR': 'Français (France)',
+  'fr-CA': 'Français (Canada)',
+  de: 'Deutsch',
+  'de-DE': 'Deutsch (Deutschland)',
+  it: 'Italiano',
+  'it-IT': 'Italiano (Italia)',
+  nl: 'Nederlands',
+  'nl-NL': 'Nederlands (Nederland)',
+  ru: 'Русский',
+  'ru-RU': 'Русский (Россия)',
+  zh: '中文',
+  'zh-CN': '中文 (简体)',
+  ja: '日本語',
+  'ja-JP': '日本語 (日本)',
+  ko: '한국어',
+  'ko-KR': '한국어 (대한민국)',
+  pl: 'Polski',
+  'pl-PL': 'Polski (Polska)',
+  ro: 'Română',
+  'ro-RO': 'Română (România)',
+  sv: 'Svenska',
+  'sv-SE': 'Svenska (Sverige)',
+}
+
 interface Props {
   onClose: () => void
   onFolderChange: (folder: string) => void
@@ -74,6 +109,7 @@ export default function Settings({
   const [autopilotMusic, setAutopilotMusic] = useState(true)
   const [autopilotSfx, setAutopilotSfx] = useState(true)
   const [sttModel, setSttModel] = useState('parakeet')
+  const [sttLanguage, setSttLanguage] = useState('auto')
   const [_sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
   const [sttModelList, setSttModelList] = useState<
     Array<{
@@ -144,6 +180,7 @@ export default function Settings({
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
+    window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
     window.doty.getLlmModelList().then((list) => {
@@ -183,6 +220,16 @@ export default function Settings({
     const unsubModelError = window.doty.onModelDownloadError(({ error }) => {
       setWhisperDownloadError(error)
       setWhisperDownloading(null)
+    })
+    const unsubModelCancelled = window.doty.onModelDownloadCancelled(() => {
+      setWhisperDownloading(null)
+      setWhisperProgress(0)
+      setWhisperDownloadError(null)
+    })
+    // The worker persists the effective language on ready (e.g. a model that
+    // maps `pt` to `pt-PT`); refresh so Settings reflects reality.
+    const unsubSttStatus = window.doty.onSttStatus((status) => {
+      if (status === 'ready') window.doty.getSttLanguage().then(setSttLanguage)
     })
 
     const unsubLlmProgress = window.doty.onLlmDownloadProgress((p) => {
@@ -226,6 +273,8 @@ export default function Settings({
       unsubWhisper()
       unsubModelStatus()
       unsubModelError()
+      unsubModelCancelled()
+      unsubSttStatus()
       unsubLlmProgress()
       unsubEmbeddingProgress()
     }
@@ -280,6 +329,12 @@ export default function Settings({
 
   const qwenIsReady = qwenStatus === 'ready'
   const qwenIsError = qwenStatus === 'error'
+
+  const activeSttLanguages = sttModelList.find((m) => m.id === sttModel)?.languages ?? []
+  const sttLanguageOptions =
+    sttLanguage !== 'auto' && !activeSttLanguages.includes(sttLanguage)
+      ? [sttLanguage, ...activeSttLanguages]
+      : activeSttLanguages
 
   const qwenDotColor = qwenIsReady ? '#4a8a6a' : qwenIsError ? '#ef4444' : '#c8922a'
   const qwenDotShadow = qwenIsReady
@@ -790,6 +845,7 @@ export default function Settings({
                           const result = await window.doty.setSttModel(m.id)
                           if (result.ok) {
                             setSttModel(m.id)
+                            window.doty.getSttLanguage().then(setSttLanguage)
                           }
                         }
                       }}
@@ -848,7 +904,9 @@ export default function Settings({
                           setWhisperDownloadError(null)
                           try {
                             const res = await window.doty.downloadModel(m.id)
-                            if (!res.ok) setWhisperDownloadError(res.reason ?? 'Download failed')
+                            if (!res.ok && res.reason !== 'cancelled') {
+                              setWhisperDownloadError(res.reason ?? 'Download failed')
+                            }
                           } catch (e) {
                             setWhisperDownloadError(String(e))
                             console.error('Model download failed:', e)
@@ -879,10 +937,38 @@ export default function Settings({
               })}
             </div>
 
+            {/* Focused language — avoids per-utterance language detection */}
+            <div className="flex items-center gap-2 mt-3" style={{ fontSize: '12px', fontFamily: 'monospace' }}>
+              <span style={{ color: '#6b4e15' }}>Language</span>
+              <select
+                value={sttLanguage}
+                onChange={async (e) => {
+                  const language = e.target.value
+                  const result = await window.doty.setSttLanguage(language)
+                  if (result.ok) setSttLanguage(language)
+                }}
+                style={{
+                  background: '#080705',
+                  color: '#c8b07a',
+                  border: '1px solid #2e2416',
+                  fontSize: '12px',
+                  padding: '2px 4px',
+                }}
+              >
+                <option value="auto">Auto-detect</option>
+                {(sttLanguageOptions ?? []).map((code) => (
+                  <option key={code} value={code}>
+                    {LANGUAGE_LABELS[code] ?? code}
+                  </option>
+                ))}
+              </select>
+              {sttLanguage !== 'auto' && <span style={{ color: '#3a2e1a' }}>focused — faster, more accurate</span>}
+            </div>
+
             {/* Download progress bar */}
             {whisperDownloading && (
-              <div style={{ marginTop: '8px' }}>
-                <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
+              <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ flex: 1, height: '2px', background: '#2e2416', overflow: 'hidden' }}>
                   <div
                     style={{
                       height: '100%',
@@ -893,6 +979,21 @@ export default function Settings({
                     }}
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => window.doty.cancelSttDownload()}
+                  style={{
+                    fontSize: '11px',
+                    color: '#c8922a',
+                    fontFamily: 'monospace',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  cancel
+                </button>
               </div>
             )}
             {whisperDownloadError && (
@@ -918,7 +1019,7 @@ export default function Settings({
               />
               <div className="flex-1 min-w-0">
                 <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                  MiniLM-L-6-v2 Reranker
+                  mmarco Multilingual Reranker
                 </p>
                 <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{qwenLabel}</p>
               </div>

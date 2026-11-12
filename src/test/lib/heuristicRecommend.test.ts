@@ -265,9 +265,23 @@ describe('heuristicRecommend', () => {
     expect(files[0]).toMatch(/Campfire|Tavern|Bonfire/i)
   })
 
+  it('matches European Portuguese vocabulary', () => {
+    const { files, confidence } = heuristicRecommend('descansar na taberna com a lareira acesa', FILES, META)
+    expect(confidence).toBeGreaterThan(0)
+    expect(files[0]).toMatch(/Campfire|Tavern|Bonfire/i)
+  })
+
   it('preserves accented characters in tokenizer', () => {
     const { files } = heuristicRecommend('celebração vitória épico', FILES, META)
     // Should match victory mood profile
     expect(files).toHaveLength(5)
+  })
+
+  it('matches accented Portuguese keywords from unaccented text', () => {
+    const accented = heuristicRecommend('celebração vitória épico', FILES, META)
+    const plain = heuristicRecommend('celebracao vitoria epico', FILES, META)
+    expect(plain.confidence).toBeGreaterThan(0)
+    expect(plain.confidence).toBeCloseTo(accented.confidence)
+    expect(plain.files).toEqual(accented.files)
   })
 })

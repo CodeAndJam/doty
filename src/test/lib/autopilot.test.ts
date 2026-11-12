@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { confidenceLabel, softmax, topConfidence } from '../../lib/autopilot'
+import { confidenceLabel, isRecentlyPlayed, softmax, topConfidence } from '../../lib/autopilot'
 
 describe('softmax', () => {
   it('returns empty array for empty input', () => {
@@ -99,5 +99,21 @@ describe('confidenceLabel', () => {
   it('returns Adventurous for < 0.90', () => {
     expect(confidenceLabel(0.8)).toBe('Adventurous')
     expect(confidenceLabel(0.89)).toBe('Adventurous')
+  })
+})
+
+describe('isRecentlyPlayed', () => {
+  it('is true when the track played inside the avoidance window', () => {
+    const now = 1_000_000
+    expect(isRecentlyPlayed(now - 5 * 60_000, now, 10)).toBe(true)
+  })
+
+  it('is false when the track played before the window', () => {
+    const now = 1_000_000
+    expect(isRecentlyPlayed(now - 11 * 60_000, now, 10)).toBe(false)
+  })
+
+  it('is false when the track was never played', () => {
+    expect(isRecentlyPlayed(undefined, 1_000_000, 10)).toBe(false)
   })
 })

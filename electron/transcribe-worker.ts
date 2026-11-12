@@ -19,6 +19,7 @@
  *   { type: 'status', status: string }        — status updates (loading, streaming, idle)
  */
 import { parentPort } from 'node:worker_threads'
+import { resolveLanguage } from './stt-language'
 
 // ponytail: transcribe-cpp is ESM-only, use dynamic import from CJS worker
 let TranscribeModel: any = null
@@ -27,6 +28,7 @@ let getAvailableBackends: any = null
 let model: any = null
 let session: any = null
 let stream: any = null
+let language: string | undefined
 
 // Silence timeout: if no new committed text for N ms, emit flush with delta
 const SILENCE_FLUSH_MS = 2000
@@ -79,7 +81,7 @@ async function loadLib() {
   }
 }
 
-async function loadModel(modelPath: string) {
+async function loadModel(modelPath: string, requestedLanguage?: string) {
   await loadLib()
 
   // Dispose previous model if hot-swapping
@@ -112,8 +114,12 @@ async function loadModel(modelPath: string) {
   model = await TranscribeModel.load(modelPath, { backend: 'auto' })
   session = model.createSession()
 
+  // Focus on one language instead of letting the model detect it per utterance.
+  const supported = (model.capabilities?.languages ?? []) as string[]
+  language = resolveLanguage(requestedLanguage, supported)
+
   const backends = getAvailableBackends()
-  sendMsg({ type: 'ready', backends })
+  sendMsg({ type: 'ready', backends, languages: supported, language: language ?? 'auto' })
   sendMsg({ type: 'status', status: 'idle' })
 }
 
@@ -127,7 +133,7 @@ async function startStream() {
       /* ignore */
     }
   }
-  stream = await session.stream({ commitPolicy: 'stable_prefix' })
+  stream = await session.stream({ commitPolicy: 'stable_prefix', language })
   lastCommitted = ''
   lastFlushed = ''
   streamStartTime = Date.now()
@@ -178,7 +184,7 @@ async function batchTranscribe(id: number, buffer: ArrayBuffer) {
     return
   }
   const samples = new Float32Array(buffer)
-  const result = await model.transcribe(samples)
+  const result = await model.transcribe(samples, language ? { language } : undefined)
   sendMsg({ type: 'result', id, text: result.text })
 }
 
@@ -215,7 +221,7 @@ parentPort!.on('message', async (msg: any) => {
   try {
     switch (msg.type) {
       case 'load':
-        await loadModel(msg.modelPath)
+        await loadModel(msg.modelPath, msg.language)
         break
       case 'stream-start':
         await startStream()

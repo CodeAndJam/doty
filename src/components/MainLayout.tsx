@@ -76,10 +76,15 @@ export default function MainLayout() {
       setSttDownload({ modelId: p.modelId ?? '', percent: p.percent })
     })
     const unsubDownloadError = window.doty.onModelDownloadError(({ error }) => setSttDownloadError(error))
+    const unsubCancelled = window.doty.onModelDownloadCancelled(() => {
+      setSttDownload(null)
+      setSttDownloadError(null)
+    })
     return () => {
       unsubStatus()
       unsubProgress()
       unsubDownloadError()
+      unsubCancelled()
     }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)

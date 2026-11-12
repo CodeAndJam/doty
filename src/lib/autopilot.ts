@@ -54,6 +54,11 @@ export function confidenceLabel(threshold: number): string {
   return 'Adventurous'
 }
 
+/** True when `lastPlayedAt` is inside the recently-played avoidance window. */
+export function isRecentlyPlayed(lastPlayedAt: number | undefined, now: number, minutes: number): boolean {
+  return lastPlayedAt !== undefined && now - lastPlayedAt < minutes * 60_000
+}
+
 /** Compute softmax over an array of logits, returning probabilities */
 export function softmax(logits: number[]): number[] {
   if (logits.length === 0) return []
