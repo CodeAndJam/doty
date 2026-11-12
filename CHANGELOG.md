@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2](https://github.com/CodeAndJam/doty/compare/v3.0.1...v3.0.2) (2026-11-12)
+
+
+### Bug Fixes
+
+* **discord:** stop a refused keychain from blocking the connection ([#104](https://github.com/CodeAndJam/doty/issues/104)) ([d898036](https://github.com/CodeAndJam/doty/commit/d898036c88df8bfed495734e1bc196e7ee80d5b2))
+
 ## [3.0.1](https://github.com/CodeAndJam/doty/compare/v3.0.0...v3.0.1) (2026-11-12)
 
 
