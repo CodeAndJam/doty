@@ -102,6 +102,18 @@ function supportsLanguage(model: SttModelInfo | undefined, language: string): bo
   return resolveLanguage(language, model?.languages ?? []) !== undefined
 }
 
+// dlopen cannot read inside app.asar, so packaged builds must load the native
+// bundle electron-builder unpacks to Resources/transcribe-cpp instead.
+if (app.isPackaged) {
+  const lib =
+    process.platform === 'darwin'
+      ? 'libtranscribe.dylib'
+      : process.platform === 'win32'
+        ? 'transcribe.dll'
+        : 'libtranscribe.so'
+  process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
+}
+
 /** Check if the reranker model is already cached */
 function isRerankerCached(): boolean {
   const rerankerDir = join(app.getPath('home'), '.doty', 'hf-cache', 'cross-encoder', 'mmarco-mMiniLMv2-L12-H384-v1')
@@ -409,6 +421,16 @@ app.whenReady().then(async () => {
   registerMusicProtocol()
   createWindow()
 
+  // Forward Discord state changes to renderer. Registered first: anything that
+  // throws later in this callback used to skip it, which left the Discord panel
+  // stuck on "disconnected" even when the bot had connected.
+  onStateChange((discordState) => {
+    mainWindow?.webContents.send('discord:state', discordState)
+  })
+
+  // Auto-connect to last Discord voice channel if enabled
+  tryAutoConnect()
+
   const ready = isAnySttModelReady()
   mainWindow?.webContents.send('model:status', { ready })
 
@@ -505,14 +527,6 @@ app.whenReady().then(async () => {
       startEmbeddingQueue()
     }, 5000)
   }
-
-  // Forward Discord state changes to renderer
-  onStateChange((discordState) => {
-    mainWindow?.webContents.send('discord:state', discordState)
-  })
-
-  // Auto-connect to last Discord voice channel if enabled
-  tryAutoConnect()
 })
 
 app.on('before-quit', () => {
