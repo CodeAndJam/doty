@@ -29,7 +29,7 @@ export default function ModelDownload({ onComplete, onSkip }: Props) {
   function startDownload() {
     if (!selected) return
     // Fire-and-forget: the main process downloads in the background and the app stays usable.
-    window.doty.downloadModel(selected)
+    window.doty.downloadModel(selected).catch(() => {})
     onComplete()
   }
 

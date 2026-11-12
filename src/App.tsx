@@ -30,7 +30,12 @@ export default function App() {
   if (appState === 'download-model') {
     return (
       <ModelDownload
-        onComplete={() => setAppState('ready')}
+        onComplete={() => {
+          // Entering the app is the decision: never show this wall again, even if the
+          // download is interrupted by a quit or network failure.
+          window.doty.skipModelOnboarding()
+          setAppState('ready')
+        }}
         onSkip={() => {
           window.doty.skipModelOnboarding()
           setAppState('ready')
