@@ -45,5 +45,6 @@ jobs:
         run: |
           pnpm lint
           npx tsc --noEmit
+          npx tsc -p tsconfig.node.json --noEmit
           pnpm test -- --coverage
           pnpm run build

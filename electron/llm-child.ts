@@ -125,11 +125,13 @@ async function interpretScene(transcript: string) {
 
   try {
     const { LlamaChatSession } = await import('node-llama-cpp')
-    const session = new LlamaChatSession({ context: sceneContext })
+    const session = new LlamaChatSession({
+      contextSequence: sceneContext.getSequence(),
+      systemPrompt: SCENE_SYSTEM_PROMPT,
+    })
 
     try {
       const response = await session.prompt(transcript, {
-        systemPrompt: SCENE_SYSTEM_PROMPT,
         maxTokens: 150,
       })
 

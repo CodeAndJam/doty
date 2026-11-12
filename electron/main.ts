@@ -263,7 +263,11 @@ let sessionWavBytes = 0
 let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
 
 function getActiveSessionFile(): string | null {
-  return sessionOps.getActiveSession() ?? sessionOps.getLastSession()
+  const active = sessionOps.getActiveSession()
+  if (active && sessionOps.isSessionPath(active)) return active
+  const last = sessionOps.getLastSession()
+  if (last && sessionOps.isSessionPath(last)) return last
+  return null
 }
 
 function getSessionWavPath(): string | null {

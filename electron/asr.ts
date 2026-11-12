@@ -120,7 +120,7 @@ export function startStream(): void {
 /** Feed a PCM chunk to the active stream (Float32Array, 16kHz mono) */
 export function feedChunk(samples: Float32Array): void {
   if (!worker || !streaming) return
-  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
   worker.postMessage({ type: 'feed', buffer: buf }, [buf])
 }
 
@@ -158,7 +158,10 @@ export function transcribeFloat32(samples: Float32Array, _sampleRate = 16000): P
         }
       }
       worker.on('message', handler)
-      const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+      const buf = samples.buffer.slice(
+        samples.byteOffset,
+        samples.byteOffset + samples.byteLength,
+      ) as ArrayBuffer
       worker.postMessage({ type: 'transcribe', id, buffer: buf }, [buf])
     }
   })
