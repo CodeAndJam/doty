@@ -1,0 +1,78 @@
+name: STT Quality
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *' # nightly, 06:00 UTC
+  pull_request:
+    branches: [main]
+    paths:
+      - 'electron/asr.ts'
+      - 'electron/transcribe-worker.ts'
+      - 'electron/stt-language.ts'
+      - 'electron/model-paths.ts'
+      - 'electron/stt-quality/**'
+      - 'electron/stt-quality.test.ts'
+      - 'test-fixtures/stt/**'
+      - 'docs/QUALITY.md'
+      - '.github/workflows/stt-quality.yml'
+
+concurrency:
+  group: stt-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  stt-quality:
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_python: python3
+
+      # The GGUFs are ~1.5 GB; the cache makes a gate run take minutes, not tens
+      # of minutes. Bump the key when a model file is replaced.
+      - name: Cache STT models
+        uses: actions/cache@v4
+        with:
+          path: ~/.doty/models
+          key: stt-models-v1
+
+      - name: Download gated models
+        run: |
+          mkdir -p ~/.doty/models
+          test -s ~/.doty/models/parakeet-ultra-Q8_0.gguf || \
+            curl -fL --retry 3 -o ~/.doty/models/parakeet-ultra-Q8_0.gguf \
+              https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/main/parakeet-ultra-Q8_0.gguf
+          test -s ~/.doty/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf || \
+            curl -fL --retry 3 -o ~/.doty/models/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf \
+              https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf
+
+      - name: Accuracy + latency gate
+        run: pnpm stt:eval
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stt-quality-report
+          path: test-results/stt-quality.md
+          if-no-files-found: ignore

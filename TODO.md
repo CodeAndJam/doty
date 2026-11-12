@@ -2,6 +2,19 @@
 
 ## Pending
 
+- [ ] STT quality: record a real conference-mic fixture (laptop mic, far field,
+      6 speakers, music playing) and replace the synthetic 12 dB SNR noise gate.
+      See `docs/QUALITY.md`.
+- [ ] STT quality: use `transcribe-cpp` 0.4 `vocabulary` for campaign names
+      (hotwords) and `context_prompt` for scene continuity.
+- [ ] STT quality: Voxtral Mini 4B is 0.6–1.4× realtime on M-series and drops the
+      first sentence on masked audio. Keep experimental until a faster GPU path
+      or a smaller quant clears the gate.
+- [ ] STT quality: two-tier decode (Nemotron live + Parakeet Ultra re-decode of
+      finished sentences) to get both ~0.5 s text and 4% WER.
+- [ ] CI: coverage thresholds in `vitest.config.ts` are not enforced
+      (`pnpm test -- --coverage` passes the flag after `--`); `pnpm test:coverage`
+      reports ~25% globally. Enable per-directory instead of globally.
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
 
 ## Music Player — Implementation Order
@@ -18,6 +31,11 @@
 
 ## Done
 
+- [x] STT quality gate: WER/CER + noise + silence + realtime checks over Portuguese fixtures, committed baseline, nightly macOS workflow (`pnpm stt:eval`, `docs/QUALITY.md`)
+- [x] STT: live transcript no longer waits for session stop when a streaming model freezes `committed`; worker messages serialized
+- [x] STT: 10s chunked live decode for batch models (Parakeet Ultra), quiet-window cuts so no word is split
+- [x] STT: Parakeet Ultra added as the accuracy option (16.3% vs 22.4% WER on the DM fixture)
+- [x] STT: audio captured while the model loads is replayed instead of dropped
 - [x] `pnpm audit` clean (0 vulns): all deps on current major, 10-day release hold via `minimumReleaseAge`, transitive CVEs pinned via overrides
 - [x] Perf: reranker inference moved off the Electron main thread into a `worker_threads` worker; warmup deferred to idle time
 - [x] Perf: music library list cached instead of re-walking the folder on every recommendation (scanner invalidates on change)
