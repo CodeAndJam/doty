@@ -58,14 +58,28 @@ vi.mock('discord.js', () => {
       ]),
     }
 
+    destroyed = false
+
+    constructor() {
+      super()
+      // Expose the newest client so tests can inspect it after connect() nulls the module ref
+      ;(globalThis as any).__mockClient = this
+    }
+
     async login(_token: string): Promise<string> {
-      setTimeout(() => {
-        this.emit('ready')
-      }, 10)
+      // Test knob: __mockReadyDelay = ms to wait before emitting 'ready', or null to never fire
+      const knob = (globalThis as any).__mockReadyDelay
+      const delay = knob === null ? null : (knob ?? 10)
+      if (delay !== null) {
+        setTimeout(() => {
+          if (!this.destroyed) this.emit('ready')
+        }, delay)
+      }
       return 'token'
     }
 
     destroy(): void {
+      this.destroyed = true
       this.removeAllListeners()
     }
   }
@@ -284,6 +298,62 @@ describe('Discord lifecycle', () => {
 
       await connect('fake-token-2')
       expect(getState().status).toBe('ready')
+    })
+
+    // Regression: 3.0.0 loaded three engines at startup, the gateway handshake
+    // slipped past the old 15s deadline, and healthy logins were rejected.
+    it('keeps waiting past 15s when the gateway handshake is slow', async () => {
+      vi.useFakeTimers()
+      try {
+        ;(globalThis as any).__mockReadyDelay = null // 'ready' never arrives on its own
+        let settled = false
+        const pending = connect('fake-token').finally(() => {
+          settled = true
+        })
+        pending.catch(() => {}) // no unhandled rejection if the assertion below fails
+
+        await vi.advanceTimersByTimeAsync(20_000)
+
+        expect(settled).toBe(false)
+        expect(getState().status).toBe('connecting')
+
+        // The handshake finally completes — connect must still resolve
+        ;(globalThis as any).__mockClient.emit('ready')
+        await pending
+        expect(getState().status).toBe('ready')
+      } finally {
+        ;(globalThis as any).__mockReadyDelay = 10
+        vi.useRealTimers()
+      }
+    })
+
+    it('destroys the client when the handshake times out so a retry starts clean', async () => {
+      vi.useFakeTimers()
+      try {
+        ;(globalThis as any).__mockReadyDelay = null
+        const first = connect('fake-token')
+        first.catch(() => {}) // no unhandled rejection before we await it
+
+        await vi.advanceTimersByTimeAsync(46_000)
+
+        await expect(first).rejects.toThrow('Connection timed out')
+        const timedOut = (globalThis as any).__mockClient
+        expect(timedOut.destroyed).toBe(true)
+        expect(getState()).toMatchObject({ status: 'error', error: 'Connection timed out' })
+
+        // Retry gets a fresh client and succeeds
+        ;(globalThis as any).__mockReadyDelay = 10
+        const retry = connect('fake-token')
+        await vi.advanceTimersByTimeAsync(50)
+        await expect(retry).resolves.toBeUndefined()
+
+        expect((globalThis as any).__mockClient).not.toBe(timedOut)
+        expect((globalThis as any).__mockClient.destroyed).toBe(false)
+        expect(getState().status).toBe('ready')
+      } finally {
+        ;(globalThis as any).__mockReadyDelay = 10
+        vi.useRealTimers()
+      }
     })
   })
 
