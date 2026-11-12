@@ -60,8 +60,10 @@ import {
   startEmbeddingQueue,
   stopEmbeddingQueue,
 } from './embedding-queue'
+import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
 import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
+import { createModelDownloads } from './model-downloads'
 import {
   DEFAULT_STT_LANGUAGE,
   DEFAULT_STT_MODEL,
@@ -75,7 +77,7 @@ import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
 import { disposeReranker, scorePairs, setOnRerankerStatus } from './reranker'
-import { getAllMetadata, getMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
+import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import {
   disposeInterpreter,
   feedTranscript,
@@ -90,6 +92,7 @@ import {
   stopInterpreting,
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
+import { listSfx } from './sfx-library'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
 import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
@@ -134,8 +137,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
 
-const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
-
 /** True when the path is inside the configured music or SFX folder. */
 function isAllowedMediaPath(filePath: string): boolean {
   const roots = [store.get('musicFolder', ''), store.get('sfxFolder', '')]
@@ -146,6 +147,45 @@ function isAllowedMediaPath(filePath: string): boolean {
 }
 
 let mainWindow: BrowserWindow | null = null
+
+// Typed wrappers: a channel that is not declared in ipc.ts does not compile.
+const handle = (channel: InvokeChannel, listener: Parameters<typeof ipcMain.handle>[1]) =>
+  ipcMain.handle(channel, listener)
+
+const send = (channel: EventChannel, payload?: unknown) => mainWindow?.webContents.send(channel, payload)
+
+const sttDownloads = createModelDownloads({
+  download: downloadFile,
+  onEvent: (event) => {
+    if (event.type === 'progress') {
+      send(EVENTS.modelProgress, {
+        modelId: event.modelId,
+        percent: event.percent,
+        downloadedMB: event.downloadedMB,
+        totalMB: event.totalMB,
+      })
+    } else if (event.type === 'done') {
+      send(EVENTS.modelStatus, { ready: true })
+    } else if (event.type === 'cancelled') {
+      send(EVENTS.modelDownloadCancelled, { modelId: event.modelId })
+    } else {
+      send(EVENTS.modelDownloadError, { modelId: event.modelId, error: event.error })
+    }
+  },
+})
+
+const llmDownloads = createModelDownloads({
+  download: downloadFile,
+  onEvent: (event) => {
+    if (event.type === 'progress') {
+      send(EVENTS.llmDownloadProgress, {
+        percent: event.percent,
+        downloadedMB: event.downloadedMB,
+        totalMB: event.totalMB,
+      })
+    }
+  },
+})
 let sessionStartTime: number | null = null
 /** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
 let recordingActive = false
@@ -258,10 +298,10 @@ function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
     (done, total, current) => {
-      mainWindow?.webContents.send('scan:progress', { done, total, current })
+      send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
-      mainWindow?.webContents.send('scan:complete')
+      send(EVENTS.scanComplete)
       // Pick up tracks added/removed by the scan
       syncEmbeddingQueue(folder)
     },
@@ -277,7 +317,7 @@ setOnLibraryChanged(() => {
     librarySyncTimer = null
     const folder = store.get('musicFolder', '') as string
     syncEmbeddingQueue(folder)
-    mainWindow?.webContents.send('scan:complete')
+    send(EVENTS.scanComplete)
   }, 500)
 })
 
@@ -381,24 +421,24 @@ app.whenReady().then(async () => {
   // throws later in this callback used to skip it, which left the Discord panel
   // stuck on "disconnected" even when the bot had connected.
   onStateChange((discordState) => {
-    mainWindow?.webContents.send('discord:state', discordState)
+    send(EVENTS.discordState, discordState)
   })
 
   // Auto-connect to last Discord voice channel if enabled
   tryAutoConnect()
 
   const ready = isAnySttModelReady()
-  mainWindow?.webContents.send('model:status', { ready })
+  send(EVENTS.modelStatus, { ready })
 
   // Always set up ASR callbacks (process starts lazily on first transcribe)
   setOnInterimText((text) => {
-    mainWindow?.webContents.send('stt:interim', text)
+    send(EVENTS.sttInterim, text)
   })
   setOnAsrStatus((status) => {
-    mainWindow?.webContents.send('stt:status', status)
+    send(EVENTS.sttStatus, status)
   })
   setOnParagraphBreak(() => {
-    mainWindow?.webContents.send('stt:paragraph-break')
+    send(EVENTS.paragraphBreak)
   })
 
   // ── Scene Interpreter + Recommendation wiring ────────────────────────────
@@ -420,7 +460,7 @@ app.whenReady().then(async () => {
       sessionOps.appendCue(file, elapsed, text)
     }
     // Send the same time base used for the saved VTT cues
-    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs: elapsed })
+    send(EVENTS.transcript, { text, elapsedMs: elapsed })
     // Feed to scene interpreter
     feedTranscript(text)
     // Fast-path: a detected mood transition triggers an embedding/search now
@@ -435,7 +475,7 @@ app.whenReady().then(async () => {
 
   // Scene interpreter produces results → embed → vector search → recommend
   setOnSceneUpdate((scene) => {
-    mainWindow?.webContents.send('scene:update', scene)
+    send(EVENTS.sceneUpdate, scene)
     // Embed the scene description for vector search
     if (isEmbeddingModelReady()) {
       requestSceneEmbedding(scene.scene)
@@ -450,8 +490,8 @@ app.whenReady().then(async () => {
       try {
         const rec = slowPathRecommend(vector)
         if (rec.files.length > 0) {
-          mainWindow?.webContents.send('music:recommendations', rec.files)
-          mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+          send(EVENTS.recommendations, rec.files)
+          send(EVENTS.recommendationConfidence, rec.confidence)
         }
       } catch (e) {
         console.error('[main] slow-path recommendation failed:', e)
@@ -463,16 +503,16 @@ app.whenReady().then(async () => {
   })
 
   setOnLlmStatus((status) => {
-    mainWindow?.webContents.send('llm:status', status)
+    send(EVENTS.llmStatus, status)
   })
 
   setOnRerankerStatus((status) => {
-    mainWindow?.webContents.send('reranker:ipc-status', status)
+    send(EVENTS.rerankerStatus, status)
   })
 
   // Set up embedding progress reporting
   setOnEmbeddingProgress((stats) => {
-    mainWindow?.webContents.send('embedding:progress', stats)
+    send(EVENTS.embeddingProgress, stats)
   })
 
   if (ready) {
@@ -514,26 +554,26 @@ app.on('window-all-closed', () => {
 
 // ── IPC: Microphone Permission ────────────────────────────────────────────────
 
-ipcMain.handle('mic:check-permission', () => {
+handle(INVOKE.micCheckPermission, () => {
   if (process.platform !== 'darwin') return 'granted'
   const { systemPreferences } = require('electron')
   return systemPreferences.getMediaAccessStatus('microphone')
 })
 
-ipcMain.handle('mic:request-permission', async () => {
+handle(INVOKE.micRequestPermission, async () => {
   if (process.platform !== 'darwin') return true
   const { systemPreferences } = require('electron')
   return systemPreferences.askForMediaAccess('microphone')
 })
 
-ipcMain.handle('mic:open-settings', () => {
+handle(INVOKE.micOpenSettings, () => {
   const { shell } = require('electron')
   shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone')
 })
 
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
-ipcMain.handle('stt:start', () => {
+handle(INVOKE.sttStart, () => {
   if (!isAnySttModelReady()) return { ok: false, reason: 'no-model' }
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
@@ -544,7 +584,7 @@ ipcMain.handle('stt:start', () => {
   pauseEmbedding() // STT has priority over background embedding
   return { ok: true }
 })
-ipcMain.handle('stt:stop', () => {
+handle(INVOKE.sttStop, () => {
   finalizeStream()
   finalizeWavRecording()
   recordingActive = false
@@ -555,7 +595,7 @@ ipcMain.handle('stt:stop', () => {
 // Renderer sends PCM segments as Float32Array buffers.
 // In streaming mode, feeds chunks to the active stream.
 // Results come back via 'stt:transcript' and 'stt:interim' events.
-ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
+handle(INVOKE.sttTranscribeChunk, async (_e, buffer: ArrayBuffer) => {
   try {
     const samples = new Float32Array(buffer)
     appendWavChunk(samples)
@@ -569,17 +609,17 @@ ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
 
 // ── IPC: Music ────────────────────────────────────────────────────────────────
 
-ipcMain.handle('music:set-folder', (_e, folderPath: string) => {
+handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
   syncEmbeddingQueue(folderPath)
-  mainWindow?.webContents.send('music:folder-changed', folderPath)
+  send(EVENTS.musicFolderChanged, folderPath)
   return { ok: true }
 })
 
-ipcMain.handle('music:get-folder', () => store.get('musicFolder', ''))
+handle(INVOKE.getMusicFolder, () => store.get('musicFolder', ''))
 
-ipcMain.handle('music:pick-folder', async () => {
+handle(INVOKE.pickMusicFolder, async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory'],
     title: 'Select Music Folder',
@@ -588,38 +628,34 @@ ipcMain.handle('music:pick-folder', async () => {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
     syncEmbeddingQueue(result.filePaths[0])
-    mainWindow?.webContents.send('music:folder-changed', result.filePaths[0])
+    send(EVENTS.musicFolderChanged, result.filePaths[0])
     return result.filePaths[0]
   }
   return null
 })
 
-ipcMain.handle('music:list', () => {
+handle(INVOKE.listMusic, () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return []
   return getMusicFiles(musicFolder)
 })
 
-ipcMain.handle('music:scan', () => {
+handle(INVOKE.triggerScan, () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return { ok: false }
   launchScanner(musicFolder, true)
   return { ok: true }
 })
 
-ipcMain.handle('music:get-metadata', (_e, relPath: string) => {
-  return getMetadata(relPath)
-})
-
-ipcMain.handle('music:get-all-metadata', () => {
+handle(INVOKE.getAllMetadata, () => {
   return getAllMetadata()
 })
 
 // ── IPC: Tags ─────────────────────────────────────────────────────────────────
 
-ipcMain.handle('tags:get', (_e, filename: string) => getTags(filename))
+handle(INVOKE.getTags, (_e, filename: string) => getTags(filename))
 
-ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
+handle(INVOKE.setTags, (_e, filename: string, tags: string[]) => {
   setTags(filename, tags)
   // Description feeds the embedding — regenerate it with the new tags.
   const musicFolder = store.get('musicFolder', '') as string
@@ -634,30 +670,30 @@ ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
   return { ok: true }
 })
 
-ipcMain.handle('tags:get-all', () => getAllTags())
+handle(INVOKE.getAllTags, () => getAllTags())
 
-ipcMain.handle('tags:get-map', () => getTagsMap())
+handle(INVOKE.getTagsMap, () => getTagsMap())
 
 // ── IPC: Play History ─────────────────────────────────────────────────────────
 
-ipcMain.handle('history:record-play', (_e, itemId: string, itemType: 'music' | 'sfx') => {
+handle(INVOKE.recordPlay, (_e, itemId: string, itemType: 'music' | 'sfx') => {
   recordPlay(itemId, itemType)
   return { ok: true }
 })
 
-ipcMain.handle('history:get-frequencies', (_e, itemType: 'music' | 'sfx') => {
+handle(INVOKE.getPlayFrequencies, (_e, itemType: 'music' | 'sfx') => {
   return getPlayFrequencies(itemType)
 })
 
-ipcMain.handle('history:get-top-played', (_e, itemType: 'music' | 'sfx', limit?: number) => {
+handle(INVOKE.getTopPlayed, (_e, itemType: 'music' | 'sfx', limit?: number) => {
   return getTopPlayed(itemType, limit)
 })
 
 // ── IPC: Transcripts ──────────────────────────────────────────────────────────
 
-ipcMain.handle('transcript:get-folder', () => store.get('transcriptFolder', ''))
+handle(INVOKE.getTranscriptFolder, () => store.get('transcriptFolder', ''))
 
-ipcMain.handle('transcript:pick-folder', async () => {
+handle(INVOKE.pickTranscriptFolder, async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory'],
     title: 'Select Transcript Folder',
@@ -674,14 +710,14 @@ ipcMain.handle('transcript:pick-folder', async () => {
         sessionStartTime = Date.now()
         startWavRecording()
       }
-      mainWindow?.webContents.send('sessions:changed')
+      send(EVENTS.sessionsChanged)
     }
     return folder
   }
   return null
 })
 
-ipcMain.handle('transcript:save', (_e, text: string) => {
+handle(INVOKE.saveTranscript, (_e, text: string) => {
   const folder = store.get('transcriptFolder', '') as string
   if (!folder) return { ok: false, reason: 'no folder set' }
   try {
@@ -697,7 +733,7 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 
 // ── IPC: Sessions ─────────────────────────────────────────────────────────────
 
-ipcMain.handle('session:create', (_e, name?: string) => {
+handle(INVOKE.sessionCreate, (_e, name?: string) => {
   const session = sessionOps.createSession(name)
   if (recordingActive) {
     // Recording in progress — start a fresh take in the new session
@@ -708,17 +744,17 @@ ipcMain.handle('session:create', (_e, name?: string) => {
   return session
 })
 
-ipcMain.handle('session:list', () => {
+handle(INVOKE.sessionList, () => {
   return sessionOps.listSessions()
 })
 
-ipcMain.handle('session:load', async (_e, file: string) => {
+handle(INVOKE.sessionLoad, async (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return []
   sessionOps.setLastSession(file)
   return sessionOps.loadSessionAsync(file)
 })
 
-ipcMain.handle('session:set-active', (_e, file: string) => {
+handle(INVOKE.sessionSetActive, (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   sessionOps.setActiveSession(file)
   if (recordingActive) {
@@ -730,12 +766,12 @@ ipcMain.handle('session:set-active', (_e, file: string) => {
   return { ok: true }
 })
 
-ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
+handle(INVOKE.sessionRename, (_e, file: string, newName: string) => {
   if (!sessionOps.isSessionPath(file)) return
   sessionOps.renameSession(file, newName)
 })
 
-ipcMain.handle('session:delete', (_e, file: string) => {
+handle(INVOKE.sessionDelete, (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   const wasActive = getActiveSessionFile() === file
   if (wasActive && sessionWavFd !== null) finalizeWavRecording()
@@ -753,7 +789,7 @@ ipcMain.handle('session:delete', (_e, file: string) => {
   return { ok: true }
 })
 
-ipcMain.handle('session:get-last', () => {
+handle(INVOKE.sessionGetLast, () => {
   return sessionOps.getLastSession()
 })
 
@@ -761,12 +797,12 @@ ipcMain.handle('session:get-last', () => {
 
 let reprocessWorker: NodeWorker | null = null
 
-ipcMain.handle('reprocess:start', (_e, _sessionFile: string, _modelId: string) => {
+handle(INVOKE.reprocessStart, (_e, _sessionFile: string, _modelId: string) => {
   // ponytail: reprocess needs rewrite for transcribe-cpp. Stub for now.
   return { ok: false, reason: 'Reprocess not yet available with new STT engine' }
 })
 
-ipcMain.handle('reprocess:cancel', () => {
+handle(INVOKE.reprocessCancel, () => {
   if (reprocessWorker) {
     reprocessWorker.terminate()
     reprocessWorker = null
@@ -778,27 +814,27 @@ ipcMain.handle('reprocess:cancel', () => {
 
 // isAnySttModelReady imported from model-paths
 
-ipcMain.handle('model:status', () => ({
+handle(INVOKE.modelStatus, () => ({
   ready: isAnySttModelReady(),
   onboardingSkipped: store.get('sttOnboardingSkipped', false),
 }))
 
-ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
+handle(INVOKE.rerankerStatus, () => ({ cached: isRerankerCached() }))
 
-ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
+handle(INVOKE.rerankerScore, async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
   return scorePairs(pairs)
 })
 
-ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
+handle(INVOKE.getRecommendationCount, () => store.get('recommendationCount', 5))
 
-ipcMain.handle('settings:set-recommendation-count', (_e, count: number) => {
+handle(INVOKE.setRecommendationCount, (_e, count: number) => {
   store.set('recommendationCount', Math.max(1, Math.min(20, Math.round(count))))
   return { ok: true }
 })
 
 // ── IPC: Scene Interpreter (LLM) ──────────────────────────────────────────────
 
-ipcMain.handle('llm:get-model-list', () => {
+handle(INVOKE.getLlmModelList, () => {
   return LLM_MODELS.map((m) => ({
     id: m.id,
     label: m.label,
@@ -808,11 +844,11 @@ ipcMain.handle('llm:get-model-list', () => {
   }))
 })
 
-ipcMain.handle('llm:get-model', () => {
+handle(INVOKE.getLlmModel, () => {
   return store.get('llmModel', 'qwen3-0.6b') as string
 })
 
-ipcMain.handle('llm:set-model', (_e, modelId: LlmModelType) => {
+handle(INVOKE.setLlmModel, (_e, modelId: LlmModelType) => {
   const current = store.get('llmModel', '') as string
   if (current === modelId) return { ok: true }
   const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
@@ -824,7 +860,7 @@ ipcMain.handle('llm:set-model', (_e, modelId: LlmModelType) => {
   return { ok: true }
 })
 
-ipcMain.handle('llm:download', async (_e, modelId: LlmModelType) => {
+handle(INVOKE.downloadLlm, async (_e, modelId: LlmModelType) => {
   const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
   if (!modelInfo) return { ok: false, reason: 'unknown model' }
   if (modelInfo.isReady()) {
@@ -832,44 +868,42 @@ ipcMain.handle('llm:download', async (_e, modelId: LlmModelType) => {
     loadSceneModel(getLlmModelPath(modelId))
     return { ok: true }
   }
-  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
-  try {
-    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
-      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
-    })
-    store.set('llmModel', modelId)
-    loadSceneModel(getLlmModelPath(modelId))
-    startInterpreting()
-    return { ok: true }
-  } catch (e) {
-    return { ok: false, reason: String(e) }
-  }
+
+  const result = await llmDownloads.start(
+    { id: modelInfo.id, url: modelInfo.url },
+    join(MODELS_DIR, modelInfo.ggufFile),
+  )
+  if (!result.ok) return result
+
+  store.set('llmModel', modelId)
+  loadSceneModel(getLlmModelPath(modelId))
+  startInterpreting()
+  return { ok: true }
 })
 
-ipcMain.handle('llm:download-embedding', async () => {
+handle(INVOKE.downloadEmbeddingModel, async () => {
   if (EMBEDDING_MODEL.isReady()) {
     loadEmbeddingModel(getEmbeddingModelPath())
     return { ok: true }
   }
-  const destPath = join(MODELS_DIR, EMBEDDING_MODEL.ggufFile)
-  try {
-    await downloadFile(EMBEDDING_MODEL.url, destPath, (percent, downloadedMB, totalMB) => {
-      mainWindow?.webContents.send('llm:download-progress', { percent, downloadedMB, totalMB })
-    })
-    loadEmbeddingModel(getEmbeddingModelPath())
-    return { ok: true }
-  } catch (e) {
-    return { ok: false, reason: String(e) }
-  }
+
+  const result = await llmDownloads.start(
+    { id: EMBEDDING_MODEL.id, url: EMBEDDING_MODEL.url },
+    join(MODELS_DIR, EMBEDDING_MODEL.ggufFile),
+  )
+  if (!result.ok) return result
+
+  loadEmbeddingModel(getEmbeddingModelPath())
+  return { ok: true }
 })
 
-ipcMain.handle('llm:get-embedding-status', () => ({
+handle(INVOKE.getEmbeddingStatus, () => ({
   ready: EMBEDDING_MODEL.isReady(),
   label: EMBEDDING_MODEL.label,
   size: EMBEDDING_MODEL.size,
 }))
 
-ipcMain.handle('embedding:get-progress', () => {
+handle(INVOKE.getEmbeddingProgress, () => {
   const musicFolder = store.get('musicFolder', '') as string
   const total = musicFolder ? getMusicFiles(musicFolder).length : 0
   try {
@@ -880,12 +914,7 @@ ipcMain.handle('embedding:get-progress', () => {
   }
 })
 
-// Download state is exposed to the renderer so the app can show progress while the user keeps working.
-let sttDownload: { modelId: SttModelType; percent: number } | null = null
-let sttDownloadError: { modelId: SttModelType; error: string } | null = null
-let sttDownloadAbort: AbortController | null = null
-
-ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
+handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId
     ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
     : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
@@ -894,73 +923,47 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
     store.set('sttModel', modelInfo.id)
     restartRecognizer()
     initAuxModels()
-    mainWindow?.webContents.send('model:status', { ready: true })
+    send(EVENTS.modelStatus, { ready: true })
     return { ok: true }
   }
 
-  if (sttDownload) return { ok: false, reason: 'download already in progress' }
+  const result = await sttDownloads.start(
+    { id: modelInfo.id, url: modelInfo.url },
+    join(MODELS_DIR, modelInfo.ggufFile),
+  )
+  if (!result.ok) return result
 
-  // Download single GGUF file
-  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
-  const controller = new AbortController()
-  sttDownloadAbort = controller
-  sttDownload = { modelId: modelInfo.id, percent: 0 }
-  sttDownloadError = null
+  store.set('sttModel', modelInfo.id)
+  // The file is complete and selected: report success even if a local model
+  // fails to initialise, otherwise the UI claims the download failed.
   try {
-    await downloadFile(
-      modelInfo.url,
-      destPath,
-      (percent, downloadedMB, totalMB) => {
-        sttDownload = { modelId: modelInfo.id, percent }
-        mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
-      },
-      { signal: controller.signal },
-    )
-
-    store.set('sttModel', modelInfo.id)
-    mainWindow?.webContents.send('model:status', { ready: true })
-    // The file is complete and selected: report success even if a local model
-    // fails to initialise, otherwise the UI claims the download failed.
-    try {
-      restartRecognizer()
-      initAuxModels()
-    } catch (err) {
-      console.error('[model] post-download init error:', err)
-    }
-    return { ok: true }
-  } catch (e) {
-    if (controller.signal.aborted) {
-      mainWindow?.webContents.send('model:download-cancelled', { modelId: modelInfo.id })
-      return { ok: false, reason: 'cancelled' }
-    }
-    sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
-    mainWindow?.webContents.send('model:download-error', sttDownloadError)
-    return { ok: false, reason: sttDownloadError.error }
-  } finally {
-    sttDownload = null
-    sttDownloadAbort = null
+    restartRecognizer()
+    initAuxModels()
+  } catch (err) {
+    console.error('[model] post-download init error:', err)
   }
-})
-
-ipcMain.handle('stt:get-download-state', () => ({ downloading: sttDownload, error: sttDownloadError }))
-
-ipcMain.handle('stt:cancel-download', () => {
-  sttDownloadAbort?.abort()
   return { ok: true }
 })
 
-ipcMain.handle('stt:skip-onboarding', () => {
+handle(INVOKE.getSttDownloadState, () => sttDownloads.state())
+
+handle(INVOKE.cancelSttDownload, () => {
+  sttDownloads.cancel()
+  return { ok: true }
+})
+
+handle(INVOKE.skipModelOnboarding, () => {
   store.set('sttOnboardingSkipped', true)
   return { ok: true }
 })
 
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
 
-ipcMain.handle('stt:get-model', () => {
+handle(INVOKE.getSttModel, () => {
   return store.get('sttModel', DEFAULT_STT_MODEL) as string
 })
 
-ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
+handle(INVOKE.setSttModel, (_e, modelId: SttModelType) => {
   const current = store.get('sttModel', '') as string
   if (current === modelId) return { ok: true }
   const modelInfo = STT_MODELS.find((m) => m.id === modelId)
@@ -974,13 +977,13 @@ ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
   }
   restartRecognizer()
   // Notify renderer about the switch
-  mainWindow?.webContents.send('stt:model-switched', { id: modelId, label: modelInfo.label })
+  send(EVENTS.sttModelSwitched, { id: modelId, label: modelInfo.label })
   return { ok: true }
 })
 
-ipcMain.handle('stt:get-language', () => store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string)
+handle(INVOKE.getSttLanguage, () => store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string)
 
-ipcMain.handle('stt:set-language', (_e, language: string) => {
+handle(INVOKE.setSttLanguage, (_e, language: string) => {
   const modelId = store.get('sttModel', DEFAULT_STT_MODEL) as SttModelType
   const modelInfo = STT_MODELS.find((m) => m.id === modelId)
   if (!supportsLanguage(modelInfo, language)) {
@@ -991,12 +994,12 @@ ipcMain.handle('stt:set-language', (_e, language: string) => {
   return { ok: true }
 })
 
-ipcMain.handle('stt:get-model-status', () => {
+handle(INVOKE.getSttModelStatus, () => {
   return Object.fromEntries(STT_MODELS.map((m) => [m.id, m.isReady()]))
 })
 
 /** Return the model registry for the renderer */
-ipcMain.handle('stt:get-model-list', () => {
+handle(INVOKE.getSttModelList, () => {
   return STT_MODELS.map((m) => ({
     id: m.id,
     label: m.label,
@@ -1011,7 +1014,7 @@ ipcMain.handle('stt:get-model-list', () => {
 
 // ── IPC: Discord ──────────────────────────────────────────────────────────────
 
-ipcMain.handle('discord:connect', async (_e, token?: string) => {
+handle(INVOKE.discordConnect, async (_e, token?: string) => {
   try {
     await discordConnect(token)
     return { ok: true }
@@ -1020,18 +1023,18 @@ ipcMain.handle('discord:connect', async (_e, token?: string) => {
   }
 })
 
-ipcMain.handle('discord:disconnect', async () => {
+handle(INVOKE.discordDisconnect, async () => {
   await discordDisconnect()
   return { ok: true }
 })
 
-ipcMain.handle('discord:get-state', () => discordGetState())
+handle(INVOKE.discordGetState, () => discordGetState())
 
-ipcMain.handle('discord:get-guilds', () => getGuilds())
+handle(INVOKE.discordGetGuilds, () => getGuilds())
 
-ipcMain.handle('discord:get-voice-channels', (_e, guildId: string) => getVoiceChannels(guildId))
+handle(INVOKE.discordGetVoiceChannels, (_e, guildId: string) => getVoiceChannels(guildId))
 
-ipcMain.handle('discord:join-channel', async (_e, guildId: string, channelId: string) => {
+handle(INVOKE.discordJoinChannel, async (_e, guildId: string, channelId: string) => {
   try {
     await joinChannel(guildId, channelId)
     return { ok: true }
@@ -1040,12 +1043,12 @@ ipcMain.handle('discord:join-channel', async (_e, guildId: string, channelId: st
   }
 })
 
-ipcMain.handle('discord:leave-channel', () => {
+handle(INVOKE.discordLeaveChannel, () => {
   leaveChannel()
   return { ok: true }
 })
 
-ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: number) => {
+handle(INVOKE.discordStreamTrack, (_e, filename: string, seekSeconds?: number) => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return { ok: false }
   const resolved = filename.startsWith('/') ? filename : join(musicFolder, filename)
@@ -1054,128 +1057,90 @@ ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: numb
   return { ok: true }
 })
 
-ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number) => {
+handle(INVOKE.discordStreamSfx, (_e, absolutePath: string, volume?: number) => {
   if (!isAllowedMediaPath(absolutePath)) return { ok: false }
   streamSfx(absolutePath, volume)
   return { ok: true }
 })
 
-ipcMain.handle('discord:stop-stream', () => {
+handle(INVOKE.discordStopStream, () => {
   stopStream()
   return { ok: true }
 })
 
-ipcMain.handle('discord:stop-sfx', (_e, absolutePath?: string) => {
+handle(INVOKE.discordStopSfx, (_e, absolutePath?: string) => {
   stopSfx(absolutePath)
   return { ok: true }
 })
 
-ipcMain.handle('discord:pause-stream', () => {
+handle(INVOKE.discordPauseStream, () => {
   pauseStream()
   return { ok: true }
 })
 
-ipcMain.handle('discord:resume-stream', () => {
+handle(INVOKE.discordResumeStream, () => {
   resumeStream()
   return { ok: true }
 })
 
-ipcMain.handle('discord:set-volume', (_e, volume: number) => {
+handle(INVOKE.discordSetVolume, (_e, volume: number) => {
   setDiscordVolume(volume)
   return { ok: true }
 })
 
-ipcMain.handle('discord:get-volume', () => getDiscordVolume())
+handle(INVOKE.discordGetVolume, () => getDiscordVolume())
 
-ipcMain.handle('discord:has-token', () => {
+handle(INVOKE.discordHasToken, () => {
   return loadToken() !== ''
 })
 
-ipcMain.handle('discord:clear-token', () => {
+handle(INVOKE.discordClearToken, () => {
   clearToken()
   return { ok: true }
 })
 
-ipcMain.handle('discord:get-auto-connect', () => getAutoConnect())
+handle(INVOKE.discordGetAutoConnect, () => getAutoConnect())
 
-ipcMain.handle('discord:set-auto-connect', (_e, enabled: boolean) => {
+handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
   setAutoConnect(enabled)
   return { ok: true }
 })
 
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
-function scanSfxFolder(folder: string): any[] {
-  if (!folder || !fs.existsSync(folder)) return []
+handle(INVOKE.getSfxList, () => listSfx(store.get('sfxFolder', '') as string))
 
-  const results: any[] = []
-  const audioRe = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
+handle(INVOKE.getSfxFolder, () => store.get('sfxFolder', ''))
 
-  function scan(dir: string, category: string) {
-    try {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const fullPath = join(dir, entry.name)
-        if (entry.isDirectory()) {
-          scan(fullPath, entry.name)
-        } else if (audioRe.test(entry.name)) {
-          const id = fullPath.replace(folder, '').replace(/^\//, '')
-          const label = entry.name.replace(audioRe, '').replace(/[-_]/g, ' ')
-          results.push({
-            id,
-            filename: fullPath,
-            category: category || 'custom',
-            label,
-            description: '',
-            duration: 0,
-            source: 'custom',
-          })
-        }
-      }
-    } catch (e) {
-      console.error('[sfx] scan error:', e)
-    }
-  }
-
-  scan(folder, '')
-  return results
-}
-
-ipcMain.handle('sfx:list', () => {
-  const folder = store.get('sfxFolder', '') as string
-  return scanSfxFolder(folder)
-})
-
-ipcMain.handle('sfx:get-folder', () => store.get('sfxFolder', ''))
-
-ipcMain.handle('sfx:pick-folder', async () => {
+handle(INVOKE.pickSfxFolder, async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openDirectory'],
     title: 'Select SFX Folder',
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('sfxFolder', result.filePaths[0])
-    mainWindow?.webContents.send('sfx:changed')
+    send(EVENTS.sfxChanged)
     return result.filePaths[0]
   }
   return null
 })
 
-ipcMain.handle('sfx:set-folder', (_e, folderPath: string) => {
+handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
-  mainWindow?.webContents.send('sfx:changed')
+  send(EVENTS.sfxChanged)
   return { ok: true }
 })
 
-ipcMain.handle('settings:get-sfx-recommendation-count', () => store.get('sfxRecommendationCount', 5))
+handle(INVOKE.getSfxRecommendationCount, () => store.get('sfxRecommendationCount', 5))
 
-ipcMain.handle('settings:set-sfx-recommendation-count', (_e, count: number) => {
+handle(INVOKE.setSfxRecommendationCount, (_e, count: number) => {
   store.set('sfxRecommendationCount', Math.max(1, Math.min(10, Math.round(count))))
   return { ok: true }
 })
 
 // ── IPC: Autopilot (#12) ──────────────────────────────────────────────────────
 
-ipcMain.handle('autopilot:get-config', () => ({
+handle(INVOKE.getAutopilotConfig, () => ({
   enabled: store.get('autopilotEnabled', false),
   musicEnabled: store.get('autopilotMusicEnabled', true),
   sfxEnabled: store.get('autopilotSfxEnabled', true),
@@ -1189,7 +1154,7 @@ ipcMain.handle('autopilot:get-config', () => ({
   recentlyPlayedMinutes: store.get('autopilotRecentlyPlayedMinutes', 10),
 }))
 
-ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => {
+handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
   if (typeof config.enabled === 'boolean') store.set('autopilotEnabled', config.enabled)
   if (typeof config.musicEnabled === 'boolean') store.set('autopilotMusicEnabled', config.musicEnabled)
   if (typeof config.sfxEnabled === 'boolean') store.set('autopilotSfxEnabled', config.sfxEnabled)
