@@ -2,6 +2,7 @@
 
 ## Pending
 
+- [ ] Speech model downloads: resume interrupted transfers (HTTP Range), add a cancel button, and clean `.part` files on quit
 - [ ] `pnpm audit` vulns (20 total, none exploitable at runtime):
   - 12× high: `tar` via `@discordjs/opus > @discordjs/node-pre-gyp` — install-time only, waiting on `@discordjs/node-pre-gyp` to bump `tar`
   - 8× moderate: `undici` via `discord.js` and `jsdom` — waiting on upstream bumps

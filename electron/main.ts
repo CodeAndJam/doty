@@ -1,5 +1,4 @@
 import fs from 'node:fs'
-import https from 'node:https'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
@@ -50,6 +49,7 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import { downloadFile } from './download-file'
 import {
   handleEmbeddingResult,
   pauseEmbedding,
@@ -81,82 +81,6 @@ import * as sessionOps from './sessions'
 import { store } from './store'
 import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
-
-// ── Download helper ───────────────────────────────────────────────────────────
-/** Download a file from a URL with progress reporting. Follows up to 10 redirects. */
-function downloadFile(
-  url: string,
-  destPath: string,
-  onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(join(destPath, '..'), { recursive: true })
-    // Write to a temp file and rename on success so a cancelled download never
-    // leaves a truncated model that looks installed on the next launch.
-    const tmpPath = `${destPath}.part`
-    const file = fs.createWriteStream(tmpPath)
-    const cleanup = () => {
-      file.destroy()
-      try {
-        fs.unlinkSync(tmpPath)
-      } catch {
-        /* already gone */
-      }
-    }
-    let redirectCount = 0
-    const get = (u: string) => {
-      if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
-      const mod = u.startsWith('https') ? https : require('node:http')
-      mod
-        .get(u, (res: any) => {
-          if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
-            return get(res.headers.location!)
-          }
-          if (res.statusCode !== 200) {
-            cleanup()
-            return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
-          }
-          const total = parseInt(res.headers['content-length'] || '0', 10)
-          let downloaded = 0
-          res.on('data', (chunk: Buffer) => {
-            downloaded += chunk.length
-            file.write(chunk)
-            if (total > 0 && onProgress) {
-              onProgress(
-                Math.round((downloaded / total) * 100),
-                Math.round(downloaded / 1024 / 1024),
-                Math.round(total / 1024 / 1024),
-              )
-            }
-          })
-          res.on('end', () =>
-            file.close(() => {
-              try {
-                fs.renameSync(tmpPath, destPath)
-                resolve()
-              } catch (e) {
-                cleanup()
-                reject(e)
-              }
-            }),
-          )
-          res.on('error', (e: Error) => {
-            cleanup()
-            reject(e)
-          })
-        })
-        .on('error', (e: Error) => {
-          cleanup()
-          reject(e)
-        })
-    }
-    file.on('error', (e) => {
-      cleanup()
-      reject(e)
-    })
-    get(url)
-  })
-}
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
 
@@ -502,6 +426,25 @@ function requestSceneEmbedding(sceneText: string) {
   requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
 }
 
+/**
+ * Load the models that support recommendations (reranker, scene interpreter,
+ * embeddings) when their files exist. Safe to call after a late STT download:
+ * every load is guarded by an existsSync check.
+ */
+function initAuxModels(): void {
+  downloadRerankerModel().catch(() => {})
+  const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
+  const llmPath = getLlmModelPath(llmModelId)
+  if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
+    loadSceneModel(llmPath)
+    startInterpreting()
+  }
+  const embPath = getEmbeddingModelPath()
+  if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
+    loadEmbeddingModel(embPath)
+  }
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -591,25 +534,12 @@ app.whenReady().then(async () => {
   })
 
   if (ready) {
-    // Pre-download reranker model in main process (worker fetch stalls in Electron)
-    downloadRerankerModel().catch(() => {})
+    initAuxModels()
     // Init ASR immediately — transcribe-cpp loads in ~160ms
     try {
       initRecognizer()
     } catch (e) {
       console.error('ASR init error:', e)
-    }
-    // Init scene interpreter if model is available (and non-empty)
-    const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
-    const llmPath = getLlmModelPath(llmModelId)
-    if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
-      loadSceneModel(llmPath)
-      startInterpreting()
-    }
-    // Init embedding model if available (and non-empty)
-    const embPath = getEmbeddingModelPath()
-    if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
-      loadEmbeddingModel(embPath)
     }
   }
 
@@ -1016,13 +946,13 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
 
     store.set('sttModel', modelInfo.id)
     restartRecognizer()
+    initAuxModels()
     mainWindow?.webContents.send('model:status', { ready: true })
-    downloadRerankerModel().catch(() => {})
     return { ok: true }
   } catch (e) {
-    sttDownloadError = { modelId: modelInfo.id, error: String(e) }
+    sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
     mainWindow?.webContents.send('model:download-error', sttDownloadError)
-    return { ok: false, reason: String(e) }
+    return { ok: false, reason: sttDownloadError.error }
   } finally {
     sttDownload = null
   }

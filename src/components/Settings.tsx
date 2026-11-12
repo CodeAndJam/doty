@@ -841,6 +841,7 @@ export default function Settings({
                     ) : (
                       <button
                         type="button"
+                        disabled={whisperDownloading !== null}
                         onClick={async () => {
                           setWhisperDownloading(m.id)
                           setWhisperProgress(0)
@@ -863,7 +864,8 @@ export default function Settings({
                           background: 'none',
                           border: '1px solid rgba(200,146,42,0.3)',
                           padding: '2px 8px',
-                          cursor: 'pointer',
+                          cursor: whisperDownloading === null ? 'pointer' : 'default',
+                          opacity: whisperDownloading === null ? 1 : 0.4,
                           flexShrink: 0,
                         }}
                         onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.1)')}
