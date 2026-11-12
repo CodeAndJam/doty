@@ -65,7 +65,7 @@ import { migrateFromJson } from './metadata-cache'
 import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
 import { handleMusicRequest } from './music-protocol'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
-import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
+import { getAllMetadata, getMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import {
   disposeInterpreter,
   feedTranscript,
@@ -375,12 +375,24 @@ function launchScanner(folder: string, force = false) {
     },
     () => {
       mainWindow?.webContents.send('scan:complete')
-      // Pick up tracks added/removed by the scan (and by the file watcher)
+      // Pick up tracks added/removed by the scan
       syncEmbeddingQueue(folder)
     },
     force,
   )
 }
+
+/** Watcher removals can arrive in bursts — sync the library once they settle. */
+let librarySyncTimer: ReturnType<typeof setTimeout> | null = null
+setOnLibraryChanged(() => {
+  if (librarySyncTimer) clearTimeout(librarySyncTimer)
+  librarySyncTimer = setTimeout(() => {
+    librarySyncTimer = null
+    const folder = store.get('musicFolder', '') as string
+    syncEmbeddingQueue(folder)
+    mainWindow?.webContents.send('scan:complete')
+  }, 500)
+})
 
 function registerAppProtocol() {
   const rendererRoot = join(__dirname, '../renderer')

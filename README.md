@@ -44,8 +44,8 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 
 ### Requirements
 
-- macOS (Apple Silicon or Intel)
-- ~800 MB disk space for AI models (downloaded on first launch)
+- macOS (Apple Silicon)
+- About 2 GB disk space for the default AI models (larger ASR models need more)
 
 ### First launch
 
@@ -59,10 +59,10 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 ### Basic workflow
 
 1. Open Settings and select your **music folder** and **microphone**.
-2. Click **Begin Transcription** to start listening.
+2. Click the **Standby** status toggle to start listening.
 3. Doty transcribes what it hears and automatically recommends matching tracks in the soundboard.
 4. Click any track card to play it. Use the player bar at the bottom to control playback.
-5. Type a scene description in the **prompt bar** at the bottom to manually steer recommendations.
+5. Type a scene description in the **prompt bar** above the soundboard to manually steer recommendations.
 
 ### Settings
 
@@ -79,15 +79,12 @@ Open with the gear icon (top right) or `Cmd+,`.
 
 ### Soundboard
 
-The soundboard shows three sections:
+The soundboard shows two sections:
 
 - **Pinned** — your favourite tracks, always at the top. Click the pin icon on any track to pin/unpin it. Reorder pinned tracks with the arrow buttons.
 - **Suggestions** — AI-recommended tracks based on the current transcript and/or DM prompt.
-- **All Tracks** — everything else in your library.
 
-Right-click or use the context menu on any track to:
-- **Play Next** — insert it after the current track in the queue
-- **Add to Queue** — append it to the end of the queue
+Use the browse button to search the rest of your library. On any track card, **NEXT** inserts it after the current track and **QUEUE** appends it to the end.
 
 ### Queue
 

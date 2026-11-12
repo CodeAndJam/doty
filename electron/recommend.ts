@@ -49,7 +49,6 @@ const MOOD_TRIGGERS: MoodTrigger[] = [
   },
 ]
 
-let lastFastMood: string | null = null
 let lastSlowRecommendation: Recommendation = { files: [], confidence: 0, source: 'none', scene: null }
 let cooldownUntil = 0 // timestamp when cooldown expires
 
@@ -82,10 +81,9 @@ export function fastPathCheck(recentText: string): FastTrigger | null {
 
   if (!bestTrigger || bestScore === 0) return null
 
-  // Only fire if mood CHANGED (transition detector, not steady-state).
-  // OR: a slow-path mood that differs must not re-arm the same fast trigger.
+  // Don't duplicate the mood the slow path already reported
   const currentSlowMood = getLastScene()?.mood
-  if (bestTrigger.mood === lastFastMood || bestTrigger.mood === currentSlowMood) {
+  if (bestTrigger.mood === currentSlowMood) {
     return null
   }
 
@@ -95,11 +93,9 @@ export function fastPathCheck(recentText: string): FastTrigger | null {
   // Must exceed 0.8 threshold to override slow-path
   if (confidence <= 0.8) return null
 
-  // Check cooldown (unless confidence > 0.95 — dramatic override)
+  // Hard cooldown: one fast trigger per window, even for 3+ keyword matches
   const now = Date.now()
-  if (now < cooldownUntil && confidence <= 0.95) return null
-
-  lastFastMood = bestTrigger.mood
+  if (now < cooldownUntil) return null
 
   // The caller embeds this mood and runs the normal vector search
   return { mood: bestTrigger.mood, confidence }

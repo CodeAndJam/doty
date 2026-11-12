@@ -98,9 +98,13 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus(msg.status)
         break
       case 'error':
-        if (typeof msg.id === 'number' && msg.id !== interpretPass) break // stale pass
-        interpreting = false
-        clearInterpretWatchdog()
+        // Only scene errors carry a pass id; embedding/model-load errors must
+        // not cancel the watchdog of the pass that is still generating.
+        if (typeof msg.id === 'number') {
+          if (msg.id !== interpretPass) break // stale pass
+          interpreting = false
+          clearInterpretWatchdog()
+        }
         console.error('[scene-interpreter] LLM error:', msg.error)
         break
     }

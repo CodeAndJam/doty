@@ -19,8 +19,14 @@ let total = 0
 let musicRoot = ''
 let onProgress: ProgressCallback | null = null
 let onComplete: CompleteCallback | null = null
+let onLibraryChanged: (() => void) | null = null
 /** Bumped on every start/stop so results from an aborted run are ignored. */
 let runGeneration = 0
+
+/** Called when files are removed from the watched folder (embeddings/metadata need pruning). */
+export function setOnLibraryChanged(cb: () => void): void {
+  onLibraryChanged = cb
+}
 
 function relPath(absPath: string): string {
   return absPath.slice(musicRoot.length + 1)
@@ -134,8 +140,7 @@ export function startScanner(
     watcher.on('unlink', (absPath: string) => {
       if (AUDIO_RE.test(absPath)) {
         removeCached(relPath(absPath))
-        // Let listeners prune embeddings/metadata for the removed track
-        onComplete?.()
+        onLibraryChanged?.()
       }
     })
   } catch (e) {
