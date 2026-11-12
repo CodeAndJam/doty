@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.1](https://github.com/CodeAndJam/doty/compare/v3.2.0...v3.2.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **packaging:** keep startup wiring alive when native modules fail ([#112](https://github.com/CodeAndJam/doty/issues/112)) ([5a08bb4](https://github.com/CodeAndJam/doty/commit/5a08bb492e36e6ff1e0b3b0be0dbebfa14864f3a))
+
 ## [3.2.0](https://github.com/CodeAndJam/doty/compare/v3.1.0...v3.2.0) (2026-11-12)
 
 
