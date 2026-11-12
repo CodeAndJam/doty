@@ -1,3 +1,4 @@
+import { sep } from 'node:path'
 import { getDb } from './database'
 
 let vecLoaded = false
@@ -7,14 +8,17 @@ function ensureVecExtension(): void {
   if (vecLoaded) return
   const db = getDb()
   try {
-    // sqlite-vec npm package provides the loadable extension path
+    // sqlite-vec exposes the extension's path, but dlopen cannot read inside
+    // app.asar — packaged builds keep the native binary next door in
+    // app.asar.unpacked, so rewrite the path before loading.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const sqliteVec = require('sqlite-vec')
-    sqliteVec.load(db)
+    const sqliteVec = require('sqlite-vec') as { getLoadablePath(): string }
+    const loadablePath = sqliteVec.getLoadablePath().replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`)
+    db.loadExtension(loadablePath)
     vecLoaded = true
   } catch (e) {
+    // Vector search is optional: log and let the app run without it.
     console.error('[track-vectors] Failed to load sqlite-vec:', e)
-    throw e
   }
 }
 
@@ -23,6 +27,7 @@ const EMBEDDING_DIM = 768
 /** Initialize the vector table and metadata table */
 export function initVectorTables(): void {
   ensureVecExtension()
+  if (!vecLoaded) return // no extension, no vec0 table — skip the rest
   const db = getDb()
 
   // Metadata table tracks descriptions and source
@@ -70,13 +75,22 @@ export function upsertTrackEmbedding(
     db.prepare(
       'UPDATE track_embedding_meta SET description = ?, source = ?, updated_at = unixepoch() WHERE filename = ?',
     ).run(description, source, filename)
-    db.prepare('UPDATE track_vec SET embedding = ? WHERE rowid = ?').run(vecBuffer, existingRowId)
+    const updated = db
+      .prepare('UPDATE track_vec SET embedding = ? WHERE rowid = ?')
+      .run(vecBuffer, BigInt(existingRowId))
+    // An earlier build wrote meta rows without a vec row (the insert threw), so
+    // heal those instead of leaving the track unsearchable forever.
+    if (updated.changes === 0) {
+      db.prepare('INSERT INTO track_vec (rowid, embedding) VALUES (?, ?)').run(BigInt(existingRowId), vecBuffer)
+    }
   } else {
     // Insert new
     const metaResult = db
       .prepare('INSERT INTO track_embedding_meta (filename, description, source) VALUES (?, ?, ?)')
       .run(filename, description, source)
-    const rowid = Number(metaResult.lastInsertRowid) // vec0 needs plain integer, not BigInt
+    // vec0 only accepts BigInt for rowid values; a JS number binds as REAL and
+    // throws "Only integers are allows for primary key values".
+    const rowid = BigInt(metaResult.lastInsertRowid)
     db.prepare('INSERT INTO track_vec (rowid, embedding) VALUES (?, ?)').run(rowid, vecBuffer)
   }
 }
@@ -99,9 +113,13 @@ export function hasEmbedding(filename: string): boolean {
 /** Get tracks that need embedding (no entry in track_embedding_meta) */
 export function getTracksNeedingEmbedding(allFiles: string[], limit = 50): string[] {
   const db = getDb()
-  // Get all filenames that already have embeddings
+  // Only count tracks that also have a vec row, so a half-written index heals
   const existing = new Set(
-    (db.prepare('SELECT filename FROM track_embedding_meta').all() as { filename: string }[]).map((r) => r.filename),
+    (
+      db.prepare('SELECT m.filename FROM track_embedding_meta m JOIN track_vec v ON v.rowid = m.rowid').all() as {
+        filename: string
+      }[]
+    ).map((r) => r.filename),
   )
   return allFiles.filter((f) => !existing.has(f)).slice(0, limit)
 }
@@ -109,7 +127,9 @@ export function getTracksNeedingEmbedding(allFiles: string[], limit = 50): strin
 /** Get embedding stats for progress reporting */
 export function getEmbeddingStats(totalFiles: number): { embedded: number; total: number; percent: number } {
   const db = getDb()
-  const row = db.prepare('SELECT COUNT(*) as count FROM track_embedding_meta').get() as { count: number }
+  const row = db
+    .prepare('SELECT COUNT(*) as count FROM track_embedding_meta m JOIN track_vec v ON v.rowid = m.rowid')
+    .get() as { count: number }
   const embedded = row.count
   return { embedded, total: totalFiles, percent: totalFiles > 0 ? Math.round((embedded / totalFiles) * 100) : 0 }
 }
@@ -164,6 +184,8 @@ export function pruneStaleEmbeddings(currentFiles: Set<string>): number {
 /** Get the total number of embedded tracks */
 export function getEmbeddedCount(): number {
   const db = getDb()
-  const row = db.prepare('SELECT COUNT(*) as count FROM track_embedding_meta').get() as { count: number }
+  const row = db
+    .prepare('SELECT COUNT(*) as count FROM track_embedding_meta m JOIN track_vec v ON v.rowid = m.rowid')
+    .get() as { count: number }
   return row.count
 }

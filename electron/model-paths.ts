@@ -9,6 +9,7 @@ export type SttModelType =
   | 'nemotron-3.5-streaming'
   | 'nemotron-en-streaming'
   | 'parakeet-tdt-v3'
+  | 'parakeet-ultra'
   | 'voxtral-realtime'
 
 // ── STT Model Registry ────────────────────────────────────────────────────────
@@ -128,14 +129,26 @@ export const STT_MODELS: SttModelInfo[] = [
     isReady: () => isModelFileReady('parakeet-tdt-0.6b-v3-Q8_0.gguf'),
   },
   {
+    id: 'parakeet-ultra',
+    label: 'Parakeet Ultra (multilingual, most accurate)',
+    description: 'Lowest WER for European languages: 4.2% pt, robust to music and noise. 10s chunks, not word-by-word.',
+    size: '740 MB',
+    ggufFile: 'parakeet-ultra-Q8_0.gguf',
+    url: 'https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/main/parakeet-ultra-Q8_0.gguf',
+    streaming: false,
+    languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'pl', 'ro', 'sv'],
+    isReady: () => isModelFileReady('parakeet-ultra-Q8_0.gguf'),
+  },
+  {
     id: 'voxtral-realtime',
-    label: 'Voxtral Mini 4B Realtime',
-    description: 'LLM-based streaming ASR. Auto language detect. Larger model, slower.',
+    label: 'Voxtral Mini 4B Realtime (experimental)',
+    description:
+      'LLM-based streaming ASR. Best FLEURS pt but slower than realtime on M-series and can drop the start of a scene.',
     size: '4.73 GB',
     ggufFile: 'Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf',
     url: 'https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf',
     streaming: true,
-    languages: ['auto'],
+    languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'ru', 'zh', 'ja', 'ko', 'ar', 'hi'],
     isReady: () => isModelFileReady('Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf'),
   },
 ]

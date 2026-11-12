@@ -1,6 +1,6 @@
 {
   "name": "doty",
-  "version": "3.1.0",
+  "version": "3.2.1",
   "description": "Continuous STT + AI music recommender",
   "main": "out/main/index.js",
   "scripts": {
@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:coverage": "vitest run --coverage",
+    "stt:eval": "STT_QUALITY=1 vitest run electron/stt-quality.test.ts",
     "lint": "biome check .",
     "lint:fix": "biome check --fix .",
     "format": "biome format --write .",
@@ -59,7 +60,7 @@
       "category": "public.app-category.productivity",
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
-      "hardenedRuntime": false,
+      "hardenedRuntime": true,
       "extendInfo": {
         "NSMicrophoneUsageDescription": "Doty needs microphone access to transcribe your tabletop RPG sessions and recommend matching music in real time."
       },
@@ -74,7 +75,8 @@
     },
     "dmg": {
       "title": "Doty ${version}"
-    }
+    },
+    "afterPack": "build/afterPack.cjs"
   },
   "engines": {
     "node": ">=22.22.0"

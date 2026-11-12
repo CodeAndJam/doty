@@ -241,7 +241,7 @@ contextBridge.exposeInMainWorld('doty', {
   discordStreamSfx: (absolutePath: string, volume?: number) =>
     ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
   discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
-  discordStopSfx: () => ipcRenderer.invoke('discord:stop-sfx'),
+  discordStopSfx: (absolutePath?: string) => ipcRenderer.invoke('discord:stop-sfx', absolutePath),
   discordPauseStream: () => ipcRenderer.invoke('discord:pause-stream'),
   discordResumeStream: () => ipcRenderer.invoke('discord:resume-stream'),
   discordSetVolume: (volume: number) => ipcRenderer.invoke('discord:set-volume', volume),

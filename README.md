@@ -9,7 +9,7 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 ## Features
 
 ### Real-time speech-to-text
-Doty transcribes your game table continuously using a local GGUF speech model (Parakeet, Nemotron, or Voxtral, selectable in Settings) via transcribe-cpp. It runs fully offline.
+Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Nemotron 3.5 Streaming, ~0.4 s latency); Parakeet Ultra is available in Settings when accuracy matters more than the typing effect. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
 
 ### AI music recommendations
 As the conversation flows, Doty uses a multilingual cross-encoder (mmarco-mMiniLMv2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
@@ -49,7 +49,7 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 
 ### First launch
 
-1. Open Doty. It will prompt you to download an ASR model. Models are saved to `~/.doty/models/` and downloaded once.
+1. Open Doty. It downloads the speech model in the background (~740 MB) to `~/.doty/models/`. You can skip onboarding and keep using the app while it downloads.
 2. Open Settings (gear icon or `Cmd+,`) and set your **Music folder** — point it at your local music library (mp3, flac, wav, m4a, ogg, aac supported).
 3. Doty will scan and analyse your tracks. This takes a few minutes on first run depending on library size.
 4. The recommendation reranker downloads automatically on first use and is cached to `~/.doty/hf-cache/`.
@@ -112,6 +112,14 @@ The Discord volume slider (visible when in a voice channel) is independent from 
 
 ## Troubleshooting
 
+### macOS says "Doty is damaged and can't be opened"
+
+This appears when the downloaded bundle has no valid code signature (for example the 3.2.1 build). Releases are now ad-hoc signed, which replaces that error with the standard "Apple could not verify" prompt. For older downloads, clear the quarantine flag and open the app again:
+
+```bash
+xattr -cr /Applications/Doty.app
+```
+
 ### macOS won't open the app: Apple could not verify Doty is free of malware
 
 Doty is not signed with an Apple Developer ID, so Gatekeeper blocks the first launch. Clear the quarantine flag and open the app again:
@@ -157,7 +165,7 @@ pnpm run test:coverage
 
 ### Native addons
 
-`transcribe-cpp` and `better-sqlite3` contain native code; `better-sqlite3` is rebuilt against Electron's Node.js version automatically via the `postinstall` script. If you see a `NODE_MODULE_VERSION` mismatch error:
+`better-sqlite3` is a native addon rebuilt against Electron's Node.js version automatically via the `postinstall` script. `transcribe-cpp` ships prebuilt libraries (no compile step). If you see a `NODE_MODULE_VERSION` mismatch error:
 
 ```bash
 pnpm run rebuild
@@ -167,7 +175,7 @@ pnpm run rebuild
 
 | Model | Size | Location | Purpose |
 |---|---|---|---|
-| Selected STT GGUF (see Settings) | ~640 MB–4.7 GB | `~/.doty/models/` | Speech-to-text |
+| Nemotron 3.5 / Parakeet Ultra (GGUF) | ~740 MB | `~/.doty/models/` | Speech-to-text |
 | mmarco-mMiniLMv2-L12-H384-v1 (ONNX) | downloaded on first use | `~/.doty/hf-cache/` | Track recommendation reranking |
 
 These are downloaded on first use and never committed to the repository.
@@ -178,7 +186,8 @@ These are downloaded on first use and never committed to the repository.
 electron/           Electron main process
   main.ts           App entry, IPC handlers, window management
   asr.ts            Speech-to-text orchestration
-  transcribe-worker.ts  STT worker (transcribe-cpp streaming)
+  transcribe-worker.ts  STT worker (transcribe-cpp streams or 10 s chunks)
+  stt-quality/      WER/CER metrics and the live-flush policy (gated in CI)
   discord.ts        Discord bot client (connect, voice, streaming)
   discord-audio.ts  Audio transcoding pipeline (ffmpeg -> Opus)
   database.ts       SQLite database for track metadata and tags
@@ -214,7 +223,9 @@ src/                React renderer
 |---|---|
 | UI | React 18 + Tailwind CSS (Electron renderer) |
 | Build | electron-vite 5 + Vite 7 |
-| STT | transcribe-cpp (GGUF models: Parakeet, Nemotron, Voxtral) |
+| STT | transcribe-cpp (Nemotron / Parakeet Ultra / Parakeet Unified / Voxtral GGUF) |
+| Live chunking | energy endpointing + 10 s windows for batch models |
+| Punctuation | model-native |
 | Recommendations | @huggingface/transformers (mmarco-mMiniLMv2) |
 | Audio analysis | essentia.js + ffmpeg-static |
 | Database | better-sqlite3 |

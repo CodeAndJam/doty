@@ -270,7 +270,7 @@ export default function MainLayout() {
     })
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
-      if (status === 'crashed') {
+      if (status === 'crashed' || status === 'error') {
         setAsrStatus('crashed')
         setRecording(false)
         // Release the mic and reset main's recording state (open WAV fd, embedding pause)

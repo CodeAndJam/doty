@@ -305,7 +305,7 @@ export interface DotyAPI {
   discordStreamTrack: (filename: string, seekSeconds?: number) => Promise<{ ok: boolean }>
   discordStreamSfx: (absolutePath: string, volume?: number) => Promise<{ ok: boolean }>
   discordStopStream: () => Promise<{ ok: boolean }>
-  discordStopSfx: () => Promise<{ ok: boolean }>
+  discordStopSfx: (absolutePath?: string) => Promise<{ ok: boolean }>
   discordPauseStream: () => Promise<{ ok: boolean }>
   discordResumeStream: () => Promise<{ ok: boolean }>
   discordSetVolume: (volume: number) => Promise<{ ok: boolean }>

@@ -91,6 +91,7 @@ import {
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
+import { resolveLanguage } from './stt-language'
 import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
@@ -98,7 +99,21 @@ import { updateWavHeader } from './wav-header'
 
 /** Whether the selected model accepts a focused language (or auto-detect). */
 function supportsLanguage(model: SttModelInfo | undefined, language: string): boolean {
-  return language === 'auto' || (model?.languages ?? []).includes(language)
+  if (language === 'auto') return true
+  // Base-aware: Parakeet Ultra advertises `pt`, the focused language is `pt-PT`.
+  return resolveLanguage(language, model?.languages ?? []) !== undefined
+}
+
+// dlopen cannot read inside app.asar, so packaged builds must load the native
+// bundle electron-builder unpacks to Resources/transcribe-cpp instead.
+if (app.isPackaged) {
+  const lib =
+    process.platform === 'darwin'
+      ? 'libtranscribe.dylib'
+      : process.platform === 'win32'
+        ? 'transcribe.dll'
+        : 'libtranscribe.so'
+  process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
 }
 
 /** Check if the reranker model is already cached */
@@ -362,6 +377,16 @@ app.whenReady().then(async () => {
   registerMusicProtocol()
   createWindow()
 
+  // Forward Discord state changes to renderer. Registered first: anything that
+  // throws later in this callback used to skip it, which left the Discord panel
+  // stuck on "disconnected" even when the bot had connected.
+  onStateChange((discordState) => {
+    mainWindow?.webContents.send('discord:state', discordState)
+  })
+
+  // Auto-connect to last Discord voice channel if enabled
+  tryAutoConnect()
+
   const ready = isAnySttModelReady()
   mainWindow?.webContents.send('model:status', { ready })
 
@@ -387,13 +412,15 @@ app.whenReady().then(async () => {
 
   // Feed transcript to scene interpreter on each flush
   setOnFlushText((text, elapsedMs) => {
-    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs })
     const file = getActiveSessionFile()
+    let elapsed = elapsedMs
     if (file) {
       if (!sessionStartTime) sessionStartTime = Date.now()
-      const elapsed = Date.now() - sessionStartTime
+      elapsed = Date.now() - sessionStartTime
       sessionOps.appendCue(file, elapsed, text)
     }
+    // Send the same time base used for the saved VTT cues
+    mainWindow?.webContents.send('stt:transcript', { text, elapsedMs: elapsed })
     // Feed to scene interpreter
     feedTranscript(text)
     // Fast-path: a detected mood transition triggers an embedding/search now
@@ -465,14 +492,6 @@ app.whenReady().then(async () => {
     // Kick off embedding queue after a delay (let scanner populate files first)
     setTimeout(() => syncEmbeddingQueue(musicFolder), 5000)
   }
-
-  // Forward Discord state changes to renderer
-  onStateChange((discordState) => {
-    mainWindow?.webContents.send('discord:state', discordState)
-  })
-
-  // Auto-connect to last Discord voice channel if enabled
-  tryAutoConnect()
 })
 
 app.on('before-quit', () => {
@@ -1046,8 +1065,8 @@ ipcMain.handle('discord:stop-stream', () => {
   return { ok: true }
 })
 
-ipcMain.handle('discord:stop-sfx', () => {
-  stopSfx()
+ipcMain.handle('discord:stop-sfx', (_e, absolutePath?: string) => {
+  stopSfx(absolutePath)
   return { ok: true }
 })
 

@@ -7,6 +7,7 @@ interface SfxChannel {
   id: string
   sfxId: string
   label: string
+  filename: string
   audio: HTMLAudioElement
   playing: boolean
   looping: boolean
@@ -101,7 +102,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
       // Stream SFX to Discord as an overlay on top of music (fire-and-forget)
       window.doty.discordStreamSfx(filename).catch(() => {})
 
-      const channel: SfxChannel = { id, sfxId, label, audio, playing: true, looping: loop, volume: vol }
+      const channel: SfxChannel = { id, sfxId, label, filename, audio, playing: true, looping: loop, volume: vol }
       setChannels((prev) => [...prev, channel])
       return id
     },
@@ -109,7 +110,9 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   )
 
   const stop = useCallback((channelId: string) => {
-    window.doty.discordStopSfx().catch(() => {})
+    // Only stop Discord if this exact effect is the one being streamed
+    const ch = channelsRef.current.find((c) => c.id === channelId)
+    if (ch) window.doty.discordStopSfx(ch.filename).catch(() => {})
     setChannels((prev) => {
       const ch = prev.find((c) => c.id === channelId)
       if (ch) {
