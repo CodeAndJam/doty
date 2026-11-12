@@ -68,6 +68,8 @@ export function useQwen() {
     // Listen for status from main process
     const unsub = window.doty.onRerankerStatus((status: string) => {
       _currentStatus = status as Status
+      // A post-warmup worker error must allow the next recommendation to respawn it
+      if (status === 'error') _warmupRequested = false
       setModelStatus(status as Status)
     })
     const unsubProgress = window.doty.onRerankerDownloadProgress((p) => {

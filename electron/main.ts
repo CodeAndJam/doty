@@ -861,6 +861,80 @@ ipcMain.handle('embedding:get-progress', () => {
   }
 })
 
+// Download state is exposed to the renderer so the app can show progress while the user keeps working.
+let sttDownload: { modelId: SttModelType; percent: number } | null = null
+let sttDownloadError: { modelId: SttModelType; error: string } | null = null
+let sttDownloadAbort: AbortController | null = null
+
+ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
+  const modelInfo = modelId
+    ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
+    : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
+
+  if (modelInfo.isReady()) {
+    store.set('sttModel', modelInfo.id)
+    restartRecognizer()
+    initAuxModels()
+    mainWindow?.webContents.send('model:status', { ready: true })
+    return { ok: true }
+  }
+
+  if (sttDownload) return { ok: false, reason: 'download already in progress' }
+
+  // Download single GGUF file
+  const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  const controller = new AbortController()
+  sttDownloadAbort = controller
+  sttDownload = { modelId: modelInfo.id, percent: 0 }
+  sttDownloadError = null
+  try {
+    await downloadFile(
+      modelInfo.url,
+      destPath,
+      (percent, downloadedMB, totalMB) => {
+        sttDownload = { modelId: modelInfo.id, percent }
+        mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
+      },
+      { signal: controller.signal },
+    )
+
+    store.set('sttModel', modelInfo.id)
+    mainWindow?.webContents.send('model:status', { ready: true })
+    // The file is complete and selected: report success even if a local model
+    // fails to initialise, otherwise the UI claims the download failed.
+    try {
+      restartRecognizer()
+      initAuxModels()
+    } catch (err) {
+      console.error('[model] post-download init error:', err)
+    }
+    return { ok: true }
+  } catch (e) {
+    if (controller.signal.aborted) {
+      mainWindow?.webContents.send('model:download-cancelled', { modelId: modelInfo.id })
+      return { ok: false, reason: 'cancelled' }
+    }
+    sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
+    mainWindow?.webContents.send('model:download-error', sttDownloadError)
+    return { ok: false, reason: sttDownloadError.error }
+  } finally {
+    sttDownload = null
+    sttDownloadAbort = null
+  }
+})
+
+ipcMain.handle('stt:get-download-state', () => ({ downloading: sttDownload, error: sttDownloadError }))
+
+ipcMain.handle('stt:cancel-download', () => {
+  sttDownloadAbort?.abort()
+  return { ok: true }
+})
+
+ipcMain.handle('stt:skip-onboarding', () => {
+  store.set('sttOnboardingSkipped', true)
+  return { ok: true }
+})
+
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
 
 ipcMain.handle('stt:get-model', () => {
