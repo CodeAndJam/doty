@@ -70,6 +70,10 @@ Maintain a `TODO.md` file at the project root to track pending work, known issue
 
 ## Local Development
 
+Dependencies are held for **10 days** after publish before adoption
+(`minimumReleaseAge` in `pnpm-workspace.yaml`). Bump a version only when it is
+older than that; security fixes can be exempted with `minimumReleaseAgeExclude`.
+
 ```bash
 # Install deps and rebuild native addons
 npm install

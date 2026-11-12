@@ -16,7 +16,6 @@ export default defineConfig({
           'llm-child': resolve(__dirname, 'electron/llm-child.ts'),
           'qwen-worker': resolve(__dirname, 'electron/qwen-worker.ts'),
           'qwen-child': resolve(__dirname, 'electron/qwen-child.ts'),
-          'reprocess-worker': resolve(__dirname, 'electron/reprocess-worker.ts'),
         },
       },
     },
