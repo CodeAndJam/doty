@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/CodeAndJam/doty/compare/v3.1.0...v3.2.0) (2026-11-12)
+
+
+### Features
+
+* **stt:** quality gate + live-transcript fixes (pt-PT) ([#108](https://github.com/CodeAndJam/doty/issues/108)) ([17cd780](https://github.com/CodeAndJam/doty/commit/17cd780f9aa757867b154dd59aa539a017bb2387))
+
 ## [3.1.0](https://github.com/CodeAndJam/doty/compare/v3.0.2...v3.1.0) (2026-11-12)
 
 
