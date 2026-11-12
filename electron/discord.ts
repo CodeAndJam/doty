@@ -218,33 +218,41 @@ export async function connect(token?: string): Promise<void> {
   // Load persisted volume
   discordVolume = (store.get('discordVolume', 1.0) as number) ?? 1.0
 
+  const c = client
   return new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error('Connection timed out'))
-      setState({ status: 'error', error: 'Connection timed out' })
-    }, 15_000)
+    // 45s: the gateway handshake shares the main thread with startup model loading,
+    // which can stall it well past a few seconds. 15s rejected healthy logins.
+    const timeout = setTimeout(() => fail('Connection timed out'), 45_000)
 
-    client!.once('ready', () => {
+    // Destroy on failure so the abandoned login can't outlive the attempt and
+    // poison the next connect() — otherwise every retry disconnects mid-handshake.
+    function fail(msg: string): void {
       clearTimeout(timeout)
-      console.log(`[discord] Bot connected as ${client!.user?.tag}`)
+      if (client === c) {
+        c.destroy()
+        client = null
+      }
+      setState({ status: 'error', error: msg })
+      reject(new Error(msg))
+    }
+
+    c.once('ready', () => {
+      clearTimeout(timeout)
+      console.log(`[discord] Bot connected as ${c.user?.tag}`)
       if (token) saveToken(token) // persist on successful connect
       setState({ status: 'ready', error: null })
       resolve()
     })
 
-    client!.once('error', (err) => {
-      clearTimeout(timeout)
+    c.once('error', (err) => {
       console.error('[discord] Client error:', err.message)
-      setState({ status: 'error', error: err.message })
-      reject(err)
+      fail(err.message)
     })
 
-    client!.login(botToken).catch((err) => {
-      clearTimeout(timeout)
+    c.login(botToken).catch((err) => {
       const msg = err.message?.includes('TOKEN_INVALID') ? 'Invalid bot token' : err.message || 'Login failed'
       console.error('[discord] Login failed:', msg)
-      setState({ status: 'error', error: msg })
-      reject(new Error(msg))
+      fail(msg)
     })
   })
 }
