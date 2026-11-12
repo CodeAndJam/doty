@@ -209,6 +209,7 @@ export interface DotyAPI {
   modelStatus: () => Promise<{ ready: boolean; onboardingSkipped: boolean }>
   downloadModel: (modelId?: string) => Promise<{ ok: boolean; reason?: string }>
   getSttDownloadState: () => Promise<SttDownloadState>
+  cancelSttDownload: () => Promise<{ ok: boolean }>
   skipModelOnboarding: () => Promise<{ ok: boolean }>
   getSttModelList: () => Promise<
     Array<{
@@ -218,6 +219,7 @@ export interface DotyAPI {
       size: string
       streaming: boolean
       languages: string[]
+      default?: boolean
       ready: boolean
     }>
   >
@@ -229,11 +231,14 @@ export interface DotyAPI {
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
   onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => () => void
+  onModelDownloadCancelled: (cb: (e: { modelId: string }) => void) => () => void
   onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void
 
   // STT model selection
   getSttModel: () => Promise<string>
   setSttModel: (model: string) => Promise<{ ok: boolean }>
+  getSttLanguage: () => Promise<string>
+  setSttLanguage: (language: string) => Promise<{ ok: boolean; reason?: string }>
   getSttModelStatus: () => Promise<Record<string, boolean>>
   downloadWhisper: (model: string) => Promise<{ ok: boolean; alreadyDownloaded?: boolean }>
   onSttDownloadProgress: (

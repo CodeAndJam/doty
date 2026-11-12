@@ -20,6 +20,24 @@ export interface RecommendResult {
 }
 
 let _currentStatus: Status = 'loading'
+let _warmupRequested = false
+
+/** Load the reranker in the background (idle, or on the first recommendation). */
+function requestWarmup(setModelStatus: (s: Status) => void): void {
+  if (_warmupRequested) return
+  _warmupRequested = true
+  window.doty
+    .rerankerScore([{ text: 'test', text_pair: 'test' }])
+    .then(() => {
+      _currentStatus = 'ready'
+      setModelStatus('ready')
+    })
+    .catch(() => {
+      _warmupRequested = false
+      _currentStatus = 'error'
+      setModelStatus('error')
+    })
+}
 
 function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
   const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
@@ -52,18 +70,23 @@ export function useQwen() {
       _currentStatus = status as Status
       setModelStatus(status as Status)
     })
-    // Trigger model load with a dummy pair
-    window.doty
-      .rerankerScore([{ text: 'test', text_pair: 'test' }])
-      .then(() => {
-        _currentStatus = 'ready'
-        setModelStatus('ready')
-      })
-      .catch(() => {
-        _currentStatus = 'error'
-        setModelStatus('error')
-      })
-    return unsub
+
+    // Warm the model during idle time so startup and model downloads stay snappy.
+    // Recommendations use the heuristic path until it is ready.
+    const warm = () => requestWarmup(setModelStatus)
+    let idleId: number | undefined
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(warm, { timeout: 10_000 })
+    } else {
+      timeoutId = setTimeout(warm, 5_000)
+    }
+
+    return () => {
+      unsub()
+      if (idleId !== undefined) window.cancelIdleCallback(idleId)
+      if (timeoutId !== undefined) clearTimeout(timeoutId)
+    }
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {
@@ -74,6 +97,8 @@ export function useQwen() {
     const playFrequencies = await window.doty.getPlayFrequencies('music')
 
     if (_currentStatus !== 'ready') {
+      // Load in the background now; this call still uses the fast heuristic.
+      requestWarmup(setModelStatus)
       setLastRanker('heuristic')
       const result = heuristicRecommend(transcript, files, metadata, count, tagsMap, playFrequencies)
       return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
