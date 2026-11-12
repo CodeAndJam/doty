@@ -119,8 +119,3 @@ export function useQwen() {
 
   return { recommend, modelStatus, downloading: false, downloadProgress, lastRanker }
 }
-
-/** No-op — kept for API compatibility */
-export function onQwenLog(_cb: (msg: string) => void): () => void {
-  return () => {}
-}

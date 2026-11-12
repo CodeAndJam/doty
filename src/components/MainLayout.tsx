@@ -238,6 +238,9 @@ export default function MainLayout() {
       if (status === 'crashed') {
         setAsrStatus('crashed')
         setRecording(false)
+        // Release the mic and reset main's recording state (open WAV fd, embedding pause)
+        stop()
+        window.doty.sttStop().catch(() => {})
       } else {
         setAsrStatus(status === 'loading' ? 'loading' : status === 'ready' ? 'ready' : 'idle')
       }
@@ -319,7 +322,7 @@ export default function MainLayout() {
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation])
+  }, [runRecommendation, runSfxRecommendation, stop])
 
   function handleDmChange(text: string) {
     setDmPrompt(text)

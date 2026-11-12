@@ -248,12 +248,6 @@ export interface DotyAPI {
   onReprocessDone: (cb: (r: { file: string; cueCount: number }) => void) => () => void
   onReprocessError: (cb: (e: { message: string }) => void) => () => void
 
-  // Hotwords
-  getHotwordsFile: () => Promise<string>
-  setHotwordsFile: (path: string) => Promise<{ ok: boolean }>
-  pickHotwordsFile: () => Promise<string | null>
-  createDefaultHotwords: () => Promise<{ ok: boolean; path?: string; reason?: string }>
-
   // Scanner
   triggerScan: () => Promise<{ ok: boolean }>
   onScanProgress: (cb: (p: ScanProgress) => void) => () => void

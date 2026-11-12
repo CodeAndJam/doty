@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 const KEY = 'doty:crossfadeMs'
 const DEFAULT_MS = 800
@@ -14,6 +14,9 @@ function loadCrossfade(): number {
   }
 }
 
+/** Share changes between every hook instance (the player and Settings each call this). */
+const listeners = new Set<(ms: number) => void>()
+
 export interface UseCrossfadeReturn {
   /** Crossfade duration in milliseconds (0 = instant) */
   crossfadeMs: number
@@ -24,9 +27,17 @@ export interface UseCrossfadeReturn {
 export function useCrossfade(): UseCrossfadeReturn {
   const [crossfadeMs, setCrossfadeMsState] = useState(loadCrossfade)
 
+  useEffect(() => {
+    listeners.add(setCrossfadeMsState)
+    return () => {
+      listeners.delete(setCrossfadeMsState)
+    }
+  }, [])
+
   const setCrossfadeMs = useCallback((ms: number) => {
     const clamped = Math.max(MIN_MS, Math.min(MAX_MS, Math.round(ms)))
     setCrossfadeMsState(clamped)
+    for (const notify of listeners) notify(clamped)
     try {
       localStorage.setItem(KEY, String(clamped))
     } catch {}

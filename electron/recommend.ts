@@ -82,10 +82,11 @@ export function fastPathCheck(recentText: string): FastTrigger | null {
 
   if (!bestTrigger || bestScore === 0) return null
 
-  // Only fire if mood CHANGED (transition detector, not steady-state)
+  // Only fire if mood CHANGED (transition detector, not steady-state).
+  // OR: a slow-path mood that differs must not re-arm the same fast trigger.
   const currentSlowMood = getLastScene()?.mood
-  if (bestTrigger.mood === lastFastMood && bestTrigger.mood === currentSlowMood) {
-    return null // same mood as before — not a transition
+  if (bestTrigger.mood === lastFastMood || bestTrigger.mood === currentSlowMood) {
+    return null
   }
 
   // Confidence based on number of keyword matches

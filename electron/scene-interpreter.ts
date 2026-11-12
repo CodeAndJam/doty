@@ -27,6 +27,7 @@ let sceneModelPath: string | null = null
 let embeddingModelPath: string | null = null
 let disposed = false
 let interpreting = false
+let interpretPass = 0
 let interpretWatchdog: ReturnType<typeof setTimeout> | null = null
 
 function clearInterpretWatchdog() {
@@ -81,6 +82,7 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus('embedding-ready')
         break
       case 'scene-result':
+        if (typeof msg.id === 'number' && msg.id !== interpretPass) break // stale pass
         interpreting = false
         clearInterpretWatchdog()
         lastScene = msg.scene
@@ -96,6 +98,7 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus(msg.status)
         break
       case 'error':
+        if (typeof msg.id === 'number' && msg.id !== interpretPass) break // stale pass
         interpreting = false
         clearInterpretWatchdog()
         console.error('[scene-interpreter] LLM error:', msg.error)
@@ -154,10 +157,12 @@ export function startInterpreting(): void {
     const text = transcriptBuffer.trim()
     if (!text || text.length < 50) return // not enough context yet
     interpreting = true
-    child.postMessage({ type: 'interpret-scene', transcript: text })
+    const pass = ++interpretPass
+    child.postMessage({ type: 'interpret-scene', id: pass, transcript: text })
     // Never let one hung generation disable interpretation for the process lifetime
     clearInterpretWatchdog()
     interpretWatchdog = setTimeout(() => {
+      if (pass !== interpretPass) return
       console.warn('[scene-interpreter] interpretation timed out, allowing the next pass')
       interpreting = false
       interpretWatchdog = null

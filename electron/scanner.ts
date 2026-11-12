@@ -132,7 +132,11 @@ export function startScanner(
     })
 
     watcher.on('unlink', (absPath: string) => {
-      if (AUDIO_RE.test(absPath)) removeCached(relPath(absPath))
+      if (AUDIO_RE.test(absPath)) {
+        removeCached(relPath(absPath))
+        // Let listeners prune embeddings/metadata for the removed track
+        onComplete?.()
+      }
     })
   } catch (e) {
     console.error('[scanner] chokidar watch failed (non-fatal):', e)

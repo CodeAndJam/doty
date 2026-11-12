@@ -153,12 +153,6 @@ contextBridge.exposeInMainWorld('doty', {
     return () => ipcRenderer.removeListener('reprocess:error', handler)
   },
 
-  // Hotwords
-  getHotwordsFile: () => ipcRenderer.invoke('settings:get-hotwords-file'),
-  setHotwordsFile: (path: string) => ipcRenderer.invoke('settings:set-hotwords-file', path),
-  pickHotwordsFile: () => ipcRenderer.invoke('settings:pick-hotwords-file'),
-  createDefaultHotwords: () => ipcRenderer.invoke('settings:create-default-hotwords'),
-
   // Scanner
   triggerScan: () => ipcRenderer.invoke('music:scan'),
   onScanProgress: (cb: (p: { done: number; total: number; current: string }) => void) => {

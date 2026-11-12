@@ -117,9 +117,9 @@ async function loadEmbeddingModel(modelPath: string) {
   }
 }
 
-async function interpretScene(transcript: string) {
+async function interpretScene(transcript: string, id: number) {
   if (!sceneModel || !sceneContext) {
-    send({ type: 'error', error: 'Scene model not loaded' })
+    send({ type: 'error', id, error: 'Scene model not loaded' })
     return
   }
 
@@ -145,7 +145,7 @@ async function interpretScene(transcript: string) {
         if (jsonMatch) {
           result = JSON.parse(jsonMatch[0])
         } else {
-          send({ type: 'error', error: `Failed to parse scene JSON: ${response.slice(0, 100)}` })
+          send({ type: 'error', id, error: `Failed to parse scene JSON: ${response.slice(0, 100)}` })
           return
         }
       }
@@ -155,13 +155,13 @@ async function interpretScene(transcript: string) {
       result.intensity = Math.max(0, Math.min(1, result.intensity ?? 0.5))
       if (!Array.isArray(result.keywords)) result.keywords = []
 
-      send({ type: 'scene-result', scene: result })
+      send({ type: 'scene-result', id, scene: result })
     } finally {
       // Dispose on every path (including parse errors) to free context for the next call
       session.dispose()
     }
   } catch (e: any) {
-    send({ type: 'error', error: `Scene interpretation failed: ${e.message}` })
+    send({ type: 'error', id, error: `Scene interpretation failed: ${e.message}` })
   }
 }
 
@@ -228,7 +228,7 @@ process.parentPort?.on('message', async ({ data }: { data: any }) => {
         await loadEmbeddingModel(data.modelPath)
         break
       case 'interpret-scene':
-        await interpretScene(data.transcript)
+        await interpretScene(data.transcript, data.id)
         break
       case 'embed':
         await embed(data.id, data.text)

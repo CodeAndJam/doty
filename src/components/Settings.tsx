@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
-import { onQwenLog } from '../hooks/useQwen'
 import { confidenceLabel } from '../lib/autopilot'
 import type { ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
@@ -63,9 +62,6 @@ export default function Settings({
   const [selectedMic, setSelectedMic] = useState<string>(micDeviceId ?? '')
   const [selectedSpeaker, setSelectedSpeaker] = useState<string>(speakerDeviceId ?? '')
   const [micPermissionDenied, setMicPermissionDenied] = useState(false)
-  const [showQwenLogs, setShowQwenLogs] = useState(false)
-  const [qwenLogs, setQwenLogs] = useState<string[]>([])
-  const [hotwordsFile, setHotwordsFile] = useState('')
   const [sfxFolder, setSfxFolder] = useState('')
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const [autopilotEnabled, setAutopilotEnabled] = useState(false)
@@ -101,24 +97,7 @@ export default function Settings({
     total: number
     percent: number
   } | null>(null)
-  const logEndRef = useRef<HTMLDivElement>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
-
-  // Subscribe to verbose Qwen worker logs
-  useEffect(() => {
-    const unsub = onQwenLog((msg) => {
-      const ts = new Date().toLocaleTimeString()
-      setQwenLogs((prev) => [...prev.slice(-200), `[${ts}] ${msg}`])
-    })
-    return () => {
-      unsub()
-    }
-  }, [])
-
-  // Auto-scroll logs
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [])
 
   const refreshTrackCount = useCallback(async () => {
     const files = await window.doty.listMusic()
@@ -132,7 +111,6 @@ export default function Settings({
     })
     window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
-    window.doty.getHotwordsFile().then(setHotwordsFile)
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
@@ -543,71 +521,6 @@ export default function Settings({
 
         {/* Recommendation count */}
         <div className="mb-5">
-          <Label>Arcane Lexicon (Hotwords)</Label>
-          <p style={{ fontSize: '14px', color: '#3a2e1a', marginBottom: '8px', fontFamily: "'Crimson Text', serif" }}>
-            Add campaign names, spells, and places to improve transcription accuracy
-          </p>
-          <div className="flex gap-2">
-            <div style={{ ...inputStyle, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {hotwordsFile || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No lexicon selected</span>}
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                const picked = await window.doty.pickHotwordsFile()
-                if (picked) setHotwordsFile(picked)
-              }}
-              style={btnStyle}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
-            >
-              Browse
-            </button>
-          </div>
-          {!hotwordsFile && (
-            <button
-              type="button"
-              onClick={async () => {
-                const result = await window.doty.createDefaultHotwords()
-                if (result.ok && result.path) setHotwordsFile(result.path)
-              }}
-              style={{ ...btnStyle, marginTop: '6px', fontSize: '13px', padding: '5px 10px' }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
-            >
-              Create default lexicon
-            </button>
-          )}
-          {hotwordsFile && (
-            <div className="flex items-center gap-2 mt-1.5">
-              <p style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif", flex: 1 }}>
-                Beam search enabled with lexicon boosting
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  window.doty.setHotwordsFile('')
-                  setHotwordsFile('')
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#3a2e1a',
-                  fontSize: '12px',
-                  fontFamily: 'monospace',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
-              >
-                clear
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Recommendation count */}
-        <div className="mb-5">
           <Label>Recommendations</Label>
           <div className="flex items-center gap-3">
             <input
@@ -904,62 +817,7 @@ export default function Settings({
               {!qwenIsReady && (
                 <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~80 MB</span>
               )}
-              <button
-                type="button"
-                onClick={() => setShowQwenLogs((prev) => !prev)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#3a2e1a',
-                  transition: 'color 0.2s',
-                  padding: '2px',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
-                onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
-                title={showQwenLogs ? 'Hide logs' : 'Show logs'}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  {showQwenLogs ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                  )}
-                </svg>
-              </button>
             </div>
-
-            {/* Collapsible log panel */}
-            {showQwenLogs && (
-              <div
-                style={{
-                  marginTop: '8px',
-                  padding: '6px 8px',
-                  background: '#050403',
-                  border: '1px solid rgba(46,36,22,0.5)',
-                  maxHeight: '120px',
-                  overflowY: 'auto',
-                  fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: '#5a4a2a',
-                  lineHeight: '1.6',
-                }}
-              >
-                {qwenLogs.length === 0 ? (
-                  <span style={{ fontStyle: 'italic', color: '#3a2e1a' }}>No events yet...</span>
-                ) : (
-                  qwenLogs.map((log, i) => (
-                    <div
-                      key={i}
-                      style={{ color: log.includes('ready') || log.includes('Ready') ? '#4a8a6a' : '#5a4a2a' }}
-                    >
-                      {log}
-                    </div>
-                  ))
-                )}
-                <div ref={logEndRef} />
-              </div>
-            )}
           </div>
 
           {/* Scene Interpreter (LLM) */}

@@ -990,13 +990,6 @@ ipcMain.handle('embedding:get-progress', () => {
   return getEmbeddingStats(total)
 })
 
-// ── IPC: Hotwords (legacy stubs — transcribe-cpp doesn't use hotwords) ────────
-
-ipcMain.handle('settings:get-hotwords-file', () => '')
-ipcMain.handle('settings:set-hotwords-file', () => ({ ok: true }))
-ipcMain.handle('settings:pick-hotwords-file', async () => null)
-ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }))
-
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
 
