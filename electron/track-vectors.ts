@@ -1,3 +1,4 @@
+import { sep } from 'node:path'
 import { getDb } from './database'
 
 let vecLoaded = false
@@ -7,14 +8,17 @@ function ensureVecExtension(): void {
   if (vecLoaded) return
   const db = getDb()
   try {
-    // sqlite-vec npm package provides the loadable extension path
+    // sqlite-vec exposes the extension's path, but dlopen cannot read inside
+    // app.asar — packaged builds keep the native binary next door in
+    // app.asar.unpacked, so rewrite the path before loading.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const sqliteVec = require('sqlite-vec')
-    sqliteVec.load(db)
+    const sqliteVec = require('sqlite-vec') as { getLoadablePath(): string }
+    const loadablePath = sqliteVec.getLoadablePath().replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`)
+    db.loadExtension(loadablePath)
     vecLoaded = true
   } catch (e) {
+    // Vector search is optional: log and let the app run without it.
     console.error('[track-vectors] Failed to load sqlite-vec:', e)
-    throw e
   }
 }
 
@@ -23,6 +27,7 @@ const EMBEDDING_DIM = 768
 /** Initialize the vector table and metadata table */
 export function initVectorTables(): void {
   ensureVecExtension()
+  if (!vecLoaded) return // no extension, no vec0 table — skip the rest
   const db = getDb()
 
   // Metadata table tracks descriptions and source
