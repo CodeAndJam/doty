@@ -97,6 +97,11 @@ contextBridge.exposeInMainWorld('doty', {
       ipcRenderer.removeListener('reranker:ipc-status', handler)
     }
   },
+  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, p: { file: string; progress: number; status: string }) => cb(p)
+    ipcRenderer.on('reranker:download-progress', handler)
+    return () => ipcRenderer.removeListener('reranker:download-progress', handler)
+  },
   getRecommendationCount: () => ipcRenderer.invoke('settings:get-recommendation-count'),
   setRecommendationCount: (count: number) => ipcRenderer.invoke('settings:set-recommendation-count', count),
   onModelProgress: (cb: (p: ProgressPayload) => void) => {
@@ -219,6 +224,7 @@ contextBridge.exposeInMainWorld('doty', {
   discordStreamSfx: (absolutePath: string, volume?: number) =>
     ipcRenderer.invoke('discord:stream-sfx', absolutePath, volume),
   discordStopStream: () => ipcRenderer.invoke('discord:stop-stream'),
+  discordStopSfx: () => ipcRenderer.invoke('discord:stop-sfx'),
   discordPauseStream: () => ipcRenderer.invoke('discord:pause-stream'),
   discordResumeStream: () => ipcRenderer.invoke('discord:resume-stream'),
   discordSetVolume: (volume: number) => ipcRenderer.invoke('discord:set-volume', volume),

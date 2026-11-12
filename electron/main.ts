@@ -45,6 +45,7 @@ import {
   resumeStream,
   setAutoConnect,
   setDiscordVolume,
+  stopSfx,
   stopStream,
   streamSfx,
   streamTrack,
@@ -62,6 +63,7 @@ import {
 import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
 import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
+import { handleMusicRequest } from './music-protocol'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import {
@@ -402,143 +404,16 @@ function createWindow() {
   }
 }
 
-/** MIME type lookup for audio files. */
-function audioMime(ext: string): string {
-  const map: Record<string, string> = {
-    '.mp3': 'audio/mpeg',
-    '.flac': 'audio/flac',
-    '.wav': 'audio/wav',
-    '.m4a': 'audio/mp4',
-    '.ogg': 'audio/ogg',
-    '.aac': 'audio/aac',
-  }
-  return map[ext.toLowerCase()] ?? 'application/octet-stream'
-}
-
 function registerMusicProtocol() {
   protocol.handle('music', (request) => {
     try {
-      const musicFolder = store.get('musicFolder', '') as string
-      const raw = request.url
-      const prefix = 'music://play/'
-      const filename = decodeURIComponent(
-        raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length),
-      )
-      // Support absolute paths (for SFX) or relative paths (for music).
-      // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
-      // like /Users/x/sfx/boom.mp3 arrives as "Users/x/sfx/boom.mp3" (leading
-      // slash consumed by the music://play/ prefix).  We try the relative path
-      // first; if it doesn't exist we retry as an absolute path with "/" prepended.
-      let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
-
-      if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
-        const abs = `/${filename}`
-        if (fs.existsSync(abs)) filePath = abs
-      }
-
-      // Only serve files from the configured music/SFX folders — this handler
-      // is reachable from renderer code, so an absolute path must not read arbitrary files.
-      const resolved = resolve(filePath)
-      if (!isAllowedMediaPath(resolved)) {
-        return new Response('Forbidden', { status: 403 })
-      }
-      filePath = resolved
-
-      if (!fs.existsSync(filePath)) {
-        return new Response('Not found', { status: 404 })
-      }
-
-      const stat = fs.statSync(filePath)
-      const total = stat.size
-      const ext = filePath.slice(filePath.lastIndexOf('.'))
-      const mime = audioMime(ext)
-
-      /** Wrap a Node fs.ReadStream into a web ReadableStream, guarding against
-       *  enqueue-after-close crashes that happen when Chromium cancels a request
-       *  mid-stream (e.g. rapid seeking). */
-      function nodeToWeb(nodeStream: fs.ReadStream): ReadableStream {
-        let closed = false
-        return new ReadableStream({
-          start(controller) {
-            nodeStream.on('data', (chunk: Buffer | string) => {
-              if (!closed) {
-                try {
-                  controller.enqueue(chunk)
-                } catch {
-                  closed = true
-                  nodeStream.destroy()
-                }
-              }
-            })
-            nodeStream.on('end', () => {
-              if (!closed) {
-                closed = true
-                try {
-                  controller.close()
-                } catch {
-                  /* already closed */
-                }
-              }
-            })
-            nodeStream.on('error', (err) => {
-              if (!closed) {
-                closed = true
-                try {
-                  controller.error(err)
-                } catch {
-                  /* already errored */
-                }
-              }
-            })
-          },
-          cancel() {
-            closed = true
-            nodeStream.destroy()
-          },
-        })
-      }
-
-      // Handle Range requests — required for audio seeking.
-      // Without this, setting audio.currentTime causes Chromium to request a byte
-      // range, but net.fetch(file://) always returns the full file from byte 0,
-      // so the seek position resets to the beginning.
-      const rangeHeader = request.headers.get('Range')
-      if (rangeHeader) {
-        const match = /bytes=(\d+)-(\d*)/.exec(rangeHeader)
-        const start = match ? parseInt(match[1], 10) : 0
-        const end = match?.[2] ? parseInt(match[2], 10) : total - 1
-
-        // Validate range bounds
-        if (start >= total || end >= total || start > end) {
-          return new Response('Range Not Satisfiable', {
-            status: 416,
-            headers: { 'Content-Range': `bytes */${total}` },
-          })
-        }
-
-        const chunkSize = end - start + 1
-
-        return new Response(nodeToWeb(fs.createReadStream(filePath, { start, end })), {
-          status: 206,
-          headers: {
-            'Content-Type': mime,
-            'Content-Length': String(chunkSize),
-            'Content-Range': `bytes ${start}-${end}/${total}`,
-            'Accept-Ranges': 'bytes',
-          },
-        })
-      }
-
-      // Full file response — advertise Accept-Ranges so Chromium knows
-      // it can send Range requests for seeking.
-      return new Response(nodeToWeb(fs.createReadStream(filePath)), {
-        status: 200,
-        headers: {
-          'Content-Type': mime,
-          'Content-Length': String(total),
-          'Accept-Ranges': 'bytes',
+      return handleMusicRequest(
+        { url: request.url, rangeHeader: request.headers.get('Range') },
+        {
+          musicFolder: store.get('musicFolder', '') as string,
+          sfxFolder: store.get('sfxFolder', '') as string,
         },
-      })
+      )
     } catch (err) {
       console.error('[music-protocol] unhandled error:', err)
       return new Response('Internal error', { status: 500 })
@@ -729,7 +604,7 @@ ipcMain.handle('mic:open-settings', () => {
 ipcMain.handle('stt:start', () => {
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
-  sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueEndMs(activeFile) : 0)
+  sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
   startWavRecording()
   startStream()
   pauseEmbedding() // STT has priority over background embedding
@@ -874,7 +749,14 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 // ── IPC: Sessions ─────────────────────────────────────────────────────────────
 
 ipcMain.handle('session:create', (_e, name?: string) => {
-  return sessionOps.createSession(name)
+  const session = sessionOps.createSession(name)
+  if (sessionStartTime !== null) {
+    // Recording in progress — start a fresh take in the new session
+    finalizeWavRecording()
+    sessionStartTime = Date.now()
+    startWavRecording()
+  }
+  return session
 })
 
 ipcMain.handle('session:list', () => {
@@ -901,6 +783,11 @@ ipcMain.handle('session:delete', (_e, file: string) => {
     const next = sessionOps.listSessions()[0]?.file ?? null
     sessionOps.setLastSession(next ?? '')
     sessionOps.setActiveSession(next)
+    if (sessionStartTime !== null) {
+      // Still recording — continue the take in the next session if there is one
+      sessionStartTime = Date.now() - (next ? sessionOps.getLastCueStartMs(next) : 0)
+      startWavRecording()
+    }
   }
   return { ok: true }
 })
@@ -909,8 +796,10 @@ ipcMain.handle('session:set-active', (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   sessionOps.setActiveSession(file)
   if (sessionStartTime !== null) {
-    // Recording in progress — keep cues monotonic in the newly active session
-    sessionStartTime = Date.now() - sessionOps.getLastCueEndMs(file)
+    // Recording in progress — keep cues monotonic and route audio to the new session
+    finalizeWavRecording()
+    sessionStartTime = Date.now() - sessionOps.getLastCueStartMs(file)
+    startWavRecording()
   }
   return { ok: true }
 })
@@ -1189,6 +1078,11 @@ ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number)
 
 ipcMain.handle('discord:stop-stream', () => {
   stopStream()
+  return { ok: true }
+})
+
+ipcMain.handle('discord:stop-sfx', () => {
+  stopSfx()
   return { ok: true }
 })
 

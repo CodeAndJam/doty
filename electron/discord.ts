@@ -619,6 +619,22 @@ export function stopStream(): void {
 }
 
 /**
+ * Stop the currently playing Discord SFX (and clear the SFX queue) while
+ * leaving music control state intact.
+ */
+export function stopSfx(): void {
+  if (!player) return
+  const wasActive = sfxPlaying || sfxTransitioning || sfxQueue.length > 0
+  sfxQueue = []
+  sfxPlaying = false
+  sfxTransitioning = false
+  if (wasActive) {
+    log('SFX stopped by user')
+    resumeMusicAfterSfx()
+  }
+}
+
+/**
  * Clean up everything — call on app quit.
  */
 export function destroyDiscord(): void {

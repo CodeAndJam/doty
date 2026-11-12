@@ -158,10 +158,7 @@ export function transcribeFloat32(samples: Float32Array, _sampleRate = 16000): P
         }
       }
       worker.on('message', handler)
-      const buf = samples.buffer.slice(
-        samples.byteOffset,
-        samples.byteOffset + samples.byteLength,
-      ) as ArrayBuffer
+      const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength) as ArrayBuffer
       worker.postMessage({ type: 'transcribe', id, buffer: buf }, [buf])
     }
   })

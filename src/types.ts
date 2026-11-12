@@ -216,6 +216,7 @@ export interface DotyAPI {
   rerankerStatus: () => Promise<{ cached: boolean }>
   rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
   onRerankerStatus: (cb: (status: string) => void) => () => void
+  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
@@ -294,6 +295,7 @@ export interface DotyAPI {
   discordStreamTrack: (filename: string, seekSeconds?: number) => Promise<{ ok: boolean }>
   discordStreamSfx: (absolutePath: string, volume?: number) => Promise<{ ok: boolean }>
   discordStopStream: () => Promise<{ ok: boolean }>
+  discordStopSfx: () => Promise<{ ok: boolean }>
   discordPauseStream: () => Promise<{ ok: boolean }>
   discordResumeStream: () => Promise<{ ok: boolean }>
   discordSetVolume: (volume: number) => Promise<{ ok: boolean }>

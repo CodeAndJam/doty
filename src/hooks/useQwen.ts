@@ -43,7 +43,7 @@ const RERANK_CANDIDATES = 20
 
 export function useQwen() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
-  const [downloadProgress] = useState<RerankerDownloadProgress | null>(null)
+  const [downloadProgress, setDownloadProgress] = useState<RerankerDownloadProgress | null>(null)
   const [lastRanker, setLastRanker] = useState<RankerType>(null)
 
   useEffect(() => {
@@ -51,6 +51,10 @@ export function useQwen() {
     const unsub = window.doty.onRerankerStatus((status: string) => {
       _currentStatus = status as Status
       setModelStatus(status as Status)
+    })
+    const unsubProgress = window.doty.onRerankerDownloadProgress((p) => {
+      setDownloadProgress(p)
+      if (p.status === 'done' || p.status === 'ready') setDownloadProgress(null)
     })
     // Trigger model load with a dummy pair
     window.doty
@@ -63,7 +67,10 @@ export function useQwen() {
         _currentStatus = 'error'
         setModelStatus('error')
       })
-    return unsub
+    return () => {
+      unsub()
+      unsubProgress()
+    }
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {

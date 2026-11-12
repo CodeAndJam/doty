@@ -26,6 +26,7 @@ let lastScene: SceneResult | null = null
 let sceneModelPath: string | null = null
 let embeddingModelPath: string | null = null
 let disposed = false
+let interpreting = false
 let onSceneUpdate: ((scene: SceneResult) => void) | null = null
 let onEmbedding: ((id: number, vector: number[]) => void) | null = null
 let onEmbeddings: ((id: number, vectors: number[][]) => void) | null = null
@@ -72,6 +73,7 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus('embedding-ready')
         break
       case 'scene-result':
+        interpreting = false
         lastScene = msg.scene
         if (onSceneUpdate) onSceneUpdate(msg.scene)
         break
@@ -85,6 +87,7 @@ function ensureChild(): UtilityProcess {
         if (onStatus) onStatus(msg.status)
         break
       case 'error':
+        interpreting = false
         console.error('[scene-interpreter] LLM error:', msg.error)
         break
     }
@@ -96,14 +99,14 @@ function ensureChild(): UtilityProcess {
     child = null
     sceneModelReady = false
     embeddingModelReady = false
+    interpreting = false
     // Respawn after an unexpected crash so scene/embedding work resumes.
     if (!disposed && (sceneModelPath || embeddingModelPath)) {
       setTimeout(() => {
         if (disposed || child) return
         const respawned = ensureChild()
         if (sceneModelPath) respawned.postMessage({ type: 'load-scene-model', modelPath: sceneModelPath })
-        if (embeddingModelPath)
-          respawned.postMessage({ type: 'load-embedding-model', modelPath: embeddingModelPath })
+        if (embeddingModelPath) respawned.postMessage({ type: 'load-embedding-model', modelPath: embeddingModelPath })
       }, 2000)
     }
   })
@@ -136,9 +139,10 @@ export function feedTranscript(text: string): void {
 export function startInterpreting(): void {
   if (interpreterTimer) return
   interpreterTimer = setInterval(() => {
-    if (!sceneModelReady || !child) return
+    if (!sceneModelReady || !child || interpreting) return
     const text = transcriptBuffer.trim()
     if (!text || text.length < 50) return // not enough context yet
+    interpreting = true
     child.postMessage({ type: 'interpret-scene', transcript: text })
   }, INTERPRET_INTERVAL_MS)
 }

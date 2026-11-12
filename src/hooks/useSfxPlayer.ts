@@ -109,6 +109,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   )
 
   const stop = useCallback((channelId: string) => {
+    window.doty.discordStopSfx().catch(() => {})
     setChannels((prev) => {
       const ch = prev.find((c) => c.id === channelId)
       if (ch) {
@@ -120,6 +121,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   }, [])
 
   const stopAll = useCallback(() => {
+    window.doty.discordStopSfx().catch(() => {})
     channelsRef.current.forEach((ch) => {
       ch.audio.pause()
       ch.audio.currentTime = 0

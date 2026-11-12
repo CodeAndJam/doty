@@ -96,15 +96,15 @@ export function appendCue(file: string, elapsedMs: number, text: string): void {
   fs.appendFileSync(file, cue, 'utf-8')
 }
 
-/** End timestamp of the last cue in a session, in ms (0 for a new/empty file). */
-export function getLastCueEndMs(file: string): number {
+/** Start timestamp of the last cue in a session, in ms (0 for a new/empty file). */
+export function getLastCueStartMs(file: string): number {
   try {
     const content = fs.readFileSync(file, 'utf-8')
     const lines = content.split('\n')
     for (let i = lines.length - 1; i >= 0; i--) {
       const arrow = lines[i].indexOf('-->')
       if (arrow < 0) continue
-      const m = /(\d+):(\d+):(\d+)\.(\d+)/.exec(lines[i].slice(arrow + 3).trim())
+      const m = /(\d+):(\d+):(\d+)\.(\d+)/.exec(lines[i].slice(0, arrow).trim())
       if (!m) return 0
       return Number(m[1]) * 3600000 + Number(m[2]) * 60000 + Number(m[3]) * 1000 + Number(m[4])
     }

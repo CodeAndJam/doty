@@ -8,6 +8,7 @@ import { isEmbeddingModelReady, requestEmbedding } from './scene-interpreter'
 import { getEmbeddingStats, getTracksNeedingEmbedding, upsertTrackEmbedding } from './track-vectors'
 
 const COOLDOWN_MS = 500 // pause between tracks to avoid heat
+const MODEL_WAIT_MS = 5000 // poll slowly while the embedding model is absent
 const _BATCH_SIZE = 10 // process this many before re-checking state
 
 let running = false
@@ -62,17 +63,17 @@ export function stopEmbeddingQueue(): void {
   pendingEmbedCallback = null
 }
 
-function scheduleNext(): void {
+function scheduleNext(delay = COOLDOWN_MS): void {
   if (!running || paused) return
   if (timer) clearTimeout(timer)
-  timer = setTimeout(processNext, COOLDOWN_MS)
+  timer = setTimeout(processNext, delay)
 }
 
 async function processNext(): Promise<void> {
   if (!running || paused) return
   if (!isEmbeddingModelReady()) {
-    // Wait for embedding model to load
-    scheduleNext()
+    // Wait for the embedding model to load (slow poll, not a busy loop)
+    scheduleNext(MODEL_WAIT_MS)
     return
   }
 

@@ -16,7 +16,6 @@
     "electron/voxtral-streaming-realtime.test.ts",
     "electron/voxtral-session.test.ts",
     "electron/voxtral-latency.test.ts",
-    "electron/stt-models.test.ts",
     "electron/voxtral-integration.test.ts",
     "electron/reranker-integration.test.ts",
     "electron/asr-integration.test.ts"

@@ -84,7 +84,7 @@ export default function Soundboard({
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
-  const prevAutopilotLenRef = useRef(0)
+  const lastAutoLogTimeRef = useRef(0)
 
   // Accumulate decision log entries from recommendation results
   useEffect(() => {
@@ -337,8 +337,9 @@ export default function Soundboard({
       console.log('[autopilot] auto-triggering SFX:', sfxId, 'volume:', volume)
       const sfx = allSfx.find((s) => s.id === sfxId)
       if (sfx) {
-        sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
-        sfxPlayer.setSfxVolume(sfxId, volume)
+        const channelId = sfxPlayer.play(sfxId, sfx.label, sfx.filename, false)
+        // Per-trigger gain only — never overwrite the DM's saved SFX volume
+        if (channelId) sfxPlayer.setChannelVolume(channelId, volume)
         window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
       }
     },
@@ -377,15 +378,11 @@ export default function Soundboard({
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
-    const apLog = autopilot.decisionLog
-    if (apLog.length <= prevAutopilotLenRef.current) {
-      prevAutopilotLenRef.current = apLog.length
-      return
-    }
-    // New entries are at the front of the array
-    const newCount = apLog.length - prevAutopilotLenRef.current
-    prevAutopilotLenRef.current = apLog.length
-    const newEntries: DecisionLogEntry[] = apLog.slice(0, newCount).map((e) => ({
+    // The source array is capped, so detect new entries by timestamp (newest first)
+    const newEntries = autopilot.decisionLog.filter((e) => e.time > lastAutoLogTimeRef.current)
+    if (newEntries.length === 0) return
+    lastAutoLogTimeRef.current = newEntries[0].time
+    const mapped: DecisionLogEntry[] = newEntries.map((e) => ({
       timestamp: e.time,
       ranker: null,
       confidence: e.confidence,
@@ -394,7 +391,7 @@ export default function Soundboard({
       action: e.action,
       reason: e.reason,
     }))
-    decisionLogRef.current = [...newEntries, ...decisionLogRef.current].slice(0, 50)
+    decisionLogRef.current = [...mapped, ...decisionLogRef.current].slice(0, 50)
     setDecisionLog([...decisionLogRef.current])
   }, [autopilot.decisionLog])
 
