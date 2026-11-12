@@ -127,7 +127,17 @@ export default function DiscordPanel() {
         setHasToken(true)
         setTokenInput('')
         setShowTokenInput(false)
+      } else if (result.error) {
+        // Also surface the reason here: the state event can be missed, and then
+        // the click looks like it did nothing.
+        setState((s) => ({ ...s, status: 'error', error: result.error ?? null }))
       }
+    } catch (err) {
+      setState((s) => ({
+        ...s,
+        status: 'error',
+        error: err instanceof Error ? err.message : 'Connect failed',
+      }))
     } finally {
       setConnecting(false)
     }

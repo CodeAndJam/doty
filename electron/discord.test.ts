@@ -180,9 +180,17 @@ vi.mock('@discordjs/voice', () => {
 
 vi.mock('electron', () => ({
   safeStorage: {
-    isEncryptionAvailable: () => false,
-    encryptString: (s: string) => Buffer.from(s),
-    decryptString: (b: Buffer) => b.toString(),
+    // Test knobs: __encAvailable / __encryptThrows / __decryptThrows simulate
+    // a keychain the app can't access (e.g. after a reinstall changed its signature).
+    isEncryptionAvailable: () => (globalThis as any).__encAvailable ?? false,
+    encryptString: (s: string) => {
+      if ((globalThis as any).__encryptThrows) throw new Error('keychain denied')
+      return Buffer.from(s)
+    },
+    decryptString: (b: Buffer) => {
+      if ((globalThis as any).__decryptThrows) throw new Error('Error while decrypting')
+      return b.toString()
+    },
   },
 }))
 
@@ -191,25 +199,30 @@ vi.mock('./discord-audio', () => ({
   createSfxResource: (_path: string, _vol: number) => ({ metadata: { title: 'sfx' } }),
 }))
 
-vi.mock('./store', () => ({
-  store: {
-    get: (key: string, def: unknown) => {
-      const vals: Record<string, unknown> = {
-        discordVolume: 1.0,
-        musicFolder: '/tmp/music',
-        sfxFolder: '/tmp/sfx',
-        discordAutoConnect: false,
-      }
-      return vals[key] ?? def
+vi.mock('./store', () => {
+  const data: Record<string, unknown> = {
+    discordVolume: 1.0,
+    musicFolder: '/tmp/music',
+    sfxFolder: '/tmp/sfx',
+    discordAutoConnect: false,
+  }
+  return {
+    store: {
+      get: (key: string, def: unknown) => data[key] ?? def,
+      set: (key: string, value: unknown) => {
+        data[key] = value
+      },
+      delete: (key: string) => {
+        delete data[key]
+      },
     },
-    set: () => {},
-    delete: () => {},
-  },
-}))
+  }
+})
 
 // ── Import after mocks ───────────────────────────────────────────────────────
 
 import {
+  clearToken,
   connect,
   destroyDiscord,
   disconnect,
@@ -218,12 +231,14 @@ import {
   getVoiceChannels,
   joinChannel,
   leaveChannel,
+  loadToken,
   onStateChange,
   pauseStream,
   resumeStream,
   stopStream,
   streamTrack,
 } from './discord'
+import { store } from './store'
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -237,6 +252,7 @@ describe('Discord lifecycle', () => {
 
   beforeEach(() => {
     stateHistory.length = 0
+    clearToken() // the store mock now persists tokens between tests
     unsubState = onStateChange((s) => {
       stateHistory.push({ ...s })
     })
@@ -354,6 +370,60 @@ describe('Discord lifecycle', () => {
         ;(globalThis as any).__mockReadyDelay = 10
         vi.useRealTimers()
       }
+    })
+  })
+
+  describe('token persistence', () => {
+    afterEach(() => {
+      ;(globalThis as any).__encAvailable = false
+      ;(globalThis as any).__encryptThrows = false
+      ;(globalThis as any).__decryptThrows = false
+      clearToken()
+    })
+
+    // Regression: 3.0.1 users on a fresh install got a keychain that refused
+    // writes after the app's signature changed. The throw happened inside the
+    // 'ready' handler, so connect() never resolved and the button hung silent.
+    it('connects when the keychain refuses to save the token', async () => {
+      ;(globalThis as any).__encAvailable = true
+      ;(globalThis as any).__encryptThrows = true
+
+      await expect(connect('fake-token')).resolves.toBeUndefined()
+      expect(getState()).toMatchObject({ status: 'ready', error: null })
+    })
+
+    it('still saves the token when the keychain works', async () => {
+      ;(globalThis as any).__encAvailable = true
+
+      await connect('fake-token')
+
+      expect(loadToken()).toBe('fake-token')
+    })
+
+    it('returns empty for stored ciphertext this build cannot decrypt', () => {
+      ;(globalThis as any).__encAvailable = true
+      ;(globalThis as any).__decryptThrows = true
+      // Old encrypted value, base64 — not a token (no dots)
+      store.set('discordToken', 'ZmFrZS1jaXBoZXJ0ZXh0')
+
+      expect(loadToken()).toBe('')
+    })
+
+    it('returns empty when encryption is gone and only ciphertext is stored', () => {
+      ;(globalThis as any).__encAvailable = true
+      store.set('discordToken', Buffer.from('ciphertext').toString('base64'))
+
+      ;(globalThis as any).__encAvailable = false
+
+      expect(loadToken()).toBe('')
+    })
+
+    it('still reads a plaintext token saved by an older build', () => {
+      ;(globalThis as any).__encAvailable = true
+      ;(globalThis as any).__decryptThrows = true
+      store.set('discordToken', 'MTIz.GAbCdE.abcDEF123')
+
+      expect(loadToken()).toBe('MTIz.GAbCdE.abcDEF123')
     })
   })
 
