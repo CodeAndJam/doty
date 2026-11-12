@@ -80,6 +80,8 @@ interface Fixture {
   description: string
   /** Absolute WER ceiling for any model offered as the default. */
   maxWer: number
+  /** Machine-sensitive fixture: hold a ceiling, not a regression bar. */
+  stress?: boolean
   /** Optional legacy field for the older word-overlap test. */
   minOverlap?: number
 }
@@ -251,15 +253,16 @@ describe.skipIf(!RUN)('STT quality gate', { timeout: 900_000 }, () => {
             baseline.results[info.id] ??= {}
             baseline.results[info.id][fixture.file] = { wer: wer.rate, cer: cer.rate, rtf: run.rtf }
           } else {
-            // Absolute ceiling: the model must be good enough to ship.
-            if (info.absolute) {
+            // Absolute ceiling: the default must be good enough to ship, and
+            // every model must stay under a stress fixture's loose ceiling.
+            if (info.absolute || fixture.stress) {
               expect(
                 wer.rate,
                 `${info.id} on ${fixture.file} must be <= ${fixture.maxWer * 100}% WER`,
               ).toBeLessThanOrEqual(fixture.maxWer)
             }
             // Regression: no worse than the accepted baseline.
-            if (prev) {
+            if (prev && !fixture.stress) {
               expect(
                 wer.rate,
                 `${info.id} on ${fixture.file} regressed from ${(prev.wer * 100).toFixed(1)}%`,

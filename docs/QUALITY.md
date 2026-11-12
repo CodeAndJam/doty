@@ -35,9 +35,13 @@ models — over Portuguese fixtures, and fails on:
    streaming decoders differ by a few points between Metal implementations).
    Applies to every gated model, so an alternative model cannot quietly get
    worse either.
-3. **Speed**: at least 1× realtime on audio longer than 20 s. Text that arrives
+3. **Stress fixtures** (`"stress": true` in the manifest) hold a loose ceiling
+   for every gated model instead of a regression bar, because streaming results
+   vary by ~5 pp across Metal implementations. `dragon-portuguese.wav` (speech
+   buried under music) is one: 40% ceiling, and no model is near it yet.
+4. **Speed**: at least 1× realtime on audio longer than 20 s. Text that arrives
    after the scene changed is useless.
-4. **No hallucination on silence**: 5 s of digital silence must produce zero
+5. **No hallucination on silence**: 5 s of digital silence must produce zero
    words.
 
 Report: `test-results/stt-quality.md` (uploaded by CI).

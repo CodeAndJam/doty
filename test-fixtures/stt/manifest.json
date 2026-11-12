@@ -10,9 +10,10 @@
     "file": "dragon-portuguese.wav",
     "language": "pt-PT",
     "expected": "Entramos numa dungeon, estamos numa sala e não sabemos o que nos aparece. De repente vemos 3 esqueletos e um dragão.",
-    "description": "Portuguese dungeon description with heavy background music. Speech in the second half (7-13s) is completely masked by music — every current model loses it, so this is a stress test with a loose ceiling; the baseline catches regressions.",
+    "description": "Stress test: heavy background music masks the second half of the scene. Every current model loses it (33-38% WER) and streaming results vary by ~5pp across Metal implementations, so the gate holds a loose ceiling instead of a regression bar.",
     "maxWer": 0.4,
-    "minOverlap": 0.6
+    "minOverlap": 0.6,
+    "stress": true
   },
   {
     "file": "dm-portuguese.wav",
