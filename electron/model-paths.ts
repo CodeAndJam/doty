@@ -25,11 +25,17 @@ export interface SttModelInfo {
   streaming: boolean
   /** Languages supported */
   languages: string[]
+  /** Preferred default model for a fresh install */
+  default?: boolean
   isReady: () => boolean
 }
 
 const HOME_DIR = app.getPath('home')
 const MODELS_DIR = join(HOME_DIR, '.doty', 'models')
+
+/** Doty targets European Portuguese first; override in Settings. */
+export const DEFAULT_STT_MODEL: SttModelType = 'nemotron-3.5-streaming'
+export const DEFAULT_STT_LANGUAGE = 'pt-PT'
 
 export { MODELS_DIR }
 
@@ -48,12 +54,46 @@ export const STT_MODELS: SttModelInfo[] = [
   {
     id: 'nemotron-3.5-streaming',
     label: 'Nemotron 3.5 Streaming (multilingual)',
-    description: 'Multilingual streaming (32 locales incl pt-BR). Cache-aware, 480ms–1s latency.',
+    description: 'Multilingual streaming (32 locales incl pt-PT). Cache-aware, 480ms–1s latency.',
     size: '716 MB',
     ggufFile: 'nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
     url: 'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
     streaming: true,
-    languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'ru', 'zh', 'ja', 'ko'],
+    languages: [
+      'en-US',
+      'en-GB',
+      'es-US',
+      'es-ES',
+      'fr-FR',
+      'fr-CA',
+      'it-IT',
+      'pt-BR',
+      'pt-PT',
+      'nl-NL',
+      'de-DE',
+      'tr-TR',
+      'ru-RU',
+      'ar-AR',
+      'hi-IN',
+      'ja-JP',
+      'ko-KR',
+      'vi-VN',
+      'uk-UA',
+      'pl-PL',
+      'sv-SE',
+      'cs-CZ',
+      'nb-NO',
+      'da-DK',
+      'bg-BG',
+      'fi-FI',
+      'hr-HR',
+      'sk-SK',
+      'zh-CN',
+      'hu-HU',
+      'ro-RO',
+      'et-EE',
+    ],
+    default: true,
     isReady: () => fs.existsSync(join(MODELS_DIR, 'nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf')),
   },
   {

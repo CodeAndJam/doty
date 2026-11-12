@@ -11,6 +11,7 @@
  */
 
 import type { SfxMeta } from '../types'
+import { fold, matchesTag, tokenize } from './keywordMatch'
 
 interface SfxMoodProfile {
   keywords: string[]
@@ -49,6 +50,8 @@ const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
       'escudo',
       'armadura',
       'chefe',
+      'dragão',
+      'monstro',
     ],
     categories: ['combat'],
   },
@@ -70,6 +73,7 @@ const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
       'tocha',
       'queimar',
       'fogueira',
+      'lareira',
       'lava',
       'inferno',
       'brasa',
@@ -113,6 +117,7 @@ const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
       'água',
       'onda',
       'floresta',
+      'bosque',
       'pássaro',
       'natureza',
       'animal',
@@ -334,17 +339,12 @@ const SFX_MOOD_PROFILES: SfxMoodProfile[] = [
   },
 ]
 
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .split(/\s+/)
-    .filter(Boolean)
-}
-
 /** Detect which mood profiles match the transcript */
 function detectMoods(tokens: string[]): SfxMoodProfile[] {
-  return SFX_MOOD_PROFILES.map((p) => ({ profile: p, score: p.keywords.filter((k) => tokens.includes(k)).length }))
+  return SFX_MOOD_PROFILES.map((p) => ({
+    profile: p,
+    score: p.keywords.filter((k) => tokens.includes(fold(k))).length,
+  }))
     .filter((p) => p.score > 0)
     .sort((a, b) => b.score - a.score)
     .map((p) => p.profile)
@@ -393,7 +393,7 @@ export function heuristicSfxRecommend(
     // contains any keyword from the matched mood profiles, even if the directory
     // structure doesn't match the expected category names
     const labelTokens = tokenize(sfx.label)
-    const allMoodKeywords = moods.flatMap((m) => m.keywords)
+    const allMoodKeywords = moods.flatMap((m) => m.keywords.map(fold))
     const labelMoodMatch =
       labelTokens.some((t) => allMoodKeywords.includes(t)) ||
       allMoodKeywords.some((k) => labelTokens.some((t) => t.includes(k) || k.includes(t)))
@@ -401,7 +401,7 @@ export function heuristicSfxRecommend(
 
     // Tag score (weighted 3x — user intent is explicit)
     const sfxTags = tagsMap[sfx.filename] || []
-    const tagMatches = sfxTags.filter((tag) => tokens.some((t) => tag.includes(t) || t.includes(tag))).length
+    const tagMatches = sfxTags.filter((tag) => matchesTag(tokens, tag)).length
     const tagScore = Math.min(1, tagMatches / Math.max(1, sfxTags.length)) * 3
 
     // History boost: frequently played SFX get a small bonus (weighted 0.5x)

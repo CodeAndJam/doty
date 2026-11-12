@@ -7,6 +7,7 @@ interface ModelEntry {
   size: string
   streaming: boolean
   languages: string[]
+  default?: boolean
   ready: boolean
 }
 
@@ -22,7 +23,8 @@ export default function ModelDownload({ onComplete, onSkip }: Props) {
   useEffect(() => {
     window.doty.getSttModelList().then((list) => {
       setModels(list)
-      if (list.length > 0) setSelected(list[0].id)
+      const preferred = list.find((m) => m.default) ?? list[0]
+      if (preferred) setSelected(preferred.id)
     })
   }, [])
 

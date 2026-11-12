@@ -61,8 +61,18 @@ import {
 } from './embedding-queue'
 import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
-import { isAnySttModelReady, MODELS_DIR, STT_MODELS, type SttModelType } from './model-paths'
+import {
+  DEFAULT_STT_LANGUAGE,
+  DEFAULT_STT_MODEL,
+  isAnySttModelReady,
+  MODELS_DIR,
+  STT_MODELS,
+  type SttModelInfo,
+  type SttModelType,
+} from './model-paths'
+import { getMusicFiles } from './music-library'
 import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
+import { disposeReranker, scorePairs, setOnRerankerStatus } from './reranker'
 import { getAllMetadata, getMetadata, startScanner, stopScanner } from './scanner'
 import {
   disposeInterpreter,
@@ -84,6 +94,11 @@ import { updateWavHeader } from './wav-header'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
 
+/** Whether the selected model accepts a focused language (or auto-detect). */
+function supportsLanguage(model: SttModelInfo | undefined, language: string): boolean {
+  return language === 'auto' || (model?.languages ?? []).includes(language)
+}
+
 /** Check if the reranker model is already cached */
 function isRerankerCached(): boolean {
   const rerankerDir = join(app.getPath('home'), '.doty', 'hf-cache', 'cross-encoder', 'mmarco-mMiniLMv2-L12-H384-v1')
@@ -94,56 +109,6 @@ function isRerankerCached(): boolean {
   }
 }
 
-/**
- * Pre-download the reranker model in the main process (Node.js context).
- * The renderer worker's fetch can stall in Electron's sandboxed context,
- * so we download here where Node.js networking works reliably, then the
- * worker loads from the local cache with allowRemoteModels=false.
- */
-async function downloadRerankerModel(): Promise<void> {
-  if (isRerankerCached()) {
-    console.log('[main] Reranker model already cached')
-    return
-  }
-
-  console.log('[main] Pre-downloading reranker model in main process...')
-  try {
-    // Dynamic require — the package is externalized by electron-vite so Node's
-    // module resolution finds it in the project root node_modules.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { AutoTokenizer, AutoModelForSequenceClassification, env } = require('@huggingface/transformers')
-    const homePath = app.getPath('home')
-    env.cacheDir = join(homePath, '.doty', 'hf-cache')
-    env.allowRemoteModels = true
-
-    const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
-
-    // Notify renderer about download progress via IPC
-    const sendProgress = (p: Record<string, unknown>) => {
-      for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send('reranker:download-progress', p)
-      }
-    }
-
-    const progressCb = (p: Record<string, unknown>) => {
-      if (p.status === 'progress' || p.status === 'download' || p.status === 'initiate' || p.status === 'done') {
-        sendProgress(p)
-      }
-    }
-
-    await AutoTokenizer.from_pretrained(MODEL_ID, { progress_callback: progressCb })
-    await AutoModelForSequenceClassification.from_pretrained(MODEL_ID, {
-      device: 'cpu',
-      dtype: 'fp32',
-      progress_callback: progressCb,
-    })
-
-    console.log('[main] Reranker model pre-downloaded successfully')
-  } catch (e) {
-    console.error('[main] Reranker model pre-download failed (non-fatal):', e)
-  }
-}
-
 // Register app:// as a privileged scheme BEFORE app is ready.
 // This makes the renderer a secure context (like https://) so the Cache API
 // is available — transformers.js uses it to cache model weights between launches.
@@ -151,26 +116,6 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
-
-const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
-
-function listMusicFiles(dir: string, root?: string): string[] {
-  const base = root ?? dir
-  const results: string[] = []
-  try {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = `${dir}/${entry.name}`
-      if (entry.isDirectory()) {
-        results.push(...listMusicFiles(full, base))
-      } else if (AUDIO_RE.test(entry.name)) {
-        results.push(full.slice(base.length + 1))
-      }
-    }
-  } catch {
-    /* skip unreadable dirs */
-  }
-  return results
-}
 
 let mainWindow: BrowserWindow | null = null
 let sessionStartTime: number | null = null
@@ -432,7 +377,6 @@ function requestSceneEmbedding(sceneText: string) {
  * every load is guarded by an existsSync check.
  */
 function initAuxModels(): void {
-  downloadRerankerModel().catch(() => {})
   const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
   const llmPath = getLlmModelPath(llmModelId)
   if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
@@ -528,6 +472,10 @@ app.whenReady().then(async () => {
     mainWindow?.webContents.send('llm:status', status)
   })
 
+  setOnRerankerStatus((status) => {
+    mainWindow?.webContents.send('reranker:ipc-status', status)
+  })
+
   // Set up embedding progress reporting
   setOnEmbeddingProgress((stats) => {
     mainWindow?.webContents.send('embedding:progress', stats)
@@ -549,7 +497,7 @@ app.whenReady().then(async () => {
     launchScanner(musicFolder)
     // Kick off embedding queue after a delay (let scanner populate files first)
     setTimeout(() => {
-      const files = listMusicFiles(musicFolder)
+      const files = getMusicFiles(musicFolder)
       setEmbeddingFiles(files)
       startEmbeddingQueue()
     }, 5000)
@@ -568,6 +516,7 @@ app.on('before-quit', () => {
   freeRecognizer()
   stopInterpreting()
   disposeInterpreter()
+  disposeReranker()
   stopEmbeddingQueue()
   stopScanner()
   closeDb()
@@ -657,7 +606,7 @@ ipcMain.handle('music:pick-folder', async () => {
 ipcMain.handle('music:list', () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return []
-  return listMusicFiles(musicFolder)
+  return getMusicFiles(musicFolder)
 })
 
 ipcMain.handle('music:scan', () => {
@@ -789,40 +738,8 @@ ipcMain.handle('model:status', () => ({
 
 ipcMain.handle('reranker:status', () => ({ cached: isRerankerCached() }))
 
-// Reranker scoring via IPC — replaces broken WASM worker
-let _rerankerScorer: ((pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>) | null = null
-let _rerankerLoading: Promise<void> | null = null
-
 ipcMain.handle('reranker:score', async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
-  if (!pairs || pairs.length === 0) return []
-  if (!_rerankerScorer) {
-    if (!_rerankerLoading) {
-      _rerankerLoading = (async () => {
-        const { AutoTokenizer, AutoModelForSequenceClassification, env } = await import('@huggingface/transformers')
-        env.cacheDir = join(app.getPath('home'), '.doty', 'hf-cache')
-        env.allowRemoteModels = true
-        const MODEL_ID = 'cross-encoder/mmarco-mMiniLMv2-L12-H384-v1'
-        console.log('[reranker-ipc] loading model...')
-        mainWindow?.webContents.send('reranker:ipc-status', 'loading')
-        const [tokenizer, model] = await Promise.all([
-          AutoTokenizer.from_pretrained(MODEL_ID),
-          AutoModelForSequenceClassification.from_pretrained(MODEL_ID, { device: 'cpu', dtype: 'fp32' }),
-        ])
-        _rerankerScorer = async (p) => {
-          const inputs = (tokenizer as any)(
-            p.map((x) => x.text),
-            { text_pair: p.map((x) => x.text_pair), padding: true, truncation: true },
-          )
-          const { logits } = await (model as any)(inputs)
-          return Array.from(logits.data as Float32Array)
-        }
-        console.log('[reranker-ipc] model ready')
-        mainWindow?.webContents.send('reranker:ipc-status', 'ready')
-      })()
-    }
-    await _rerankerLoading
-  }
-  return await _rerankerScorer!(pairs)
+  return scorePairs(pairs)
 })
 
 ipcMain.handle('settings:get-recommendation-count', () => store.get('recommendationCount', 5))
@@ -907,7 +824,7 @@ ipcMain.handle('llm:get-embedding-status', () => ({
 
 ipcMain.handle('embedding:get-progress', () => {
   const musicFolder = store.get('musicFolder', '') as string
-  const total = musicFolder ? listMusicFiles(musicFolder).length : 0
+  const total = musicFolder ? getMusicFiles(musicFolder).length : 0
   return getEmbeddingStats(total)
 })
 
@@ -921,9 +838,12 @@ ipcMain.handle('settings:create-default-hotwords', () => ({ ok: true, path: '' }
 // Download state is exposed to the renderer so the app can show progress while the user keeps working.
 let sttDownload: { modelId: SttModelType; percent: number } | null = null
 let sttDownloadError: { modelId: SttModelType; error: string } | null = null
+let sttDownloadAbort: AbortController | null = null
 
 ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
-  const modelInfo = modelId ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0]) : STT_MODELS[0]
+  const modelInfo = modelId
+    ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
+    : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
@@ -937,13 +857,20 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
 
   // Download single GGUF file
   const destPath = join(MODELS_DIR, modelInfo.ggufFile)
+  const controller = new AbortController()
+  sttDownloadAbort = controller
   sttDownload = { modelId: modelInfo.id, percent: 0 }
   sttDownloadError = null
   try {
-    await downloadFile(modelInfo.url, destPath, (percent, downloadedMB, totalMB) => {
-      sttDownload = { modelId: modelInfo.id, percent }
-      mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
-    })
+    await downloadFile(
+      modelInfo.url,
+      destPath,
+      (percent, downloadedMB, totalMB) => {
+        sttDownload = { modelId: modelInfo.id, percent }
+        mainWindow?.webContents.send('model:progress', { modelId: modelInfo.id, percent, downloadedMB, totalMB })
+      },
+      { signal: controller.signal },
+    )
 
     store.set('sttModel', modelInfo.id)
     mainWindow?.webContents.send('model:status', { ready: true })
@@ -957,15 +884,25 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
     }
     return { ok: true }
   } catch (e) {
+    if (controller.signal.aborted) {
+      mainWindow?.webContents.send('model:download-cancelled', { modelId: modelInfo.id })
+      return { ok: false, reason: 'cancelled' }
+    }
     sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
     mainWindow?.webContents.send('model:download-error', sttDownloadError)
     return { ok: false, reason: sttDownloadError.error }
   } finally {
     sttDownload = null
+    sttDownloadAbort = null
   }
 })
 
 ipcMain.handle('stt:get-download-state', () => ({ downloading: sttDownload, error: sttDownloadError }))
+
+ipcMain.handle('stt:cancel-download', () => {
+  sttDownloadAbort?.abort()
+  return { ok: true }
+})
 
 ipcMain.handle('stt:skip-onboarding', () => {
   store.set('sttOnboardingSkipped', true)
@@ -975,7 +912,7 @@ ipcMain.handle('stt:skip-onboarding', () => {
 // ── IPC: STT Model Selection ─────────────────────────────────────────────────
 
 ipcMain.handle('stt:get-model', () => {
-  return store.get('sttModel', 'parakeet-unified-en') as string
+  return store.get('sttModel', DEFAULT_STT_MODEL) as string
 })
 
 ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
@@ -985,9 +922,27 @@ ipcMain.handle('stt:set-model', (_e, modelId: SttModelType) => {
   if (!modelInfo) return { ok: false, reason: 'unknown model' }
   if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
   store.set('sttModel', modelId)
+  // Keep the focused language only when the new model supports it.
+  const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
+  if (!supportsLanguage(modelInfo, language)) {
+    store.set('sttLanguage', 'auto')
+  }
   restartRecognizer()
   // Notify renderer about the switch
   mainWindow?.webContents.send('stt:model-switched', { id: modelId, label: modelInfo.label })
+  return { ok: true }
+})
+
+ipcMain.handle('stt:get-language', () => store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string)
+
+ipcMain.handle('stt:set-language', (_e, language: string) => {
+  const modelId = store.get('sttModel', DEFAULT_STT_MODEL) as SttModelType
+  const modelInfo = STT_MODELS.find((m) => m.id === modelId)
+  if (!supportsLanguage(modelInfo, language)) {
+    return { ok: false, reason: 'unsupported language' }
+  }
+  store.set('sttLanguage', language)
+  restartRecognizer()
   return { ok: true }
 })
 
@@ -1004,6 +959,7 @@ ipcMain.handle('stt:get-model-list', () => {
     size: m.size,
     streaming: m.streaming,
     languages: m.languages,
+    default: !!m.default,
     ready: m.isReady(),
   }))
 })
