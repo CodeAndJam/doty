@@ -12,6 +12,8 @@ const WORKER_PATH = join(__dirname, 'transcribe-worker.js')
 let worker: Worker | null = null
 let workerReady = false
 let streaming = false
+/** User intent: true between startStream and finalizeStream, even while the model loads. */
+let streamRequested = false
 
 let onFlushText: ((text: string, elapsedMs: number) => void) | null = null
 let onInterimText: ((text: string) => void) | null = null
@@ -92,6 +94,7 @@ export function initRecognizer(): void {
 
 /** Start a streaming session. Ensures worker is initialized and model is loaded. */
 export function startStream(): void {
+  streamRequested = true
   if (!worker) {
     // No worker yet — init first, then start stream once ready
     initRecognizer()
@@ -99,6 +102,7 @@ export function startStream(): void {
   if (!workerReady) {
     // Model still loading — wait then start
     const waitAndStart = () => {
+      if (!streamRequested) return
       if (workerReady && worker) {
         streaming = true
         worker.postMessage({ type: 'stream-start' })
@@ -122,6 +126,8 @@ export function feedChunk(samples: Float32Array): void {
 
 /** Finalize the stream — flush remaining audio and get final text */
 export function finalizeStream(): void {
+  // Cancel any start still waiting for the model, so a stop before load wins.
+  streamRequested = false
   if (!worker || !streaming) return
   streaming = false
   worker.postMessage({ type: 'finalize' })
@@ -182,6 +188,7 @@ export function restartRecognizer(): void {
       // Re-start streaming once new model is ready
       if (wasStreaming) {
         const waitForReady = () => {
+          if (!streamRequested) return
           if (workerReady) {
             startStream()
           } else {
@@ -198,6 +205,7 @@ export function restartRecognizer(): void {
 
 /** Free the worker */
 export function freeRecognizer(): void {
+  streamRequested = false
   if (worker) {
     worker.postMessage({ type: 'dispose' })
     // Don't call terminate immediately — let Metal clean up

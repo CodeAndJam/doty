@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, join, resolve, sep } from 'node:path'
 import { app } from 'electron'
 import { store } from './store'
 
@@ -44,6 +44,7 @@ export function createSession(name?: string): SessionMeta {
   fs.writeFileSync(file, header, 'utf-8')
 
   store.set('lastSession', file)
+  activeSession = file
   return { file, name: displayName, created }
 }
 
@@ -95,6 +96,24 @@ export function appendCue(file: string, elapsedMs: number, text: string): void {
   fs.appendFileSync(file, cue, 'utf-8')
 }
 
+/** End timestamp of the last cue in a session, in ms (0 for a new/empty file). */
+export function getLastCueEndMs(file: string): number {
+  try {
+    const content = fs.readFileSync(file, 'utf-8')
+    const lines = content.split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const arrow = lines[i].indexOf('-->')
+      if (arrow < 0) continue
+      const m = /(\d+):(\d+):(\d+)\.(\d+)/.exec(lines[i].slice(arrow + 3).trim())
+      if (!m) return 0
+      return Number(m[1]) * 3600000 + Number(m[2]) * 60000 + Number(m[3]) * 1000 + Number(m[4])
+    }
+  } catch {
+    /* unreadable session */
+  }
+  return 0
+}
+
 export function renameSession(file: string, newName: string): void {
   if (!fs.existsSync(file)) return
   const content = fs.readFileSync(file, 'utf-8')
@@ -121,6 +140,25 @@ export function getLastSession(): string | null {
 
 export function setLastSession(file: string): void {
   store.set('lastSession', file)
+}
+
+/** Session that new transcript cues are appended to (may differ from last viewed). */
+let activeSession: string | null = null
+
+export function setActiveSession(file: string | null): void {
+  activeSession = file
+}
+
+export function getActiveSession(): string | null {
+  if (activeSession && fs.existsSync(activeSession)) return activeSession
+  return null
+}
+
+/** True when `file` is a .vtt inside the configured sessions directory. */
+export function isSessionPath(file: string): boolean {
+  const dir = resolve(getSessionsDir())
+  const resolved = resolve(file)
+  return resolved.startsWith(dir + sep) && resolved.endsWith('.vtt')
 }
 
 export function rewriteSessionCues(file: string, cues: Array<{ start: string; end: string; text: string }>): void {

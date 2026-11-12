@@ -145,22 +145,6 @@ export default function Soundboard({
     }
   }, [queue, loopMode, playTrack, stopPlayback])
 
-  // Watch queue.currentTrack
-  const lastQueueTrackRef = useRef<string | null>(null)
-  const lastQueueIndexRef = useRef<number>(-1)
-  useEffect(() => {
-    const cur = queue.currentTrack
-    const idx = queue.currentIndex
-    if (cur && (cur !== lastQueueTrackRef.current || idx !== lastQueueIndexRef.current)) {
-      playTrack(cur, true)
-      lastQueueTrackRef.current = cur
-      lastQueueIndexRef.current = idx
-    } else if (!cur) {
-      lastQueueTrackRef.current = null
-      lastQueueIndexRef.current = -1
-    }
-  }, [queue.currentTrack, queue.currentIndex, playTrack]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // ── Data loading ─────────────────────────────────────────────────────
 
   // Fetch music metadata
@@ -288,9 +272,15 @@ export default function Soundboard({
   }
 
   function handleQueuePlay(index: number) {
-    queue.setCurrentIndex(index)
     const track = queue.tracks[index]
-    if (track) handlePlayTrack(track, true)
+    if (!track) return
+    queue.setCurrentIndex(index)
+    if (playing === track) {
+      // Same track — toggle pause/resume (matches the pause icon in the queue)
+      playTrack(track)
+    } else {
+      handlePlayTrack(track, true)
+    }
   }
 
   // ── SFX handlers ─────────────────────────────────────────────────────
@@ -364,19 +354,26 @@ export default function Soundboard({
     prevSettingsOpenRef.current = settingsOpen
   }, [settingsOpen, autopilot.reloadConfig])
 
-  // Feed confidence to autopilot when recommendations change
+  // Feed confidence to autopilot when recommendations change.
+  // Keep the callbacks in refs: they are rebuilt every render, so depending on
+  // them directly would re-fire this effect (and its state writes) forever.
+  const onRecommendationRef = useRef(autopilot.onRecommendation)
+  const onSfxRecommendationRef = useRef(autopilot.onSfxRecommendation)
+  onRecommendationRef.current = autopilot.onRecommendation
+  onSfxRecommendationRef.current = autopilot.onSfxRecommendation
+
   useEffect(() => {
     if (recommendations.length > 0 && lastConfidence > 0) {
-      autopilot.onRecommendation(recommendations[0], lastConfidence)
+      onRecommendationRef.current(recommendations[0], lastConfidence)
     }
-  }, [recommendations, lastConfidence, autopilot.onRecommendation])
+  }, [recommendations, lastConfidence])
 
   // Feed SFX recommendations to autopilot
   useEffect(() => {
     if (sfxRecommendations.length > 0) {
-      autopilot.onSfxRecommendation(sfxRecommendations)
+      onSfxRecommendationRef.current(sfxRecommendations)
     }
-  }, [sfxRecommendations, autopilot.onSfxRecommendation])
+  }, [sfxRecommendations])
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
@@ -937,6 +934,7 @@ export default function Soundboard({
 
       {browsingSfx && (
         <SfxBrowsePanel
+          sfxPlayer={sfxPlayer}
           sfxRecommendations={sfxRecommendations}
           sfxPinned={sfxPinned}
           onTogglePin={toggleSfxPin}

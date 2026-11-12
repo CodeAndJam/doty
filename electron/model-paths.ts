@@ -33,6 +33,15 @@ const MODELS_DIR = join(HOME_DIR, '.doty', 'models')
 
 export { MODELS_DIR }
 
+/** A GGUF is only usable if it is actually on disk and not a truncated download. */
+function isModelFileReady(filename: string): boolean {
+  try {
+    return fs.statSync(join(MODELS_DIR, filename)).size > 1024
+  } catch {
+    return false
+  }
+}
+
 export const STT_MODELS: SttModelInfo[] = [
   {
     id: 'parakeet-unified-en',
@@ -43,7 +52,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/parakeet-unified-en-0.6b-gguf/resolve/main/parakeet-unified-en-0.6b-Q8_0.gguf',
     streaming: true,
     languages: ['en'],
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'parakeet-unified-en-0.6b-Q8_0.gguf')),
+    isReady: () => isModelFileReady('parakeet-unified-en-0.6b-Q8_0.gguf'),
   },
   {
     id: 'nemotron-3.5-streaming',
@@ -54,7 +63,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
     streaming: true,
     languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'ru', 'zh', 'ja', 'ko'],
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf')),
+    isReady: () => isModelFileReady('nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf'),
   },
   {
     id: 'nemotron-en-streaming',
@@ -65,7 +74,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/nemotron-speech-streaming-en-0.6b-gguf/resolve/main/nemotron-speech-streaming-en-0.6b-Q8_0.gguf',
     streaming: true,
     languages: ['en'],
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'nemotron-speech-streaming-en-0.6b-Q8_0.gguf')),
+    isReady: () => isModelFileReady('nemotron-speech-streaming-en-0.6b-Q8_0.gguf'),
   },
   {
     id: 'parakeet-tdt-v3',
@@ -76,7 +85,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf',
     streaming: false,
     languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'pl', 'ro', 'sv'],
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'parakeet-tdt-0.6b-v3-Q8_0.gguf')),
+    isReady: () => isModelFileReady('parakeet-tdt-0.6b-v3-Q8_0.gguf'),
   },
   {
     id: 'voxtral-realtime',
@@ -87,7 +96,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/Voxtral-Mini-4B-Realtime-2602-gguf/resolve/main/Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf',
     streaming: true,
     languages: ['auto'],
-    isReady: () => fs.existsSync(join(MODELS_DIR, 'Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf')),
+    isReady: () => isModelFileReady('Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf'),
   },
 ]
 

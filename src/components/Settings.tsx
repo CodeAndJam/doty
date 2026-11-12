@@ -194,7 +194,11 @@ export default function Settings({
 
     navigator.mediaDevices
       .getUserMedia({ audio: true })
-      .then(() => navigator.mediaDevices.enumerateDevices())
+      .then((stream) => {
+        // Only needed to unlock device labels — release the mic immediately.
+        for (const track of stream.getTracks()) track.stop()
+        return navigator.mediaDevices.enumerateDevices()
+      })
       .then((devices) => {
         const inputs = devices
           .filter((d) => d.kind === 'audioinput')

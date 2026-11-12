@@ -201,7 +201,7 @@ export interface DotyAPI {
 
   // Model
   modelStatus: () => Promise<{ ready: boolean }>
-  downloadModel: (modelId?: string) => Promise<{ ok: boolean }>
+  downloadModel: (modelId?: string) => Promise<{ ok: boolean; reason?: string }>
   getSttModelList: () => Promise<
     Array<{
       id: string
@@ -243,6 +243,7 @@ export interface DotyAPI {
   sessionRename: (file: string, newName: string) => Promise<void>
   sessionDelete: (file: string) => Promise<{ ok: boolean }>
   sessionGetLast: () => Promise<string | null>
+  sessionSetActive: (file: string) => Promise<{ ok: boolean }>
 
   // Reprocess
   reprocessStart: (sessionFile: string, modelId: string) => Promise<{ ok: boolean; reason?: string }>

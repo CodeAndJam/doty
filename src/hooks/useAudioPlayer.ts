@@ -80,6 +80,7 @@ export function useAudioPlayer({
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const rafRef = useRef<number>(0)
   const seekingRef = useRef(false)
+  const seekRestreamRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Compose smaller hooks
   const { volume, muted, effectiveVolume, setVolume, toggleMute } = useVolume()
@@ -155,6 +156,7 @@ export function useAudioPlayer({
     return () => {
       audioRef.current?.pause()
       cancelAnimationFrame(rafRef.current)
+      if (seekRestreamRef.current) clearTimeout(seekRestreamRef.current)
     }
   }, [])
 
@@ -302,9 +304,14 @@ export function useAudioPlayer({
         a.currentTime = pct * a.duration
         setProgress(pct)
         setCurrentTime(a.currentTime)
-        // Re-stream from the new position on Discord
+        // Re-stream from the new position on Discord, debounced: dragging the
+        // seek bar fires this on every pointermove and each re-stream spawns ffmpeg.
         if (playing) {
-          window.doty.discordStreamTrack(playing, a.currentTime).catch(() => {})
+          if (seekRestreamRef.current) clearTimeout(seekRestreamRef.current)
+          seekRestreamRef.current = setTimeout(() => {
+            const current = audioRef.current
+            if (current) window.doty.discordStreamTrack(playing, current.currentTime).catch(() => {})
+          }, 250)
         }
       }
     },

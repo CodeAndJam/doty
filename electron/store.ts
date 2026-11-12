@@ -16,6 +16,9 @@ interface StoreData {
   discordAutoConnect?: boolean // auto-connect to last channel on startup
   discordLastGuildId?: string // last joined guild
   discordLastChannelId?: string // last joined channel
+  // Sessions / models
+  lastSession?: string
+  llmModel?: string
   // Autopilot (#12)
   autopilotEnabled?: boolean
   autopilotMusicEnabled?: boolean
@@ -27,6 +30,7 @@ interface StoreData {
   autopilotSfxPerEffectCooldown?: number // seconds
   autopilotSfxGlobalCooldown?: number // seconds
   autopilotSfxAutoVolume?: number // 0.0-1.0
+  autopilotRecentlyPlayedMinutes?: number // minutes
 }
 
 const storePath = join(app.getPath('userData'), 'config.json')
@@ -41,7 +45,10 @@ function read(): StoreData {
 
 function write(data: StoreData): void {
   fs.mkdirSync(join(storePath, '..'), { recursive: true })
-  fs.writeFileSync(storePath, JSON.stringify(data, null, 2))
+  // Atomic replace: a crash mid-write must not truncate the existing config.
+  const tmpPath = `${storePath}.tmp`
+  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2))
+  fs.renameSync(tmpPath, storePath)
 }
 
 export const store = {

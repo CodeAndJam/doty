@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import https from 'node:https'
-import { join } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
@@ -79,7 +79,7 @@ import {
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
-import { getEmbeddingStats, initVectorTables } from './track-vectors'
+import { getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -93,15 +93,29 @@ function downloadFile(
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
     const file = fs.createWriteStream(destPath)
     let redirectCount = 0
+    let settled = false
+    const fail = (err: Error) => {
+      if (settled) return
+      settled = true
+      file.destroy()
+      fs.unlink(destPath, () => {}) // don't leave a truncated GGUF behind
+      reject(err)
+    }
+    file.on('error', fail)
     const get = (u: string) => {
-      if (redirectCount++ > 10) return reject(new Error('Too many redirects'))
+      if (redirectCount++ > 10) return fail(new Error('Too many redirects'))
       const mod = u.startsWith('https') ? https : require('node:http')
       mod
         .get(u, (res: any) => {
           if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 303 || res.statusCode === 307) {
-            return get(res.headers.location!)
+            res.resume()
+            if (!res.headers.location) return fail(new Error(`Redirect without location from ${u}`))
+            return get(res.headers.location)
           }
-          if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${u}`))
+          if (res.statusCode !== 200) {
+            res.resume()
+            return fail(new Error(`HTTP ${res.statusCode} for ${u}`))
+          }
           const total = parseInt(res.headers['content-length'] || '0', 10)
           let downloaded = 0
           res.on('data', (chunk: Buffer) => {
@@ -115,10 +129,15 @@ function downloadFile(
               )
             }
           })
-          res.on('end', () => file.close(() => resolve()))
-          res.on('error', reject)
+          res.on('end', () => {
+            if (settled) return
+            settled = true
+            file.close(() => resolve())
+          })
+          res.on('error', fail)
+          res.on('aborted', () => fail(new Error(`Download aborted for ${u}`)))
         })
-        .on('error', reject)
+        .on('error', fail)
     }
     get(url)
   })
@@ -221,7 +240,7 @@ let sessionWavBytes = 0
 let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
 
 function getActiveSessionFile(): string | null {
-  return sessionOps.getLastSession()
+  return sessionOps.getActiveSession() ?? sessionOps.getLastSession()
 }
 
 function getSessionWavPath(): string | null {
@@ -278,6 +297,18 @@ function finalizeWavRecording(): void {
   fs.closeSync(sessionWavFd)
   sessionWavFd = null
   sessionWavBytes = 0
+}
+
+function syncEmbeddingQueue(folder: string): void {
+  if (!folder) return
+  const files = listMusicFiles(folder)
+  setEmbeddingFiles(files)
+  try {
+    pruneStaleEmbeddings(new Set(files))
+  } catch (e) {
+    console.error('[main] could not prune stale embeddings:', e)
+  }
+  startEmbeddingQueue()
 }
 
 function launchScanner(folder: string, force = false) {
@@ -360,6 +391,17 @@ function registerMusicProtocol() {
         const abs = `/${filename}`
         if (fs.existsSync(abs)) filePath = abs
       }
+
+      // Only serve files from the configured music/SFX folders — this handler
+      // is reachable from renderer code, so an absolute path must not read arbitrary files.
+      const allowedRoots = [musicFolder, store.get('sfxFolder', '') as string]
+        .filter(Boolean)
+        .map((root) => resolve(root))
+      const resolved = resolve(filePath)
+      if (!allowedRoots.some((root) => resolved === root || resolved.startsWith(root + sep))) {
+        return new Response('Forbidden', { status: 403 })
+      }
+      filePath = resolved
 
       if (!fs.existsSync(filePath)) {
         return new Response('Not found', { status: 404 })
@@ -500,8 +542,13 @@ app.whenReady().then(async () => {
   })
 
   // ── Scene Interpreter + Recommendation wiring ────────────────────────────
-  // Initialize vector tables for track embeddings
-  initVectorTables()
+  // Initialize vector tables for track embeddings. A failure here (e.g. ABI
+  // mismatch) must not abort the rest of the app wiring below.
+  try {
+    initVectorTables()
+  } catch (e) {
+    console.error('[main] vector tables unavailable, recommendations fall back to heuristics:', e)
+  }
 
   // Feed transcript to scene interpreter on each flush
   setOnFlushText((text, elapsedMs) => {
@@ -536,10 +583,14 @@ app.whenReady().then(async () => {
     // Check if this is a scene embedding (id=0) or a track embedding (id>0)
     if (id === 0) {
       // Scene embedding → run slow-path recommendation
-      const rec = slowPathRecommend(vector)
-      if (rec.files.length > 0) {
-        mainWindow?.webContents.send('music:recommendations', rec.files)
-        mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+      try {
+        const rec = slowPathRecommend(vector)
+        if (rec.files.length > 0) {
+          mainWindow?.webContents.send('music:recommendations', rec.files)
+          mainWindow?.webContents.send('recommend:confidence', rec.confidence)
+        }
+      } catch (e) {
+        console.error('[main] slow-path recommendation failed:', e)
       }
     } else {
       // Track embedding → handled by embedding queue
@@ -584,11 +635,7 @@ app.whenReady().then(async () => {
   if (musicFolder) {
     launchScanner(musicFolder)
     // Kick off embedding queue after a delay (let scanner populate files first)
-    setTimeout(() => {
-      const files = listMusicFiles(musicFolder)
-      setEmbeddingFiles(files)
-      startEmbeddingQueue()
-    }, 5000)
+    setTimeout(() => syncEmbeddingQueue(musicFolder), 5000)
   }
 
   // Forward Discord state changes to renderer
@@ -601,6 +648,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  finalizeWavRecording()
   freeRecognizer()
   stopInterpreting()
   disposeInterpreter()
@@ -638,7 +686,9 @@ ipcMain.handle('mic:open-settings', () => {
 // ── IPC: STT ──────────────────────────────────────────────────────────────────
 
 ipcMain.handle('stt:start', () => {
-  sessionStartTime = Date.now()
+  // Continue timestamps after the active session's last cue instead of restarting at 0
+  const activeFile = getActiveSessionFile()
+  sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueEndMs(activeFile) : 0)
   startWavRecording()
   startStream()
   pauseEmbedding() // STT has priority over background embedding
@@ -671,6 +721,7 @@ ipcMain.handle('stt:transcribe-chunk', async (_e, buffer: ArrayBuffer) => {
 ipcMain.handle('music:set-folder', (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
+  syncEmbeddingQueue(folderPath)
   return { ok: true }
 })
 
@@ -684,6 +735,7 @@ ipcMain.handle('music:pick-folder', async () => {
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
+    syncEmbeddingQueue(result.filePaths[0])
     return result.filePaths[0]
   }
   return null
@@ -779,16 +831,35 @@ ipcMain.handle('session:list', () => {
 })
 
 ipcMain.handle('session:load', async (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return []
   sessionOps.setLastSession(file)
   return sessionOps.loadSessionAsync(file)
 })
 
 ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
+  if (!sessionOps.isSessionPath(file)) return
   sessionOps.renameSession(file, newName)
 })
 
 ipcMain.handle('session:delete', (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return { ok: false }
+  const wasActive = getActiveSessionFile() === file
   sessionOps.deleteSession(file)
+  if (wasActive) {
+    const next = sessionOps.listSessions()[0]?.file ?? null
+    sessionOps.setLastSession(next ?? '')
+    sessionOps.setActiveSession(next)
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('session:set-active', (_e, file: string) => {
+  if (!sessionOps.isSessionPath(file)) return { ok: false }
+  sessionOps.setActiveSession(file)
+  if (sessionStartTime !== null) {
+    // Recording in progress — keep cues monotonic in the newly active session
+    sessionStartTime = Date.now() - sessionOps.getLastCueEndMs(file)
+  }
   return { ok: true }
 })
 
@@ -1178,6 +1249,7 @@ ipcMain.handle('autopilot:get-config', () => ({
   sfxPerEffectCooldownSeconds: store.get('autopilotSfxPerEffectCooldown', 30),
   sfxGlobalCooldownSeconds: store.get('autopilotSfxGlobalCooldown', 10),
   sfxAutoVolume: store.get('autopilotSfxAutoVolume', 0.7),
+  recentlyPlayedMinutes: store.get('autopilotRecentlyPlayedMinutes', 10),
 }))
 
 ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => {
@@ -1194,5 +1266,7 @@ ipcMain.handle('autopilot:set-config', (_e, config: Record<string, unknown>) => 
   if (typeof config.sfxGlobalCooldownSeconds === 'number')
     store.set('autopilotSfxGlobalCooldown', config.sfxGlobalCooldownSeconds)
   if (typeof config.sfxAutoVolume === 'number') store.set('autopilotSfxAutoVolume', config.sfxAutoVolume)
+  if (typeof config.recentlyPlayedMinutes === 'number')
+    store.set('autopilotRecentlyPlayedMinutes', config.recentlyPlayedMinutes)
   return { ok: true }
 })

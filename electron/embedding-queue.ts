@@ -70,35 +70,41 @@ async function processNext(): Promise<void> {
     return
   }
 
-  const needsWork = getTracksNeedingEmbedding(allFiles, 1)
-  if (needsWork.length === 0) {
-    // All done
-    running = false
-    reportProgress()
-    return
-  }
+  try {
+    const needsWork = getTracksNeedingEmbedding(allFiles, 1)
+    if (needsWork.length === 0) {
+      // All done
+      running = false
+      reportProgress()
+      return
+    }
 
-  const filename = needsWork[0]
-  const tags = getTags(filename)
+    const filename = needsWork[0]
+    const tags = getTags(filename)
 
-  // Tags-first: if track has tags, embed directly without LLM
-  const description = buildDescription(filename, tags)
+    // Tags-first: if track has tags, embed directly without LLM
+    const description = buildDescription(filename, tags)
 
-  // Request embedding from the LLM utilityProcess
-  const embedId = ++currentEmbedId
+    // Request embedding from the LLM utilityProcess
+    const embedId = ++currentEmbedId
 
-  // Set up one-shot callback for this embedding
-  const originalCb = pendingEmbedCallback
-  pendingEmbedCallback = (id: number, vector: number[]) => {
-    if (id !== embedId) return
-    pendingEmbedCallback = originalCb
-    const source = tags.length > 0 ? ('tags' as const) : ('llm' as const)
-    upsertTrackEmbedding(filename, description, vector, source)
-    reportProgress()
+    // Set up one-shot callback for this embedding
+    const originalCb = pendingEmbedCallback
+    pendingEmbedCallback = (id: number, vector: number[]) => {
+      if (id !== embedId) return
+      pendingEmbedCallback = originalCb
+      const source = tags.length > 0 ? ('tags' as const) : ('llm' as const)
+      upsertTrackEmbedding(filename, description, vector, source)
+      reportProgress()
+      scheduleNext()
+    }
+
+    requestEmbedding(embedId, `search_document: ${description}`)
+  } catch (e) {
+    // e.g. sqlite-vec unavailable — don't spin, but keep the queue alive for later retries
+    console.error('[embedding-queue] work failed:', e)
     scheduleNext()
   }
-
-  requestEmbedding(embedId, `search_document: ${description}`)
 }
 
 /** Build a text description for embedding (tags-first, fallback to filename) */

@@ -36,7 +36,8 @@ export default function ModelDownload({ onComplete }: Props) {
     setStarted(true)
     setError(null)
     try {
-      await window.doty.downloadModel(selected)
+      const result = await window.doty.downloadModel(selected)
+      if (!result.ok) throw new Error(result.reason ?? 'Download failed')
       onComplete()
     } catch (e) {
       setError(String(e))

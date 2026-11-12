@@ -93,50 +93,22 @@ export function useQueue(): UseQueueReturn {
 
   const next = useCallback(
     (wrap = false): string | null => {
-      let newIndex = -1
-      setCurrentIndex((ci) => {
-        if (tracks.length === 0) {
-          newIndex = -1
-          return -1
-        }
-        if (ci + 1 < tracks.length) {
-          newIndex = ci + 1
-          return ci + 1
-        }
-        if (wrap) {
-          newIndex = 0
-          return 0
-        }
-        newIndex = ci
-        return ci
-      })
+      if (tracks.length === 0) return null
+      const newIndex = currentIndex + 1 < tracks.length ? currentIndex + 1 : wrap ? 0 : currentIndex
+      setCurrentIndex(newIndex)
       return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
     },
-    [tracks],
+    [tracks, currentIndex],
   )
 
   const prev = useCallback(
     (wrap = false): string | null => {
-      let newIndex = -1
-      setCurrentIndex((ci) => {
-        if (tracks.length === 0) {
-          newIndex = -1
-          return -1
-        }
-        if (ci - 1 >= 0) {
-          newIndex = ci - 1
-          return ci - 1
-        }
-        if (wrap) {
-          newIndex = tracks.length - 1
-          return tracks.length - 1
-        }
-        newIndex = ci
-        return ci
-      })
+      if (tracks.length === 0) return null
+      const newIndex = currentIndex - 1 >= 0 ? currentIndex - 1 : wrap ? tracks.length - 1 : currentIndex
+      setCurrentIndex(newIndex)
       return newIndex >= 0 && newIndex < tracks.length ? tracks[newIndex] : null
     },
-    [tracks],
+    [tracks, currentIndex],
   )
 
   const setQueue = useCallback((newTracks: string[], startIndex = 0) => {

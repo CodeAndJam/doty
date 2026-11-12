@@ -61,6 +61,9 @@ export default function MainLayout() {
   const { start, stop, micPermission } = useRecorder(micDeviceId)
   const { recommend, modelStatus, downloadProgress, lastRanker } = useQwen()
   const recommendRef = useRef(recommend)
+  // Stable handle for the IPC effect below (a plain function is rebuilt every render)
+  const toggleRecordingRef = useRef<() => void>(() => {})
+  toggleRecordingRef.current = toggleRecording
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -102,6 +105,12 @@ export default function MainLayout() {
     }
     loadSessions()
   }, [])
+
+  // Tell the main process which session new transcript cues belong to.
+  // (session:load only records the last *viewed* session.)
+  useEffect(() => {
+    if (activeSession) window.doty.sessionSetActive(activeSession)
+  }, [activeSession])
 
   // Subscribe to reprocess events
   useEffect(() => {
@@ -274,7 +283,7 @@ export default function MainLayout() {
       // Cmd+Shift+T toggles transcription
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'T') {
         e.preventDefault()
-        toggleRecording()
+        toggleRecordingRef.current()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -292,7 +301,7 @@ export default function MainLayout() {
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation, toggleRecording])
+  }, [runRecommendation, runSfxRecommendation])
 
   function handleDmChange(text: string) {
     setDmPrompt(text)
