@@ -33,11 +33,11 @@ export default function App() {
         onComplete={() => {
           // Entering the app is the decision: never show this wall again, even if the
           // download is interrupted by a quit or network failure.
-          window.doty.skipModelOnboarding()
+          window.doty.skipModelOnboarding().catch(() => {})
           setAppState('ready')
         }}
         onSkip={() => {
-          window.doty.skipModelOnboarding()
+          window.doty.skipModelOnboarding().catch(() => {})
           setAppState('ready')
         }}
       />
