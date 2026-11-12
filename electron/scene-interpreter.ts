@@ -27,6 +27,14 @@ let sceneModelPath: string | null = null
 let embeddingModelPath: string | null = null
 let disposed = false
 let interpreting = false
+let interpretWatchdog: ReturnType<typeof setTimeout> | null = null
+
+function clearInterpretWatchdog() {
+  if (interpretWatchdog) {
+    clearTimeout(interpretWatchdog)
+    interpretWatchdog = null
+  }
+}
 let onSceneUpdate: ((scene: SceneResult) => void) | null = null
 let onEmbedding: ((id: number, vector: number[]) => void) | null = null
 let onEmbeddings: ((id: number, vectors: number[][]) => void) | null = null
@@ -74,6 +82,7 @@ function ensureChild(): UtilityProcess {
         break
       case 'scene-result':
         interpreting = false
+        clearInterpretWatchdog()
         lastScene = msg.scene
         if (onSceneUpdate) onSceneUpdate(msg.scene)
         break
@@ -88,6 +97,7 @@ function ensureChild(): UtilityProcess {
         break
       case 'error':
         interpreting = false
+        clearInterpretWatchdog()
         console.error('[scene-interpreter] LLM error:', msg.error)
         break
     }
@@ -100,6 +110,7 @@ function ensureChild(): UtilityProcess {
     sceneModelReady = false
     embeddingModelReady = false
     interpreting = false
+    clearInterpretWatchdog()
     // Respawn after an unexpected crash so scene/embedding work resumes.
     if (!disposed && (sceneModelPath || embeddingModelPath)) {
       setTimeout(() => {
@@ -144,6 +155,13 @@ export function startInterpreting(): void {
     if (!text || text.length < 50) return // not enough context yet
     interpreting = true
     child.postMessage({ type: 'interpret-scene', transcript: text })
+    // Never let one hung generation disable interpretation for the process lifetime
+    clearInterpretWatchdog()
+    interpretWatchdog = setTimeout(() => {
+      console.warn('[scene-interpreter] interpretation timed out, allowing the next pass')
+      interpreting = false
+      interpretWatchdog = null
+    }, 30_000)
   }, INTERPRET_INTERVAL_MS)
 }
 
@@ -170,6 +188,7 @@ export function requestEmbeddings(id: number, texts: string[]): void {
 /** Clean up */
 export function disposeInterpreter(): void {
   stopInterpreting()
+  clearInterpretWatchdog()
   disposed = true
   sceneModelPath = null
   embeddingModelPath = null

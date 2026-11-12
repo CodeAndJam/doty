@@ -159,13 +159,6 @@ contextBridge.exposeInMainWorld('doty', {
   pickHotwordsFile: () => ipcRenderer.invoke('settings:pick-hotwords-file'),
   createDefaultHotwords: () => ipcRenderer.invoke('settings:create-default-hotwords'),
 
-  // Qwen recommendation model status
-  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => {
-    const handler = (_e: Electron.IpcRendererEvent, s: { status: 'loading' | 'ready' }) => cb(s)
-    ipcRenderer.on('qwen:status', handler)
-    return () => ipcRenderer.removeListener('qwen:status', handler)
-  },
-
   // Scanner
   triggerScan: () => ipcRenderer.invoke('music:scan'),
   onScanProgress: (cb: (p: { done: number; total: number; current: string }) => void) => {
@@ -177,6 +170,21 @@ contextBridge.exposeInMainWorld('doty', {
     const handler = () => cb()
     ipcRenderer.on('scan:complete', handler)
     return () => ipcRenderer.removeListener('scan:complete', handler)
+  },
+  onMusicFolderChanged: (cb: (folder: string) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, folder: string) => cb(folder)
+    ipcRenderer.on('music:folder-changed', handler)
+    return () => ipcRenderer.removeListener('music:folder-changed', handler)
+  },
+  onSessionsChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sessions:changed', handler)
+    return () => ipcRenderer.removeListener('sessions:changed', handler)
+  },
+  onSfxChanged: (cb: () => void) => {
+    const handler = () => cb()
+    ipcRenderer.on('sfx:changed', handler)
+    return () => ipcRenderer.removeListener('sfx:changed', handler)
   },
 
   // Tags

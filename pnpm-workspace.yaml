@@ -1,0 +1,12 @@
+onlyBuiltDependencies:
+  - '@discordjs/opus'
+  - better-sqlite3
+  - electron
+  - esbuild
+  - ffmpeg-static
+  - koffi
+  - node-llama-cpp
+  - onnxruntime-node
+  - protobufjs
+  - sharp
+  - sodium-native

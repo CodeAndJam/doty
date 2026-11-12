@@ -277,6 +277,18 @@ export default function MainLayout() {
       setLastConfidence(confidence)
     })
 
+    // Folder/session changes coming from Settings or the main process
+    const unsubFolder = window.doty.onMusicFolderChanged((folder) => setMusicFolder(folder))
+    const unsubSessions = window.doty.onSessionsChanged(() => {
+      window.doty.sessionList().then(setSessions)
+      window.doty.sessionGetLast().then(async (last) => {
+        if (!last) return
+        setActiveSession(last)
+        const cues = await window.doty.sessionLoad(last)
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+      })
+    })
+
     // Cmd+, opens Settings (standard macOS convention)
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === ',') {
@@ -300,6 +312,8 @@ export default function MainLayout() {
       unsubScene()
       unsubRec()
       unsubRecConfidence()
+      unsubFolder()
+      unsubSessions()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
@@ -484,7 +498,11 @@ export default function MainLayout() {
                     const cues = await window.doty.sessionLoad(remaining[0].file)
                     setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
                   } else {
-                    setActiveSession(null)
+                    // Keep a recording destination: deleting the last session
+                    // must not leave the mic writing into a void.
+                    const s = await window.doty.sessionCreate()
+                    setSessions([s])
+                    setActiveSession(s.file)
                     setTranscripts([])
                   }
                 }

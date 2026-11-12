@@ -221,7 +221,6 @@ export interface DotyAPI {
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
-  onQwenStatus: (cb: (s: { status: 'loading' | 'ready' }) => void) => () => void
 
   // STT model selection
   getSttModel: () => Promise<string>
@@ -259,6 +258,9 @@ export interface DotyAPI {
   triggerScan: () => Promise<{ ok: boolean }>
   onScanProgress: (cb: (p: ScanProgress) => void) => () => void
   onScanComplete: (cb: () => void) => () => void
+  onMusicFolderChanged: (cb: (folder: string) => void) => () => void
+  onSessionsChanged: (cb: () => void) => () => void
+  onSfxChanged: (cb: () => void) => () => void
 
   // Tags
   getTags: (filename: string) => Promise<string[]>

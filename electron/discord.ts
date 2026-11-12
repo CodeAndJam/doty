@@ -628,9 +628,12 @@ export function stopSfx(): void {
   sfxQueue = []
   sfxPlaying = false
   sfxTransitioning = false
-  if (wasActive) {
+  if (!wasActive) return
+  if (currentTrack) {
     log('SFX stopped by user')
     resumeMusicAfterSfx()
+  } else {
+    player.stop(true)
   }
 }
 

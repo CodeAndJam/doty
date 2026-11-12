@@ -84,7 +84,7 @@ export default function Soundboard({
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
-  const lastAutoLogTimeRef = useRef(0)
+  const lastAutoLogEntryRef = useRef<object | null>(null)
 
   // Accumulate decision log entries from recommendation results
   useEffect(() => {
@@ -175,12 +175,15 @@ export default function Soundboard({
     return unsub
   }, [])
 
-  // Load SFX list on mount
+  // Load SFX list on mount and whenever the folder changes
   useEffect(() => {
-    window.doty
-      .getSfxList()
-      .then(setAllSfx)
-      .catch(() => setAllSfx([]))
+    const load = () =>
+      window.doty
+        .getSfxList()
+        .then(setAllSfx)
+        .catch(() => setAllSfx([]))
+    load()
+    return window.doty.onSfxChanged(load)
   }, [])
 
   // Load SFX tags on mount
@@ -378,10 +381,13 @@ export default function Soundboard({
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
-    // The source array is capped, so detect new entries by timestamp (newest first)
-    const newEntries = autopilot.decisionLog.filter((e) => e.time > lastAutoLogTimeRef.current)
+    // The source array is capped and prepend-only; use the last merged object
+    // identity so entries sharing a millisecond are not dropped.
+    const apLog = autopilot.decisionLog
+    const lastIdx = lastAutoLogEntryRef.current ? apLog.indexOf(lastAutoLogEntryRef.current as never) : -1
+    const newEntries = lastIdx === -1 ? apLog : apLog.slice(0, lastIdx)
     if (newEntries.length === 0) return
-    lastAutoLogTimeRef.current = newEntries[0].time
+    lastAutoLogEntryRef.current = apLog[0]
     const mapped: DecisionLogEntry[] = newEntries.map((e) => ({
       timestamp: e.time,
       ranker: null,

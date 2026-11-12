@@ -79,21 +79,6 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@discordjs/opus",
-      "better-sqlite3",
-      "electron",
-      "esbuild",
-      "ffmpeg-static",
-      "koffi",
-      "node-llama-cpp",
-      "onnxruntime-node",
-      "protobufjs",
-      "sharp",
-      "sodium-native"
-    ]
-  },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",
     "@discordjs/voice": "^0.19.1",

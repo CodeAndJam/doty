@@ -55,11 +55,17 @@ let cooldownUntil = 0 // timestamp when cooldown expires
 
 const COOLDOWN_MS = 60000 // 60s default cooldown between switches
 
+export interface FastTrigger {
+  mood: string
+  confidence: number
+}
+
 /**
  * Fast-path: check recent transcript for high-confidence mood transitions.
- * Returns a recommendation only if a TRANSITION is detected (mood changed).
+ * Returns the detected mood so the caller can request a matching embedding now,
+ * instead of waiting for the next slow-path interpretation.
  */
-export function fastPathCheck(recentText: string): Recommendation | null {
+export function fastPathCheck(recentText: string): FastTrigger | null {
   if (!recentText || recentText.length < 10) return null
 
   const lower = recentText.toLowerCase()
@@ -94,9 +100,8 @@ export function fastPathCheck(recentText: string): Recommendation | null {
 
   lastFastMood = bestTrigger.mood
 
-  // Search for tracks matching this mood — use embedded search if available
-  // For fast-path, we do a quick embedding search with the mood as query
-  return null // ponytail: fast-path vector search done async via requestFastSearch below
+  // The caller embeds this mood and runs the normal vector search
+  return { mood: bestTrigger.mood, confidence }
 }
 
 /**

@@ -260,6 +260,8 @@ function listMusicFiles(dir: string, root?: string): string[] {
 
 let mainWindow: BrowserWindow | null = null
 let sessionStartTime: number | null = null
+/** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
+let recordingActive = false
 let sessionWavFd: number | null = null
 let sessionWavBytes = 0
 let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
@@ -347,6 +349,14 @@ function finalizeWavRecording(): void {
 
 function syncEmbeddingQueue(folder: string): void {
   if (!folder) return
+  try {
+    // Don't treat an unreadable/unmounted folder as an empty library — that
+    // would prune every embedding.
+    fs.readdirSync(folder)
+  } catch {
+    console.warn('[main] music folder unavailable, keeping existing embeddings')
+    return
+  }
   const files = listMusicFiles(folder)
   setEmbeddingFiles(files)
   try {
@@ -365,6 +375,8 @@ function launchScanner(folder: string, force = false) {
     },
     () => {
       mainWindow?.webContents.send('scan:complete')
+      // Pick up tracks added/removed by the scan (and by the file watcher)
+      syncEmbeddingQueue(folder)
     },
     force,
   )
@@ -402,6 +414,11 @@ function createWindow() {
   } else {
     mainWindow.loadURL('app://doty/')
   }
+
+  // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
 }
 
 function registerMusicProtocol() {
@@ -477,11 +494,13 @@ app.whenReady().then(async () => {
     }
     // Feed to scene interpreter
     feedTranscript(text)
-    // Fast-path check for instant triggers
-    const fastRec = fastPathCheck(text)
-    if (fastRec && fastRec.files.length > 0) {
-      mainWindow?.webContents.send('music:recommendations', fastRec.files)
-      startCooldown()
+    // Fast-path: a detected mood transition triggers an embedding/search now
+    if (isEmbeddingModelReady()) {
+      const trigger = fastPathCheck(text)
+      if (trigger) {
+        requestSceneEmbedding(trigger.mood)
+        startCooldown()
+      }
     }
   })
 
@@ -605,6 +624,7 @@ ipcMain.handle('stt:start', () => {
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
+  recordingActive = true
   startWavRecording()
   startStream()
   pauseEmbedding() // STT has priority over background embedding
@@ -613,6 +633,7 @@ ipcMain.handle('stt:start', () => {
 ipcMain.handle('stt:stop', () => {
   finalizeStream()
   finalizeWavRecording()
+  recordingActive = false
   resumeEmbedding() // resume background work
   return { ok: true }
 })
@@ -638,6 +659,7 @@ ipcMain.handle('music:set-folder', (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
   syncEmbeddingQueue(folderPath)
+  mainWindow?.webContents.send('music:folder-changed', folderPath)
   return { ok: true }
 })
 
@@ -652,6 +674,7 @@ ipcMain.handle('music:pick-folder', async () => {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
     syncEmbeddingQueue(result.filePaths[0])
+    mainWindow?.webContents.send('music:folder-changed', result.filePaths[0])
     return result.filePaths[0]
   }
   return null
@@ -726,8 +749,20 @@ ipcMain.handle('transcript:pick-folder', async () => {
     title: 'Select Transcript Folder',
   })
   if (!result.canceled && result.filePaths[0]) {
-    store.set('transcriptFolder', result.filePaths[0])
-    return result.filePaths[0]
+    const folder = result.filePaths[0]
+    const previous = store.get('transcriptFolder', '') as string
+    if (folder !== previous) {
+      // Old session paths are outside the new vault — start a fresh session there
+      finalizeWavRecording()
+      store.set('transcriptFolder', folder)
+      sessionOps.createSession()
+      if (recordingActive) {
+        sessionStartTime = Date.now()
+        startWavRecording()
+      }
+      mainWindow?.webContents.send('sessions:changed')
+    }
+    return folder
   }
   return null
 })
@@ -750,7 +785,7 @@ ipcMain.handle('transcript:save', (_e, text: string) => {
 
 ipcMain.handle('session:create', (_e, name?: string) => {
   const session = sessionOps.createSession(name)
-  if (sessionStartTime !== null) {
+  if (recordingActive) {
     // Recording in progress — start a fresh take in the new session
     finalizeWavRecording()
     sessionStartTime = Date.now()
@@ -783,7 +818,7 @@ ipcMain.handle('session:delete', (_e, file: string) => {
     const next = sessionOps.listSessions()[0]?.file ?? null
     sessionOps.setLastSession(next ?? '')
     sessionOps.setActiveSession(next)
-    if (sessionStartTime !== null) {
+    if (recordingActive) {
       // Still recording — continue the take in the next session if there is one
       sessionStartTime = Date.now() - (next ? sessionOps.getLastCueStartMs(next) : 0)
       startWavRecording()
@@ -795,7 +830,7 @@ ipcMain.handle('session:delete', (_e, file: string) => {
 ipcMain.handle('session:set-active', (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   sessionOps.setActiveSession(file)
-  if (sessionStartTime !== null) {
+  if (recordingActive) {
     // Recording in progress — keep cues monotonic and route audio to the new session
     finalizeWavRecording()
     sessionStartTime = Date.now() - sessionOps.getLastCueStartMs(file)
@@ -1170,6 +1205,7 @@ ipcMain.handle('sfx:pick-folder', async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('sfxFolder', result.filePaths[0])
+    mainWindow?.webContents.send('sfx:changed')
     return result.filePaths[0]
   }
   return null
@@ -1177,6 +1213,7 @@ ipcMain.handle('sfx:pick-folder', async () => {
 
 ipcMain.handle('sfx:set-folder', (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
+  mainWindow?.webContents.send('sfx:changed')
   return { ok: true }
 })
 

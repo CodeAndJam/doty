@@ -96,7 +96,7 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
   // slash consumed by the music://play/ prefix). Try the relative path first;
   // if it doesn't exist, retry as an absolute path with "/" prepended.
   let filePath = filename.startsWith('/') ? filename : join(musicFolder, filename)
-  if (!fs.existsSync(filePath) && !filename.startsWith('/') && musicFolder) {
+  if (!fs.existsSync(filePath) && !filename.startsWith('/')) {
     const abs = `/${filename}`
     if (fs.existsSync(abs)) filePath = abs
   }
