@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/CodeAndJam/doty/compare/v3.0.0...v3.0.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **discord:** stop timing out healthy gateway handshakes ([#102](https://github.com/CodeAndJam/doty/issues/102)) ([70bd785](https://github.com/CodeAndJam/doty/commit/70bd785a531ed201d5b8531047c19fd8b9a00c24))
+
 ## [3.0.0](https://github.com/CodeAndJam/doty/compare/v2.5.0...v3.0.0) (2026-07-21)
 
 
