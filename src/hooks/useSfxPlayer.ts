@@ -86,8 +86,9 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
 
       const id = `sfx-${++channelCounter}`
       const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
-      const vol = loadSfxVolume(sfxId) ?? masterRef.current
-      audio.volume = vol
+      // channel.volume is the per-effect gain; the master volume is applied on top
+      const vol = loadSfxVolume(sfxId) ?? 1
+      audio.volume = vol * masterRef.current
       audio.loop = loop
 
       audio.onended = () => {
@@ -162,7 +163,7 @@ export function useSfxPlayer(): UseSfxPlayerReturn {
   }, [])
 
   const getSfxVolume = useCallback(
-    (sfxId: string): number => sfxVolumes[sfxId] ?? loadSfxVolume(sfxId) ?? masterRef.current,
+    (sfxId: string): number => sfxVolumes[sfxId] ?? loadSfxVolume(sfxId) ?? 1,
     [sfxVolumes],
   )
 

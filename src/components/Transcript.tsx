@@ -89,14 +89,15 @@ export default function Transcript({
     return () => clearInterval(id)
   }, [sessionStartTime, recording])
 
-  // Auto-scroll: only if pinned to bottom
+  // Auto-scroll: only if pinned to bottom. Depend on the content too, otherwise
+  // new cues arrive off-screen and the "new text" pill never appears.
   useEffect(() => {
     if (pinnedToBottom) {
       bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
     } else {
       setShowNewTextPill(true)
     }
-  }, [pinnedToBottom])
+  }, [pinnedToBottom, segments.length, interimText])
 
   // Detect scroll position to manage pinned state
   const handleScroll = useCallback(() => {

@@ -73,11 +73,15 @@ contextBridge.exposeInMainWorld('doty', {
   setMusicFolder: (path: string) => ipcRenderer.invoke('music:set-folder', path),
   listMusic: () => ipcRenderer.invoke('music:list'),
   getAllMetadata: () => ipcRenderer.invoke('music:get-all-metadata'),
-  recommendManual: (prompt: string) => ipcRenderer.invoke('music:recommend-manual', prompt),
   onRecommendations: (cb: (files: string[]) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, files: string[]) => cb(files)
     ipcRenderer.on('music:recommendations', handler)
     return () => ipcRenderer.removeListener('music:recommendations', handler)
+  },
+  onRecommendationConfidence: (cb: (confidence: number) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, confidence: number) => cb(confidence)
+    ipcRenderer.on('recommend:confidence', handler)
+    return () => ipcRenderer.removeListener('recommend:confidence', handler)
   },
 
   // Model
@@ -110,17 +114,6 @@ contextBridge.exposeInMainWorld('doty', {
   getSttModel: () => ipcRenderer.invoke('stt:get-model'),
   setSttModel: (model: string) => ipcRenderer.invoke('stt:set-model', model),
   getSttModelStatus: () => ipcRenderer.invoke('stt:get-model-status'),
-  downloadWhisper: (model: string) => ipcRenderer.invoke('stt:download-whisper', model),
-  onSttDownloadProgress: (
-    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
-  ) => {
-    const handler = (
-      _e: Electron.IpcRendererEvent,
-      p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean },
-    ) => cb(p)
-    ipcRenderer.on('stt:download-progress', handler)
-    return () => ipcRenderer.removeListener('stt:download-progress', handler)
-  },
 
   // Transcripts
   getTranscriptFolder: () => ipcRenderer.invoke('transcript:get-folder'),

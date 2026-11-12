@@ -196,8 +196,8 @@ export interface DotyAPI {
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
   getAllMetadata: () => Promise<Record<string, TrackMeta>>
-  recommendManual: (prompt: string) => Promise<{ ok: boolean }>
   onRecommendations: (cb: (files: string[]) => void) => () => void
+  onRecommendationConfidence: (cb: (confidence: number) => void) => () => void
 
   // Model
   modelStatus: () => Promise<{ ready: boolean }>
@@ -226,10 +226,6 @@ export interface DotyAPI {
   getSttModel: () => Promise<string>
   setSttModel: (model: string) => Promise<{ ok: boolean }>
   getSttModelStatus: () => Promise<Record<string, boolean>>
-  downloadWhisper: (model: string) => Promise<{ ok: boolean; alreadyDownloaded?: boolean }>
-  onSttDownloadProgress: (
-    cb: (p: { model: string; percent: number; downloadedMB?: number; totalMB?: number; done?: boolean }) => void,
-  ) => () => void
 
   // Transcripts
   getTranscriptFolder: () => Promise<string>

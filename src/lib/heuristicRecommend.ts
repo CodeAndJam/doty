@@ -400,8 +400,12 @@ function defaultRecommendations(files: string[], playFrequencies: Record<string,
   // If we don't have enough history, pad with random tracks
   if (results.length < count) {
     const remaining = files.filter((f) => !results.includes(f))
-    // Deterministic shuffle using simple seed from file count
-    const shuffled = remaining.sort(() => 0.5 - seededRandom(remaining.length))
+    // Fisher-Yates with the session seed (a sort comparator cannot shuffle correctly)
+    const shuffled = [...remaining]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(seededRandom(i) * (i + 1))
+      ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
     results.push(...shuffled.slice(0, count - results.length))
   }
 

@@ -79,7 +79,7 @@ import {
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
-import { getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
+import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ── Download helper ───────────────────────────────────────────────────────────
@@ -91,14 +91,17 @@ function downloadFile(
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(join(destPath, '..'), { recursive: true })
-    const file = fs.createWriteStream(destPath)
+    // Download to a .part file and rename on success: an interrupted download
+    // must never look like a usable model.
+    const partPath = `${destPath}.part`
+    const file = fs.createWriteStream(partPath)
     let redirectCount = 0
     let settled = false
     const fail = (err: Error) => {
       if (settled) return
       settled = true
       file.destroy()
-      fs.unlink(destPath, () => {}) // don't leave a truncated GGUF behind
+      fs.unlink(partPath, () => {})
       reject(err)
     }
     file.on('error', fail)
@@ -131,8 +134,19 @@ function downloadFile(
           })
           res.on('end', () => {
             if (settled) return
+            if (total > 0 && downloaded !== total) {
+              return fail(new Error(`Incomplete download: ${downloaded}/${total} bytes`))
+            }
             settled = true
-            file.close(() => resolve())
+            file.close((err) => {
+              if (err) return reject(err)
+              try {
+                fs.renameSync(partPath, destPath)
+                resolve()
+              } catch (e) {
+                reject(e as Error)
+              }
+            })
           })
           res.on('error', fail)
           res.on('aborted', () => fail(new Error(`Download aborted for ${u}`)))
@@ -215,6 +229,15 @@ protocol.registerSchemesAsPrivileged([
 
 const AUDIO_RE = /\.(mp3|flac|wav|m4a|ogg|aac)$/i
 
+/** True when the path is inside the configured music or SFX folder. */
+function isAllowedMediaPath(filePath: string): boolean {
+  const roots = [store.get('musicFolder', ''), store.get('sfxFolder', '')]
+    .filter(Boolean)
+    .map((root) => resolve(root as string))
+  const resolved = resolve(filePath)
+  return roots.some((root) => resolved === root || resolved.startsWith(root + sep))
+}
+
 function listMusicFiles(dir: string, root?: string): string[] {
   const base = root ?? dir
   const results: string[] = []
@@ -252,24 +275,39 @@ function getSessionWavPath(): string | null {
 function startWavRecording(): void {
   const wavPath = getSessionWavPath()
   if (!wavPath) return
-  // Write a placeholder 44-byte WAV header (updated on stop)
-  const header = Buffer.alloc(44)
-  header.write('RIFF', 0)
-  header.writeUInt32LE(0, 4) // placeholder file size
-  header.write('WAVE', 8)
-  header.write('fmt ', 12)
-  header.writeUInt32LE(16, 16) // PCM format chunk size
-  header.writeUInt16LE(1, 20) // PCM format
-  header.writeUInt16LE(1, 22) // mono
-  header.writeUInt32LE(16000, 24) // sample rate
-  header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
-  header.writeUInt16LE(2, 32) // block align
-  header.writeUInt16LE(16, 34) // bits per sample
-  header.write('data', 36)
-  header.writeUInt32LE(0, 40) // placeholder data size
-  fs.writeFileSync(wavPath, header)
+  // Close any previous take before reopening (record/stop in the same session appends)
+  finalizeWavRecording()
+  let existingBytes = 0
+  try {
+    const stat = fs.statSync(wavPath)
+    const fd = fs.openSync(wavPath, 'r')
+    const magic = Buffer.alloc(4)
+    fs.readSync(fd, magic, 0, 4, 0)
+    fs.closeSync(fd)
+    if (stat.size >= 44 && magic.toString() === 'RIFF') existingBytes = stat.size - 44
+  } catch {
+    /* new file */
+  }
+  if (existingBytes === 0) {
+    // Write a placeholder 44-byte WAV header (updated on stop)
+    const header = Buffer.alloc(44)
+    header.write('RIFF', 0)
+    header.writeUInt32LE(0, 4) // placeholder file size
+    header.write('WAVE', 8)
+    header.write('fmt ', 12)
+    header.writeUInt32LE(16, 16) // PCM format chunk size
+    header.writeUInt16LE(1, 20) // PCM format
+    header.writeUInt16LE(1, 22) // mono
+    header.writeUInt32LE(16000, 24) // sample rate
+    header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
+    header.writeUInt16LE(2, 32) // block align
+    header.writeUInt16LE(16, 34) // bits per sample
+    header.write('data', 36)
+    header.writeUInt32LE(0, 40) // placeholder data size
+    fs.writeFileSync(wavPath, header)
+  }
   sessionWavFd = fs.openSync(wavPath, 'r+')
-  sessionWavBytes = 0
+  sessionWavBytes = existingBytes
   // Update WAV header every 30s for crash resilience
   wavHeaderInterval = setInterval(() => {
     if (sessionWavFd !== null) updateWavHeader(sessionWavFd, sessionWavBytes)
@@ -282,7 +320,9 @@ function appendWavChunk(samples: Float32Array): void {
   for (let i = 0; i < samples.length; i++) {
     int16.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
   }
-  fs.appendFileSync(sessionWavFd, int16)
+  // Write at an explicit offset: appendFileSync on an fd starts at position 0 and
+  // would overwrite the 44-byte WAV header.
+  fs.writeSync(sessionWavFd, int16, 0, int16.length, 44 + sessionWavBytes)
   sessionWavBytes += int16.length
 }
 
@@ -394,11 +434,8 @@ function registerMusicProtocol() {
 
       // Only serve files from the configured music/SFX folders — this handler
       // is reachable from renderer code, so an absolute path must not read arbitrary files.
-      const allowedRoots = [musicFolder, store.get('sfxFolder', '') as string]
-        .filter(Boolean)
-        .map((root) => resolve(root))
       const resolved = resolve(filePath)
-      if (!allowedRoots.some((root) => resolved === root || resolved.startsWith(root + sep))) {
+      if (!isAllowedMediaPath(resolved)) {
         return new Response('Forbidden', { status: 403 })
       }
       filePath = resolved
@@ -768,6 +805,16 @@ ipcMain.handle('tags:get', (_e, filename: string) => getTags(filename))
 
 ipcMain.handle('tags:set', (_e, filename: string, tags: string[]) => {
   setTags(filename, tags)
+  // Description feeds the embedding — regenerate it with the new tags.
+  const musicFolder = store.get('musicFolder', '') as string
+  if (musicFolder) {
+    try {
+      deleteTrackEmbedding(filename)
+      syncEmbeddingQueue(musicFolder)
+    } catch (e) {
+      console.error('[main] could not refresh embedding after tag change:', e)
+    }
+  }
   return { ok: true }
 })
 
@@ -844,6 +891,7 @@ ipcMain.handle('session:rename', (_e, file: string, newName: string) => {
 ipcMain.handle('session:delete', (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   const wasActive = getActiveSessionFile() === file
+  if (wasActive && sessionWavFd !== null) finalizeWavRecording()
   sessionOps.deleteSession(file)
   if (wasActive) {
     const next = sessionOps.listSessions()[0]?.file ?? null
@@ -1121,11 +1169,16 @@ ipcMain.handle('discord:leave-channel', () => {
 })
 
 ipcMain.handle('discord:stream-track', (_e, filename: string, seekSeconds?: number) => {
+  const musicFolder = store.get('musicFolder', '') as string
+  if (!musicFolder) return { ok: false }
+  const resolved = filename.startsWith('/') ? filename : join(musicFolder, filename)
+  if (!isAllowedMediaPath(resolved)) return { ok: false }
   streamTrack(filename, seekSeconds ?? 0)
   return { ok: true }
 })
 
 ipcMain.handle('discord:stream-sfx', (_e, absolutePath: string, volume?: number) => {
+  if (!isAllowedMediaPath(absolutePath)) return { ok: false }
   streamSfx(absolutePath, volume)
   return { ok: true }
 })

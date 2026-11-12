@@ -269,9 +269,12 @@ export default function MainLayout() {
       setCurrentScene(scene)
     })
 
-    // Listen for SFX recommendations from the backend (fallback)
-    const unsubSfxRec = window.doty.onSfxRecommendations((ids) => {
-      setSfxRecommendations(ids)
+    // Scene-interpreter pipeline (main process) — fast path + vector search
+    const unsubRec = window.doty.onRecommendations((files) => {
+      setRecommendations(files)
+    })
+    const unsubRecConfidence = window.doty.onRecommendationConfidence((confidence) => {
+      setLastConfidence(confidence)
     })
 
     // Cmd+, opens Settings (standard macOS convention)
@@ -295,7 +298,8 @@ export default function MainLayout() {
       unsubModelSwitch()
       unsubParagraphBreak()
       unsubScene()
-      unsubSfxRec()
+      unsubRec()
+      unsubRecConfidence()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
@@ -334,8 +338,18 @@ export default function MainLayout() {
       setRecording(false)
       setSessionStartTime(null)
     } else {
-      await window.doty.sttStart()
-      await start()
+      // Start the mic first: sttStart() opens the WAV file and pauses embeddings,
+      // so a mic failure must not leave main in a streaming state.
+      try {
+        const started = await start()
+        if (!started) return
+        await window.doty.sttStart()
+      } catch (e) {
+        console.error('[main] failed to start recording:', e)
+        stop()
+        await window.doty.sttStop()
+        return
+      }
       setRecording(true)
       setSessionStartTime(Date.now())
     }

@@ -167,6 +167,12 @@ export function useAudioPlayer({
         return
       }
 
+      // A pending Discord re-stream belongs to the previous action
+      if (seekRestreamRef.current) {
+        clearTimeout(seekRestreamRef.current)
+        seekRestreamRef.current = null
+      }
+
       // Toggle pause/resume if same track (unless forced restart, e.g. from queue wrap)
       if (!forceRestart && playing === filename && audioRef.current) {
         if (isAudioPlaying) {
@@ -285,6 +291,10 @@ export function useAudioPlayer({
   )
 
   const stopPlayback = useCallback(() => {
+    if (seekRestreamRef.current) {
+      clearTimeout(seekRestreamRef.current)
+      seekRestreamRef.current = null
+    }
     if (audioRef.current) {
       audioRef.current.pause()
       cancelAnimationFrame(rafRef.current)

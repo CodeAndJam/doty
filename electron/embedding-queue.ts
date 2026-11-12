@@ -17,6 +17,7 @@ let onProgress: ((stats: { embedded: number; total: number; percent: number }) =
 let pendingEmbedCallback: ((id: number, vector: number[]) => void) | null = null
 let currentEmbedId = 0
 let timer: ReturnType<typeof setTimeout> | null = null
+let embedTimeout: ReturnType<typeof setTimeout> | null = null
 
 export function setEmbeddingFiles(files: string[]): void {
   allFiles = files
@@ -54,6 +55,11 @@ export function stopEmbeddingQueue(): void {
     clearTimeout(timer)
     timer = null
   }
+  if (embedTimeout) {
+    clearTimeout(embedTimeout)
+    embedTimeout = null
+  }
+  pendingEmbedCallback = null
 }
 
 function scheduleNext(): void {
@@ -92,6 +98,10 @@ async function processNext(): Promise<void> {
     const originalCb = pendingEmbedCallback
     pendingEmbedCallback = (id: number, vector: number[]) => {
       if (id !== embedId) return
+      if (embedTimeout) {
+        clearTimeout(embedTimeout)
+        embedTimeout = null
+      }
       pendingEmbedCallback = originalCb
       const source = tags.length > 0 ? ('tags' as const) : ('llm' as const)
       upsertTrackEmbedding(filename, description, vector, source)
@@ -99,11 +109,20 @@ async function processNext(): Promise<void> {
       scheduleNext()
     }
 
+    // A lost embedding reply must not stall the queue forever.
+    if (embedTimeout) clearTimeout(embedTimeout)
+    embedTimeout = setTimeout(() => {
+      embedTimeout = null
+      pendingEmbedCallback = originalCb
+      console.warn('[embedding-queue] embedding timed out for', filename)
+      scheduleNext()
+    }, 15_000)
+
     requestEmbedding(embedId, `search_document: ${description}`)
   } catch (e) {
-    // e.g. sqlite-vec unavailable — don't spin, but keep the queue alive for later retries
-    console.error('[embedding-queue] work failed:', e)
-    scheduleNext()
+    // e.g. sqlite-vec unavailable — stop instead of retrying at 2 Hz
+    console.error('[embedding-queue] work failed, stopping queue:', e)
+    running = false
   }
 }
 

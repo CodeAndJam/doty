@@ -23,6 +23,9 @@ let embeddingModelReady = false
 let interpreterTimer: ReturnType<typeof setInterval> | null = null
 let transcriptBuffer = ''
 let lastScene: SceneResult | null = null
+let sceneModelPath: string | null = null
+let embeddingModelPath: string | null = null
+let disposed = false
 let onSceneUpdate: ((scene: SceneResult) => void) | null = null
 let onEmbedding: ((id: number, vector: number[]) => void) | null = null
 let onEmbeddings: ((id: number, vectors: number[][]) => void) | null = null
@@ -55,9 +58,10 @@ function ensureChild(): UtilityProcess {
 
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { utilityProcess } = require('electron')
-  child = utilityProcess.fork(LLM_CHILD_PATH, [], { serviceName: 'doty-llm' })
+  const proc = utilityProcess.fork(LLM_CHILD_PATH, [], { serviceName: 'doty-llm' })
+  child = proc
 
-  child!.on('message', (msg: any) => {
+  proc.on('message', (msg: any) => {
     switch (msg.type) {
       case 'scene-model-ready':
         sceneModelReady = true
@@ -86,11 +90,22 @@ function ensureChild(): UtilityProcess {
     }
   })
 
-  child!.on('exit', (code: number) => {
+  proc.on('exit', (code: number) => {
+    if (child !== proc) return // replaced/disposed already
     console.log(`[scene-interpreter] LLM process exited with code ${code}`)
     child = null
     sceneModelReady = false
     embeddingModelReady = false
+    // Respawn after an unexpected crash so scene/embedding work resumes.
+    if (!disposed && (sceneModelPath || embeddingModelPath)) {
+      setTimeout(() => {
+        if (disposed || child) return
+        const respawned = ensureChild()
+        if (sceneModelPath) respawned.postMessage({ type: 'load-scene-model', modelPath: sceneModelPath })
+        if (embeddingModelPath)
+          respawned.postMessage({ type: 'load-embedding-model', modelPath: embeddingModelPath })
+      }, 2000)
+    }
   })
 
   return child!
@@ -98,12 +113,16 @@ function ensureChild(): UtilityProcess {
 
 /** Load the scene interpreter model (GGUF path) */
 export function loadSceneModel(modelPath: string): void {
+  sceneModelPath = modelPath
+  disposed = false
   const proc = ensureChild()
   proc.postMessage({ type: 'load-scene-model', modelPath })
 }
 
 /** Load the embedding model (GGUF path) */
 export function loadEmbeddingModel(modelPath: string): void {
+  embeddingModelPath = modelPath
+  disposed = false
   const proc = ensureChild()
   proc.postMessage({ type: 'load-embedding-model', modelPath })
 }
@@ -147,6 +166,9 @@ export function requestEmbeddings(id: number, texts: string[]): void {
 /** Clean up */
 export function disposeInterpreter(): void {
   stopInterpreting()
+  disposed = true
+  sceneModelPath = null
+  embeddingModelPath = null
   if (child) {
     child.postMessage({ type: 'dispose' })
     setTimeout(() => {

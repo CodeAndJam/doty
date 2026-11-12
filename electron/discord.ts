@@ -215,6 +215,13 @@ export async function connect(token?: string): Promise<void> {
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates],
   })
 
+  // Persistent listener: after the one-shot connect listener is consumed, a
+  // later 'error' emit would otherwise throw "Unhandled error event".
+  client.on('error', (err) => {
+    console.error('[discord] Client error:', err.message)
+    setState({ status: 'error', error: err.message })
+  })
+
   // Load persisted volume
   discordVolume = (store.get('discordVolume', 1.0) as number) ?? 1.0
 

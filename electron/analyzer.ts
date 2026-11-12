@@ -30,13 +30,17 @@ const WORKER_PATH = join(__dirname, 'analyze-worker.js')
 export function analyzeFile(filePath: string): Promise<TrackMetadata> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(WORKER_PATH, { workerData: { filePath } })
+    let settled = false
+    const finish = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      fn()
+    }
     worker.once('message', (msg) => {
-      if (msg.error) reject(new Error(msg.error))
-      else resolve(msg as TrackMetadata)
+      finish(() => (msg.error ? reject(new Error(msg.error)) : resolve(msg as TrackMetadata)))
     })
-    worker.once('error', reject)
-    worker.once('exit', (code) => {
-      if (code !== 0) reject(new Error(`analyze-worker exited with code ${code}`))
-    })
+    worker.once('error', (err) => finish(() => reject(err)))
+    // Any exit before a message (including code 0) must settle, otherwise the scan hangs.
+    worker.once('exit', (code) => finish(() => reject(new Error(`analyze-worker exited with code ${code}`))))
   })
 }

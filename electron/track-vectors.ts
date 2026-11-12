@@ -81,6 +81,14 @@ export function upsertTrackEmbedding(
   }
 }
 
+/** Remove a single track embedding (e.g. its tags changed and the description is stale) */
+export function deleteTrackEmbedding(filename: string): void {
+  const db = getDb()
+  const rowid = getRowId(filename)
+  if (rowid !== null) db.prepare('DELETE FROM track_vec WHERE rowid = ?').run(rowid)
+  db.prepare('DELETE FROM track_embedding_meta WHERE filename = ?').run(filename)
+}
+
 /** Check if a track already has an embedding */
 export function hasEmbedding(filename: string): boolean {
   const db = getDb()
