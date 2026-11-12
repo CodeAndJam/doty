@@ -9,10 +9,10 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 ## Features
 
 ### Real-time speech-to-text
-Doty transcribes your game table continuously using Parakeet TDT v3 (via sherpa-onnx). It runs fully offline with Silero VAD for voice activity detection and GTCRN for speech denoising.
+Doty transcribes your game table continuously using a local GGUF speech model (Parakeet, Nemotron, or Voxtral, selectable in Settings) via transcribe-cpp. It runs fully offline.
 
 ### AI music recommendations
-As the conversation flows, Doty uses a cross-encoder model (ms-marco-MiniLM-L-6-v2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
+As the conversation flows, Doty uses a multilingual cross-encoder (mmarco-mMiniLMv2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
 
 ### DM scene prompt
 Type a scene description like "dark dungeon", "tavern celebration", or "dragon fight" into the prompt bar and Doty immediately re-ranks your library to match. The DM prompt takes priority over the transcript, so you can steer the mood at any time.
@@ -49,10 +49,10 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 
 ### First launch
 
-1. Open Doty. It will prompt you to download the **Parakeet TDT v3** ASR model (~640 MB). This is saved to `~/.doty/models/` and only happens once.
+1. Open Doty. It will prompt you to download an ASR model. Models are saved to `~/.doty/models/` and downloaded once.
 2. Open Settings (gear icon or `Cmd+,`) and set your **Music folder** — point it at your local music library (mp3, flac, wav, m4a, ogg, aac supported).
 3. Doty will scan and analyse your tracks. This takes a few minutes on first run depending on library size.
-4. The **MiniLM-L-6-v2** recommendation model (~80 MB) downloads automatically on the first recommendation and is cached to `~/.doty/hf-cache/`.
+4. The recommendation reranker downloads automatically on first use and is cached to `~/.doty/hf-cache/`.
 
 ## User guide
 
@@ -147,7 +147,7 @@ pnpm run test:coverage
 
 ### Native addons
 
-`sherpa-onnx-node` and `better-sqlite3` are native C++ addons rebuilt against Electron's Node.js version automatically via the `postinstall` script. If you see a `NODE_MODULE_VERSION` mismatch error:
+`transcribe-cpp` and `better-sqlite3` contain native code; `better-sqlite3` is rebuilt against Electron's Node.js version automatically via the `postinstall` script. If you see a `NODE_MODULE_VERSION` mismatch error:
 
 ```bash
 pnpm run rebuild
@@ -157,8 +157,8 @@ pnpm run rebuild
 
 | Model | Size | Location | Purpose |
 |---|---|---|---|
-| Parakeet TDT v3 (ONNX, int8) | ~640 MB | `~/.doty/models/` | Speech-to-text |
-| ms-marco-MiniLM-L-6-v2 (ONNX) | ~80 MB | `~/.doty/hf-cache/` | Track recommendation reranking |
+| Selected STT GGUF (see Settings) | ~640 MB–4.7 GB | `~/.doty/models/` | Speech-to-text |
+| mmarco-mMiniLMv2-L12-H384-v1 (ONNX) | downloaded on first use | `~/.doty/hf-cache/` | Track recommendation reranking |
 
 These are downloaded on first use and never committed to the repository.
 
@@ -168,7 +168,7 @@ These are downloaded on first use and never committed to the repository.
 electron/           Electron main process
   main.ts           App entry, IPC handlers, window management
   asr.ts            Speech-to-text orchestration
-  asr-worker.ts     STT worker (sherpa-onnx, VAD, denoiser)
+  transcribe-worker.ts  STT worker (transcribe-cpp streaming)
   discord.ts        Discord bot client (connect, voice, streaming)
   discord-audio.ts  Audio transcoding pipeline (ffmpeg -> Opus)
   database.ts       SQLite database for track metadata and tags
@@ -204,15 +204,12 @@ src/                React renderer
 |---|---|
 | UI | React 18 + Tailwind CSS (Electron renderer) |
 | Build | electron-vite 5 + Vite 7 |
-| STT | sherpa-onnx-node (Parakeet TDT v3 int8) |
-| VAD | Silero VAD (via sherpa-onnx) |
-| Denoiser | GTCRN (via sherpa-onnx) |
-| Punctuation | CT-Transformer (via sherpa-onnx) |
-| Recommendations | @huggingface/transformers (ms-marco-MiniLM-L-6-v2) |
+| STT | transcribe-cpp (GGUF models: Parakeet, Nemotron, Voxtral) |
+| Recommendations | @huggingface/transformers (mmarco-mMiniLMv2) |
 | Audio analysis | essentia.js + ffmpeg-static |
 | Database | better-sqlite3 |
 | Discord | discord.js + @discordjs/voice + prism-media |
-| Process isolation | Electron `utilityProcess` (separate heap for ASR and reranker) |
+| Process isolation | Electron `utilityProcess` for the scene interpreter, worker thread for STT and analysis |
 
 ### Building a DMG
 

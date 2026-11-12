@@ -30,7 +30,9 @@ function decodeAudio(filePath: string): Promise<{ samples: Float32Array; duratio
 
     const ff = spawn(
       ffmpegPath,
-      ['-i', filePath, '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
+      // Cap analysis to the first 10 minutes: BPM/key/energy are stable there and
+      // a full 3-hour set would otherwise buffer several GB per concurrent worker.
+      ['-i', filePath, '-t', '600', '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
       { stdio: ['ignore', 'pipe', 'ignore'] },
     )
 
