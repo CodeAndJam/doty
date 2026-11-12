@@ -928,6 +928,7 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
     restartRecognizer()
+    initAuxModels()
     mainWindow?.webContents.send('model:status', { ready: true })
     return { ok: true }
   }
@@ -945,9 +946,15 @@ ipcMain.handle('model:download', async (_e, modelId?: SttModelType) => {
     })
 
     store.set('sttModel', modelInfo.id)
-    restartRecognizer()
-    initAuxModels()
     mainWindow?.webContents.send('model:status', { ready: true })
+    // The file is complete and selected: report success even if a local model
+    // fails to initialise, otherwise the UI claims the download failed.
+    try {
+      restartRecognizer()
+      initAuxModels()
+    } catch (err) {
+      console.error('[model] post-download init error:', err)
+    }
     return { ok: true }
   } catch (e) {
     sttDownloadError = { modelId: modelInfo.id, error: e instanceof Error ? e.message : String(e) }
