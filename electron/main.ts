@@ -89,6 +89,7 @@ import {
 } from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { store } from './store'
+import { resolveLanguage } from './stt-language'
 import { getEmbeddingStats, initVectorTables } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
@@ -96,7 +97,9 @@ import { updateWavHeader } from './wav-header'
 
 /** Whether the selected model accepts a focused language (or auto-detect). */
 function supportsLanguage(model: SttModelInfo | undefined, language: string): boolean {
-  return language === 'auto' || (model?.languages ?? []).includes(language)
+  if (language === 'auto') return true
+  // Base-aware: Parakeet Ultra advertises `pt`, the focused language is `pt-PT`.
+  return resolveLanguage(language, model?.languages ?? []) !== undefined
 }
 
 /** Check if the reranker model is already cached */

@@ -9,7 +9,7 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 ## Features
 
 ### Real-time speech-to-text
-Doty transcribes your game table continuously using Parakeet TDT v3 (via sherpa-onnx). It runs fully offline with Silero VAD for voice activity detection and GTCRN for speech denoising. You can add a hotwords file with campaign-specific names, spells, and places to improve transcription accuracy.
+Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Nemotron 3.5 Streaming, ~0.4 s latency); Parakeet Ultra is available in Settings when accuracy matters more than the typing effect. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
 
 ### AI music recommendations
 As the conversation flows, Doty uses a cross-encoder model (ms-marco-MiniLM-L-6-v2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
@@ -49,7 +49,7 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 
 ### First launch
 
-1. Open Doty. It will prompt you to download the **Parakeet TDT v3** ASR model (~640 MB). This is saved to `~/.doty/models/` and only happens once.
+1. Open Doty. It downloads the speech model in the background (~740 MB) to `~/.doty/models/`. You can skip onboarding and keep using the app while it downloads.
 2. Open Settings (gear icon or `Cmd+,`) and set your **Music folder** — point it at your local music library (mp3, flac, wav, m4a, ogg, aac supported).
 3. Doty will scan and analyse your tracks. This takes a few minutes on first run depending on library size.
 4. The **MiniLM-L-6-v2** recommendation model (~80 MB) downloads automatically on the first recommendation and is cached to `~/.doty/hf-cache/`.
@@ -161,7 +161,7 @@ pnpm run test:coverage
 
 ### Native addons
 
-`sherpa-onnx-node` and `better-sqlite3` are native C++ addons rebuilt against Electron's Node.js version automatically via the `postinstall` script. If you see a `NODE_MODULE_VERSION` mismatch error:
+`better-sqlite3` is a native addon rebuilt against Electron's Node.js version automatically via the `postinstall` script. `transcribe-cpp` ships prebuilt libraries (no compile step). If you see a `NODE_MODULE_VERSION` mismatch error:
 
 ```bash
 pnpm run rebuild
@@ -171,7 +171,7 @@ pnpm run rebuild
 
 | Model | Size | Location | Purpose |
 |---|---|---|---|
-| Parakeet TDT v3 (ONNX, int8) | ~640 MB | `~/.doty/models/` | Speech-to-text |
+| Nemotron 3.5 / Parakeet Ultra (GGUF) | ~740 MB | `~/.doty/models/` | Speech-to-text |
 | ms-marco-MiniLM-L-6-v2 (ONNX) | ~80 MB | `~/.doty/hf-cache/` | Track recommendation reranking |
 
 These are downloaded on first use and never committed to the repository.
@@ -182,7 +182,8 @@ These are downloaded on first use and never committed to the repository.
 electron/           Electron main process
   main.ts           App entry, IPC handlers, window management
   asr.ts            Speech-to-text orchestration
-  asr-worker.ts     STT worker (sherpa-onnx, VAD, denoiser)
+  transcribe-worker.ts  STT worker (transcribe-cpp streams or 10 s chunks)
+  stt-quality/      WER/CER metrics and the live-flush policy (gated in CI)
   discord.ts        Discord bot client (connect, voice, streaming)
   discord-audio.ts  Audio transcoding pipeline (ffmpeg -> Opus)
   database.ts       SQLite database for track metadata and tags
@@ -218,10 +219,9 @@ src/                React renderer
 |---|---|
 | UI | React 18 + Tailwind CSS (Electron renderer) |
 | Build | electron-vite 5 + Vite 7 |
-| STT | sherpa-onnx-node (Parakeet TDT v3 int8) |
-| VAD | Silero VAD (via sherpa-onnx) |
-| Denoiser | GTCRN (via sherpa-onnx) |
-| Punctuation | CT-Transformer (via sherpa-onnx) |
+| STT | transcribe-cpp (Nemotron / Parakeet Ultra / Parakeet Unified / Voxtral GGUF) |
+| Live chunking | energy endpointing + 10 s windows for batch models |
+| Punctuation | model-native |
 | Recommendations | @huggingface/transformers (ms-marco-MiniLM-L-6-v2) |
 | Audio analysis | essentia.js + ffmpeg-static |
 | Database | better-sqlite3 |

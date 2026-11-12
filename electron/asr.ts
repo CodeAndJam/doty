@@ -4,14 +4,33 @@
  */
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { DEFAULT_STT_LANGUAGE, DEFAULT_STT_MODEL, getModelPath, type SttModelType } from './model-paths'
+import { DEFAULT_STT_LANGUAGE, DEFAULT_STT_MODEL, getModelPath, STT_MODELS, type SttModelType } from './model-paths'
 import { store } from './store'
+import { AudioQueue } from './stt-quality/audio-queue'
 
 const WORKER_PATH = join(__dirname, 'transcribe-worker.js')
 
 let worker: Worker | null = null
 let workerReady = false
 let streaming = false
+let streamStarted = false
+// Audio captured while the model is still loading: a cold Metal load is ~10s
+// and the first words of the session must not be lost.
+const pending = new AudioQueue(60) // ~30s of 500ms chunks
+
+function postChunk(samples: Float32Array): void {
+  if (!worker) return
+  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
+  worker.postMessage({ type: 'feed', buffer: buf }, [buf])
+}
+
+/** Tell the worker to start a session, then replay whatever audio was queued. */
+function beginWorkerStream(): void {
+  if (!worker || !streaming || streamStarted) return
+  streamStarted = true
+  worker.postMessage({ type: 'stream-start' })
+  for (const samples of pending.drain()) postChunk(samples)
+}
 
 let onFlushText: ((text: string, elapsedMs: number) => void) | null = null
 let onInterimText: ((text: string) => void) | null = null
@@ -34,15 +53,17 @@ export function setOnParagraphBreak(cb: () => void): void {
 function ensureWorker(): Worker {
   if (worker) return worker
 
-  worker = new Worker(WORKER_PATH)
+  const w = new Worker(WORKER_PATH)
+  worker = w
 
-  worker.on('message', (msg: any) => {
+  w.on('message', (msg: any) => {
     switch (msg.type) {
       case 'ready':
         workerReady = true
         // Persist the effective language so Settings never claims a focus the model rejected.
         if (typeof msg.language === 'string') store.set('sttLanguage', msg.language)
         if (onAsrStatus) onAsrStatus('ready')
+        beginWorkerStream()
         break
       case 'text':
         // Streaming update — committed is the stable delta since last flush,
@@ -69,64 +90,90 @@ function ensureWorker(): Worker {
     }
   })
 
-  worker.on('error', (e) => {
+  w.on('error', (e) => {
     console.error('[asr] worker thread error:', e)
-    worker = null
-    workerReady = false
+    // A terminated worker's exit can arrive after a replacement was created;
+    // only clear state that still belongs to this instance.
+    if (worker === w) {
+      worker = null
+      workerReady = false
+    }
     if (onAsrStatus) onAsrStatus('crashed')
   })
 
-  worker.on('exit', () => {
+  w.on('exit', () => {
+    if (worker !== w) return
     worker = null
     workerReady = false
   })
 
-  return worker
+  return w
 }
 
-/** Initialize the recognizer: load the selected model in the worker */
-export function initRecognizer(): void {
+/** Initialize the recognizer: load the selected model in the worker.
+ * @returns false when no speech model is downloaded (no worker started). */
+export function initRecognizer(): boolean {
   const modelId = store.get('sttModel', DEFAULT_STT_MODEL) as SttModelType
-  const modelPath = getModelPath(modelId)
+  const model = STT_MODELS.find((m) => m.id === modelId)
+  if (!model?.isReady()) {
+    // The background downloader (#100) will pick this up; until then there is
+    // nothing to load, so do not leave a half-started worker polling forever.
+    console.warn(`[asr] model ${modelId} is not downloaded yet`)
+    if (onAsrStatus) onAsrStatus('no-model')
+    return false
+  }
   const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
   const w = ensureWorker()
-  w.postMessage({ type: 'load', modelPath, language })
+  w.postMessage({ type: 'load', modelPath: getModelPath(model.id), language })
+  return true
 }
 
 /** Start a streaming session. Ensures worker is initialized and model is loaded. */
 export function startStream(): void {
-  if (!worker) {
-    // No worker yet — init first, then start stream once ready
-    initRecognizer()
-  }
-  if (!workerReady) {
-    // Model still loading — wait then start
-    const waitAndStart = () => {
-      if (workerReady && worker) {
-        streaming = true
-        worker.postMessage({ type: 'stream-start' })
-      } else {
-        setTimeout(waitAndStart, 50)
-      }
-    }
-    waitAndStart()
+  streaming = true
+  streamStarted = false
+  pending.clear()
+  if (!worker && !initRecognizer()) {
+    streaming = false
     return
   }
-  streaming = true
-  worker!.postMessage({ type: 'stream-start' })
+  if (workerReady) {
+    beginWorkerStream()
+    return
+  }
+  // Model still loading: keep the audio and replay it once the worker is ready.
+  const startedAt = Date.now()
+  const waitAndStart = () => {
+    if (!streaming) return
+    if (workerReady) {
+      beginWorkerStream()
+    } else if (!worker || Date.now() - startedAt > 60_000) {
+      streaming = false
+      if (onAsrStatus) onAsrStatus('error')
+    } else {
+      setTimeout(waitAndStart, 50)
+    }
+  }
+  waitAndStart()
 }
 
 /** Feed a PCM chunk to the active stream (Float32Array, 16kHz mono) */
 export function feedChunk(samples: Float32Array): void {
-  if (!worker || !streaming) return
-  const buf = samples.buffer.slice(samples.byteOffset, samples.byteOffset + samples.byteLength)
-  worker.postMessage({ type: 'feed', buffer: buf }, [buf])
+  if (!streaming) return
+  if (!streamStarted) {
+    pending.push(samples)
+    return
+  }
+  postChunk(samples)
 }
 
 /** Finalize the stream — flush remaining audio and get final text */
 export function finalizeStream(): void {
-  if (!worker || !streaming) return
+  const started = streamStarted
   streaming = false
+  streamStarted = false
+  pending.clear()
+  if (!worker || !started) return
   worker.postMessage({ type: 'finalize' })
 }
 
