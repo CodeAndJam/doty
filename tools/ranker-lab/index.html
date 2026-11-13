@@ -74,6 +74,7 @@
     <div class="label">Candidates the model was offered</div>
     <ol id="list"></ol>
     <div id="none">nothing here fits the scene — press <b>0</b></div>
+    <div id="status" class="missing" aria-live="polite"></div>
 
     <div id="all">
       <div class="label">Everything in the music folder</div>
@@ -93,25 +94,61 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function normalise(relPath) {
   return relPath.replace(/\\/g, '/').replace(/^[^/]+\//, '').replace(/^\.?\//, '').toLowerCase()
 }
-function findAudio(path) {
+const MIME = { mp3:'audio/mpeg', m4a:'audio/mp4', aac:'audio/aac', wav:'audio/wav', ogg:'audio/ogg', flac:'audio/flac' }
+
+/** Exact relative path first, then suffix, then the bare filename: a lab folder
+ *  and the harvested library routinely differ in their parent directories. */
+function resolve(path) {
   const target = path.replace(/\\/g, '/').toLowerCase()
+  const base = target.split('/').pop()
+  let bySuffix = null
+  let byName = null
   for (const [key, file] of state.audio) {
-    if (key === target || key.endsWith(`/${target}`)) return file
+    if (key === target) return { file, matched: key }
+    if (!bySuffix && key.endsWith(`/${target}`)) bySuffix = { file, matched: key }
+    if (!byName && key.split('/').pop() === base) byName = { file, matched: key }
   }
-  return null
+  return bySuffix || byName
 }
+
+function status(text) {
+  const el = $('status')
+  if (el) el.textContent = text
+}
+
 function play(path) {
-  const file = findAudio(path)
-  if (!file) return
-  if (state.playing === path) { stop(); return }
+  const found = resolve(path)
+  if (!found) {
+    status(state.audio.size === 0
+      ? 'No sound: open the music folder first.'
+      : `No sound: "${path.split('/').pop()}" is not in the folder you opened.`)
+    return
+  }
+  if (state.playing === path) { stop(); status(''); return }
   stop()
   let url = state.urls.get(path)
-  if (!url) { url = URL.createObjectURL(file); state.urls.set(path, url) }
-  const audio = new Audio(url)
+  if (!url) {
+    const ext = found.file.name.split('.').pop().toLowerCase()
+    // Without an explicit type some browsers refuse to decode the blob at all.
+    url = URL.createObjectURL(new Blob([found.file], { type: MIME[ext] || 'audio/mpeg' }))
+    state.urls.set(path, url)
+  }
+  const audio = new Audio()
+  audio.preload = 'auto'
+  audio.src = url
+  audio.volume = 1
   state.audioEl = audio
   state.playing = path
-  audio.addEventListener('ended', () => { state.playing = null; render() })
-  audio.play().catch(() => { state.playing = null; render() })
+  audio.addEventListener('ended', () => { state.playing = null; status(''); render() })
+  audio.addEventListener('error', () => {
+    state.playing = null
+    status(`Cannot decode ${found.file.name} in this browser (${audio.error?.code ?? 'error'}).`)
+    render()
+  })
+  audio.play().then(
+    () => status(`Playing ${found.matched}`),
+    (e) => { state.playing = null; status(`Playback blocked: ${e?.message ?? e}`); render() },
+  )
   render()
 }
 function stop() {
@@ -166,7 +203,7 @@ function trackRow(path, name, opts) {
   const playBtn = document.createElement('button')
   playBtn.className = state.playing === path ? 'play on' : 'play'
   playBtn.textContent = state.playing === path ? '■' : '▶'
-  playBtn.title = findAudio(path) ? 'Play this track' : 'Open the music folder to enable playback'
+  playBtn.title = resolve(path) ? 'Play this track' : 'No audio matched: open the music folder'
   playBtn.addEventListener('click', (e) => { e.stopPropagation(); play(path) })
 
   li.append(n, nameEl, playBtn)
@@ -249,9 +286,13 @@ $('musicDir').addEventListener('change', (e) => {
   state.audio.clear()
   for (const url of state.urls.values()) URL.revokeObjectURL(url)
   state.urls.clear()
-  for (const file of e.target.files ?? []) {
+  const all = e.target.files ?? []
+  for (const file of all) {
     if (/\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(file.name)) state.audio.set(normalise(file.webkitRelativePath), file)
   }
+  status(all.length === 0
+    ? 'No files came back from that folder.'
+    : `Loaded ${state.audio.size} playable tracks of ${all.length} files.`)
   render()
 })
 $('search').addEventListener('input', () => renderAll(state.rows[state.index]))
