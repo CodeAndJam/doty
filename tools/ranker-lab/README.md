@@ -32,9 +32,13 @@ pnpm ranker:rows
 ## 2. Label them
 
 Open `index.html`, choose `rows.json`, and for each moment click the track you
-would actually have played. Click again to clear.
+would actually have played. Click again to clear. Hit **open music folder** and
+pick your music folder once — the page then lists and plays every track, so you
+can label a track the model was never offered (a recall miss, recorded as
+`offered: false`).
 
 - `1`–`9` pick by position, `←`/`→` move between moments, `Backspace` clears
+- `▶` plays a candidate, or any track in the folder
 - `shift`-click a track you would *never* play at this moment
 - `0` marks "nothing here fits" — the most useful label of all, because that is
   the case autopilot must not act on
@@ -56,4 +60,10 @@ confident pick was actually right, and therefore the chance an unasked change
 is wrong.
 
 Rows you leave unlabelled are ignored, so label in passes — the harness only
-grades what exists.
+grades what exists. Labels whose track was not among the twenty are reported
+separately: they are retrieval failures, not ranking failures, and no ranker
+change can fix them.
+
+The folder selection is not remembered across reloads (a browser will not hand a
+page persistent access to disk), so re-open the folder after a refresh. Your
+labels survive regardless.

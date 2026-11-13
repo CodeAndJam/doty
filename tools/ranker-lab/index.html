@@ -8,34 +8,38 @@
   :root { --bg:#080705; --panel:#0f0d09; --line:#2e2416; --gold:#c8922a; --dim:#6b4e15; --ink:#c8b07a; --good:#4a8a6a; --bad:#b43c28; }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Crimson Text", Georgia, serif; }
-  header { display:flex; gap:16px; align-items:center; padding:14px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
-  header h1 { font:600 13px/1 "Cinzel", serif; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0; }
+  header { display:flex; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
+  header h1 { font:600 13px/1 "Cinzel", serif; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0 12px 0 0; }
   .stat { font:12px monospace; color:var(--dim); }
   .spacer { flex:1; }
-  button { font:12px monospace; color:var(--gold); background:none; border:1px solid rgba(200,146,42,.35); padding:5px 10px; cursor:pointer; }
+  button { font:12px monospace; color:var(--gold); background:none; border:1px solid rgba(200,146,42,.35); padding:5px 9px; cursor:pointer; }
   button:hover { background:rgba(200,146,42,.08); }
   button:disabled { opacity:.35; cursor:default; }
-  main { display:grid; grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr); gap:0; height:calc(100vh - 57px); }
-  section { padding:20px; overflow-y:auto; }
-  #scene { border-right:1px solid var(--line); }
-  #scene .label, #cands .label { font:11px "Cinzel", serif; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); margin-bottom:10px; }
+  input[type=search] { font:12px monospace; background:#0f0d09; color:var(--ink); border:1px solid var(--line); padding:5px 8px; width:100%; }
+  main { display:grid; grid-template-columns:minmax(300px,1fr) minmax(380px,1.1fr); height:calc(100vh - 57px); }
+  section { padding:18px 20px; overflow-y:auto; }
+  #scene { border-right:1px solid var(--line); display:flex; flex-direction:column; }
+  .label { font:11px "Cinzel", serif; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); margin:0 0 8px; }
   #text { font-size:17px; line-height:1.65; white-space:pre-wrap; color:#d8c9a4; }
-  #text mark { color:#0a0907; background:var(--gold); }
-  .hint { margin-top:18px; font:11px monospace; color:#3a2e1a; line-height:1.7; }
-  ol { list-style:none; margin:0; padding:0; }
-  li { display:flex; gap:10px; align-items:baseline; padding:9px 10px; border:1px solid transparent; border-bottom-color:#1a1408; cursor:pointer; }
+  .hint { margin-top:16px; font:11px monospace; color:#3a2e1a; line-height:1.7; }
+  ol, ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; gap:8px; align-items:baseline; padding:7px 8px; border-bottom:1px solid #1a1408; cursor:pointer; }
   li:hover { background:rgba(200,146,42,.05); }
-  li .n { font:11px monospace; color:var(--dim); width:20px; flex:none; }
-  li .name { flex:1; }
-  li.picked { border-color:var(--gold); background:rgba(200,146,42,.1); }
+  li .n { font:11px monospace; color:var(--dim); width:18px; flex:none; }
+  li .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li.picked { background:rgba(200,146,42,.1); box-shadow:inset 2px 0 0 var(--gold); }
   li.picked .name { color:#e8d5a3; }
   li.rejected { opacity:.45; }
   li.rejected .name { text-decoration:line-through; color:var(--bad); }
-  #none { margin-top:10px; font:12px monospace; color:var(--dim); }
+  li.off { border-left:2px solid rgba(74,138,106,.6); }
+  .play { font:10px monospace; color:var(--dim); border:1px solid var(--line); padding:1px 5px; flex:none; }
+  .play.on { color:var(--good); border-color:rgba(74,138,106,.6); }
+  #all { margin-top:18px; border-top:1px solid var(--line); padding-top:12px; }
+  #allList { max-height:38vh; overflow-y:auto; margin-top:8px; }
+  #none { margin-top:8px; font:12px monospace; color:var(--dim); }
   #none.on { color:var(--bad); }
-  #done { display:none; padding:40px 20px; }
-  #done.on { display:block; }
   code { font:12px monospace; color:var(--gold); background:#12100a; padding:1px 5px; border:1px solid var(--line); }
+  .missing { font:11px monospace; color:#3a2e1a; }
 </style>
 </head>
 <body>
@@ -43,8 +47,10 @@
   <h1>Ranker lab</h1>
   <span class="stat" id="progress">no file</span>
   <span class="spacer"></span>
-  <input id="file" type="file" accept="application/json" style="display:none" />
-  <button id="open">open rows.json</button>
+  <input id="rowsFile" type="file" accept="application/json" hidden />
+  <input id="musicDir" type="file" webkitdirectory multiple hidden />
+  <button id="openRows">open rows.json</button>
+  <button id="openMusic">open music folder</button>
   <button id="prev">←</button>
   <button id="next">→</button>
   <button id="export" disabled>export labels</button>
@@ -54,53 +60,155 @@
 <main>
   <section id="scene">
     <div class="label">What the table said</div>
-    <div id="text">Open the <code>rows.json</code> produced by the harvest step.</div>
+    <div id="text">Open the <code>rows.json</code> produced by <code>pnpm ranker:rows</code>.</div>
     <div class="hint">
-      1–9 pick a track · click again to clear<br />
+      1–9 pick a track · click again to clear · ▶ plays it<br />
       shift-click a track you would never play<br />
-      ← → move between rows · everything is saved in this browser
+      0 = nothing here fits · ← → move between rows<br />
+      Labels autosave in this browser. Picked a track outside the twenty? Use
+      <b>open music folder</b> below — that is a recall miss, and worth recording.
     </div>
   </section>
 
-  <section id="cands">
+  <section>
     <div class="label">Candidates the model was offered</div>
     <ol id="list"></ol>
     <div id="none">nothing here fits the scene — press <b>0</b></div>
+
+    <div id="all">
+      <div class="label">Everything in the music folder</div>
+      <input id="search" type="search" placeholder="filter by name…" />
+      <ul id="allList"><li class="missing">Open the music folder to list and play every track.</li></ul>
+    </div>
   </section>
 </main>
 
-<section id="done">
-  <p>All rows labelled. Export the file and save it as
-  <code>test-fixtures/ranker/labels.json</code>.</p>
-</section>
-
 <script>
 const KEY = 'doty-ranker-labels-v1'
-const state = { rows: [], index: 0, labels: {} }
-
+const state = { rows: [], index: 0, labels: {}, audio: new Map(), playing: null, urls: new Map() }
 const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
-// Stable shuffle so a track's position does not hint at the model's preference.
-function seededOrder(row) {
-  let seed = 0
-  for (const c of row.transcript) seed = (seed * 31 + c.charCodeAt(0)) >>> 0
-  const list = row.candidates.map((c, i) => ({ c, k: (seed ^ (i * 2654435761)) >>> 0 }))
-  return list.sort((a, b) => a.k - b.k).map((x) => x.c)
+// ---------- audio ----------
+function normalise(relPath) {
+  return relPath.replace(/\\/g, '/').replace(/^[^/]+\//, '').replace(/^\.?\//, '').toLowerCase()
+}
+function findAudio(path) {
+  const target = path.replace(/\\/g, '/').toLowerCase()
+  for (const [key, file] of state.audio) {
+    if (key === target || key.endsWith(`/${target}`)) return file
+  }
+  return null
+}
+function play(path) {
+  const file = findAudio(path)
+  if (!file) return
+  if (state.playing === path) { stop(); return }
+  stop()
+  let url = state.urls.get(path)
+  if (!url) { url = URL.createObjectURL(file); state.urls.set(path, url) }
+  const audio = new Audio(url)
+  state.audioEl = audio
+  state.playing = path
+  audio.addEventListener('ended', () => { state.playing = null; render() })
+  audio.play().catch(() => { state.playing = null; render() })
+  render()
+}
+function stop() {
+  if (state.audioEl) { state.audioEl.pause(); state.audioEl = null }
+  state.playing = null
 }
 
+// ---------- labels ----------
 function persist() {
-  try { localStorage.setItem(KEY, JSON.stringify({ rows: state.rows, labels: state.labels })) } catch {}
+  try {
+    const labels = Object.fromEntries(Object.entries(state.labels).map(([k, v]) => [k, v]))
+    localStorage.setItem(KEY, JSON.stringify({ rows: state.rows, labels }))
+  } catch {}
 }
-
 function restore() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || 'null')
-    if (saved && Array.isArray(saved.rows) && saved.rows.length) { state.rows = saved.rows; state.labels = saved.labels || {} }
+    if (saved?.rows?.length) { state.rows = saved.rows; state.labels = saved.labels || {} }
   } catch {}
 }
+function labelFor(id) { return (state.labels[id] ??= { picked: null, rejects: [], offered: true }) }
 
-function labelFor(id) {
-  return (state.labels[id] ??= { picked: null, rejects: [] })
+function pick(id, path, offered) {
+  const label = labelFor(id)
+  label.picked = label.picked === path ? null : path
+  label.offered = offered
+  label.rejects = label.rejects.filter((p) => p !== path)
+  persist(); render()
+}
+
+// ---------- rendering ----------
+function seededOrder(row) {
+  let seed = 0
+  for (const c of row.transcript) seed = (seed * 31 + c.charCodeAt(0)) >>> 0
+  return row.candidates.map((c, i) => ({ c, k: (seed ^ (i * 2654435761)) >>> 0 })).sort((a, b) => a.k - b.k).map((x) => x.c)
+}
+
+function trackRow(path, name, opts) {
+  const li = document.createElement('li')
+  const label = opts.label
+  if (label.picked === path) li.className = opts.offClass ? 'picked off' : 'picked'
+  else if (label.rejects.includes(path)) li.className = 'rejected'
+  else if (opts.offClass) li.className = 'off'
+
+  const n = document.createElement('span')
+  n.className = 'n'
+  n.textContent = opts.index ?? ''
+  const nameEl = document.createElement('span')
+  nameEl.className = 'name'
+  nameEl.textContent = name
+  nameEl.title = path
+  const playBtn = document.createElement('button')
+  playBtn.className = state.playing === path ? 'play on' : 'play'
+  playBtn.textContent = state.playing === path ? '■' : '▶'
+  playBtn.title = findAudio(path) ? 'Play this track' : 'Open the music folder to enable playback'
+  playBtn.addEventListener('click', (e) => { e.stopPropagation(); play(path) })
+
+  li.append(n, nameEl, playBtn)
+  li.addEventListener('click', (e) => {
+    if (e.shiftKey) {
+      label.rejects = label.rejects.includes(path) ? label.rejects.filter((p) => p !== path) : [...label.rejects, path]
+      if (label.picked === path) label.picked = null
+      persist(); render()
+      return
+    }
+    if (opts.offered === false) pick(opts.rowId, path, false)
+    else if (opts.index !== undefined) pick(opts.rowId, path, true)
+    else pick(opts.rowId, path, false)
+  })
+  return li
+}
+
+function renderAll(row) {
+  const list = $('allList')
+  list.innerHTML = ''
+  if (state.audio.size === 0) {
+    list.innerHTML = '<li class="missing">Open the music folder to list and play every track.</li>'
+    return
+  }
+  const label = row ? labelFor(row.id) : { picked: null, rejects: [] }
+  const query = ($('search').value || '').toLowerCase()
+  const offered = new Set(row?.candidates.map((c) => normalise(c.path)) ?? [])
+  const entries = [...state.audio.entries()]
+    .filter(([key]) => !query || key.includes(query))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(0, 400)
+  for (const [key, file] of entries) {
+    const path = file.webkitRelativePath.replace(/^[^/]+\//, '')
+    const li = trackRow(path, path, {
+      label,
+      rowId: row?.id,
+      offered: false,
+      offClass: !offered.has(normalise(path)),
+    })
+    li.title = file.size ? `${(file.size / 1048576).toFixed(1)} MB` : ''
+    list.appendChild(li)
+  }
 }
 
 function render() {
@@ -112,37 +220,22 @@ function render() {
   $('prev').disabled = state.index === 0
   $('next').disabled = state.index >= total - 1
 
-  if (!row) { $('list').innerHTML = ''; $('text').textContent = 'Open the rows.json produced by the harvest step.'; return }
+  if (!row) { $('list').innerHTML = ''; renderAll(null); return }
   $('text').textContent = row.transcript
 
   const label = labelFor(row.id)
   const list = $('list')
   list.innerHTML = ''
   seededOrder(row).forEach((cand, i) => {
-    const li = document.createElement('li')
-    if (label.picked === cand.path) li.className = 'picked'
-    else if (label.rejects.includes(cand.path)) li.className = 'rejected'
-    li.innerHTML = `<span class="n">${i + 1}</span><span class="name"></span>`
-    li.querySelector('.name').textContent = cand.description || cand.path
-    li.addEventListener('click', (e) => {
-      if (e.shiftKey) {
-        label.rejects = label.rejects.includes(cand.path)
-          ? label.rejects.filter((p) => p !== cand.path)
-          : [...label.rejects, cand.path]
-        if (label.picked === cand.path) label.picked = null
-      } else {
-        label.picked = label.picked === cand.path ? null : cand.path
-        label.rejects = label.rejects.filter((p) => p !== cand.path)
-      }
-      persist(); render()
-    })
-    list.appendChild(li)
+    list.appendChild(trackRow(cand.path, cand.description || cand.path, { label, rowId: row.id, index: i + 1 }))
   })
   $('none').className = label.picked === 'none' ? 'on' : ''
+  renderAll(row)
 }
 
-$('open').addEventListener('click', () => $('file').click())
-$('file').addEventListener('change', async (e) => {
+// ---------- wiring ----------
+$('openRows').addEventListener('click', () => $('rowsFile').click())
+$('rowsFile').addEventListener('change', async (e) => {
   const file = e.target.files?.[0]
   if (!file) return
   const parsed = JSON.parse(await file.text())
@@ -151,17 +244,29 @@ $('file').addEventListener('change', async (e) => {
   state.index = 0
   persist(); render()
 })
-$('prev').addEventListener('click', () => { if (state.index > 0) { state.index--; render() } })
-$('next').addEventListener('click', () => { if (state.index < state.rows.length - 1) { state.index++; render() } })
+$('openMusic').addEventListener('click', () => $('musicDir').click())
+$('musicDir').addEventListener('change', (e) => {
+  state.audio.clear()
+  for (const url of state.urls.values()) URL.revokeObjectURL(url)
+  state.urls.clear()
+  for (const file of e.target.files ?? []) {
+    if (/\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(file.name)) state.audio.set(normalise(file.webkitRelativePath), file)
+  }
+  render()
+})
+$('search').addEventListener('input', () => renderAll(state.rows[state.index]))
+$('prev').addEventListener('click', () => { if (state.index > 0) { state.index--; stop(); render() } })
+$('next').addEventListener('click', () => { if (state.index < state.rows.length - 1) { state.index++; stop(); render() } })
 $('reset').addEventListener('click', () => {
   if (!confirm('Discard every label in this browser?')) return
-  localStorage.removeItem(KEY); state.rows = []; state.labels = {}; state.index = 0; render()
+  localStorage.removeItem(KEY); state.rows = []; state.labels = {}; state.index = 0; stop(); render()
 })
 $('export').addEventListener('click', () => {
   const labels = state.rows.map((row) => ({
     id: row.id,
     picked: state.labels[row.id]?.picked ?? null,
     rejects: state.labels[row.id]?.rejects ?? [],
+    offered: state.labels[row.id]?.offered ?? true,
   }))
   const blob = new Blob([JSON.stringify(labels, null, 1)], { type: 'application/json' })
   const a = document.createElement('a')
@@ -178,14 +283,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); $('next').click(); return }
   if (e.key === 'ArrowLeft') { e.preventDefault(); $('prev').click(); return }
   if (e.key === 'Backspace') { label.picked = null; label.rejects = []; persist(); render(); return }
-  if (e.key === '0') { label.picked = label.picked === 'none' ? null : 'none'; persist(); render(); return }
+  if (e.key === '0') { label.picked = label.picked === 'none' ? null : 'none'; label.offered = true; persist(); render(); return }
   const n = Number.parseInt(e.key, 10)
   if (n >= 1 && n <= 9) {
     const cand = seededOrder(row)[n - 1]
-    if (!cand) return
-    label.picked = label.picked === cand.path ? null : cand.path
-    label.rejects = label.rejects.filter((p) => p !== cand.path)
-    persist(); render()
+    if (cand) pick(row.id, cand.path, true)
   }
 })
 
