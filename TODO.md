@@ -2,6 +2,12 @@
 
 ## Pending
 
+- [ ] STT quality: a real VAD model (transcribe-cpp exposes a `vad` role — Silero
+      scores frames, `minSpeechMs`/`minSilenceMs`) instead of the RMS gate. The
+      RMS gate stops a quiet room being decoded, but it cannot stop Roman-script
+      hallucination ("Yeah, it's trying to make things") under a `pt` hint, and
+      neither can the script guard: both are Latin. A VAD segmenter also gives
+      better chunk cuts than the current quietest-frame heuristic.
 - [ ] STT quality: record a real conference-mic fixture (laptop mic, far field,
       6 speakers, music playing) and replace the synthetic 12 dB SNR noise gate.
       See `docs/QUALITY.md`.

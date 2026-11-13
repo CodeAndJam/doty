@@ -220,6 +220,22 @@ export class ChunkBuffer {
   }
 }
 
+/**
+ * Whether a chunk contains enough above-noise audio to be worth decoding. A VAD
+ * model is the real answer; this rejects the case that matters — a quiet room
+ * fed to the recogniser, which then invents a sentence.
+ */
+export function hasSpeech(samples: Float32Array, threshold = 0.008, frame = 320): boolean {
+  if (samples.length < frame) return false
+  let voiced = 0
+  let frames = 0
+  for (let start = 0; start + frame <= samples.length; start += frame) {
+    frames++
+    if (rms(samples.subarray(start, start + frame)) >= threshold) voiced++
+  }
+  return frames > 0 && voiced / frames >= 0.15
+}
+
 export function rms(samples: Float32Array): number {
   if (samples.length === 0) return 0
   let sum = 0

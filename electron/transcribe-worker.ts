@@ -27,7 +27,8 @@
  */
 import { parentPort } from 'node:worker_threads'
 import { resolveLanguage } from './stt-language'
-import { ChunkBuffer, LiveWriter, rms } from './stt-quality/text-flow'
+import { scriptMatchesLanguage } from './stt-quality/script'
+import { ChunkBuffer, hasSpeech, LiveWriter, rms } from './stt-quality/text-flow'
 
 // ponytail: transcribe-cpp is ESM-only, use dynamic import from CJS worker
 let TranscribeModel: any = null
@@ -78,6 +79,9 @@ function elapsedMs(): number {
 function flush(text: string) {
   const delta = text.trim()
   if (!delta) return
+  // Noise decodes into fluent text in whatever language fits it. With a language
+  // pinned, text in another script cannot belong to this session.
+  if (!scriptMatchesLanguage(delta, language)) return
   sendMsg({ type: 'flush', text: delta, elapsedMs: elapsedMs() })
 }
 
@@ -199,6 +203,8 @@ async function feedStream(samples: Float32Array) {
 async function decodeChunk() {
   if (!session || chunks.pendingSamples < 1600) return // <100ms: nothing to decode
   const pcm = chunks.take()
+  // Nothing above the noise floor: decoding it only invents a sentence.
+  if (!hasSpeech(pcm)) return
   const result = await session.run(pcm, language ? { language } : undefined)
   const text: string = (result?.text ?? '').trim()
   if (!text) return

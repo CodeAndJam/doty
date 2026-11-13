@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ChunkBuffer, FlushTracker, LiveWriter, rms, stablePrefix } from './text-flow'
+import { ChunkBuffer, FlushTracker, hasSpeech, LiveWriter, rms, stablePrefix } from './text-flow'
 
 describe('stablePrefix', () => {
   it('keeps complete sentences and holds back the tail', () => {
@@ -145,5 +145,33 @@ describe('rms', () => {
   it('is zero for silence and positive for signal', () => {
     expect(rms(new Float32Array(100))).toBe(0)
     expect(rms(new Float32Array(100).fill(0.5))).toBeCloseTo(0.5)
+  })
+})
+
+describe('hasSpeech', () => {
+  const frame = 320
+  const make = (amplitude: number, frames: number) => {
+    const out = new Float32Array(frame * frames)
+    for (let i = 0; i < out.length; i++) out[i] = amplitude * Math.sin(i / 8)
+    return out
+  }
+
+  it('rejects a quiet room', () => {
+    expect(hasSpeech(make(0.001, 50))).toBe(false)
+  })
+
+  it('accepts steady speech-level audio', () => {
+    expect(hasSpeech(make(0.1, 50))).toBe(true)
+  })
+
+  it('rejects a chunk that is mostly silence with one blip', () => {
+    const samples = make(0.001, 50)
+    // one 20 ms frame of speech out of fifty is 2%
+    for (let i = 0; i < frame; i++) samples[i] = 0.2 * Math.sin(i / 8)
+    expect(hasSpeech(samples)).toBe(false)
+  })
+
+  it('rejects anything shorter than one frame', () => {
+    expect(hasSpeech(new Float32Array(100))).toBe(false)
   })
 })
