@@ -724,6 +724,8 @@ const sessionStore = createSessionStore(getDb())
 let liveScene: Scene | null = null
 let lastChangeAt = 0
 let lastLoggedAt = 0
+/** One session pass at a time: two in flight would race the scene and the clock. */
+let sessionPipeline: Promise<unknown> = Promise.resolve()
 
 handle(
   INVOKE.sessionEvaluate,
@@ -732,63 +734,78 @@ handle(
     request: {
       state: string
       candidates: string[]
+      paths: string[]
       msUntilTrackEnd: number | null
       autopilot: boolean
       override: boolean
     },
   ) => {
-    const { tracks, moods } = await evaluateSession(request.state, request.candidates)
-    if (moods.length === 0) return { tracks, moods, plan: null }
+    const run = sessionPipeline.then(async () => {
+      const { tracks, moods } = await evaluateSession(request.state, request.candidates)
+      if (moods.length === 0) return { tracks, moods, plan: null }
 
-    let best = 0
-    for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
-    const now = Date.now()
-    const step = planStep({
-      previous: liveScene,
-      observation: {
-        mood: MOODS[best] ?? 'exploration',
-        intensity: 0.5,
-        moodProbability: moods[best] ?? 0,
-        trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
-      },
-      now,
-      msUntilTrackEnd: request.msUntilTrackEnd,
-      msSinceLastChange: now - lastChangeAt,
-      autopilot: request.autopilot,
-      override: request.override,
+      let best = 0
+      for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
+      const now = Date.now()
+      const step = planStep({
+        previous: liveScene,
+        observation: {
+          mood: MOODS[best] ?? 'exploration',
+          intensity: 0.5,
+          moodProbability: moods[best] ?? 0,
+          trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
+        },
+        now,
+        msUntilTrackEnd: request.msUntilTrackEnd,
+        msSinceLastChange: now - lastChangeAt,
+        autopilot: request.autopilot,
+        override: request.override,
+      })
+
+      const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
+      if (sceneMoved) {
+        sessionStore.recordScene({
+          session: 'live',
+          mood: step.scene.mood,
+          intensity: step.scene.intensity,
+          startedAt: step.scene.since,
+        })
+      }
+      // The clock gates the change cooldown, so it only moves when music would.
+      if (step.action.kind !== 'hold') lastChangeAt = now
+      liveScene = step.scene
+
+      // Holds are main's to log (throttled: one per half minute). Actions are logged
+      // by the renderer once it has actually executed them, so `autoActions` counts
+      // changes that happened rather than changes that were proposed.
+      if (step.action.kind === 'hold' && now - lastLoggedAt > 30_000) {
+        lastLoggedAt = now
+        const best = tracks.length > 0 ? tracks.indexOf(Math.max(...tracks)) : -1
+        sessionStore.recordDecision({
+          at: now,
+          kind: 'music',
+          action: step.action.kind,
+          reason: step.action.reason,
+          track: best >= 0 ? (request.paths[best] ?? null) : null,
+          probability: best >= 0 ? (tracks[best] ?? 0) : 0,
+          mood: step.scene.mood,
+          source: 'auto',
+        })
+      }
+
+      return {
+        tracks,
+        moods,
+        plan: {
+          scene: step.scene.mood,
+          action: step.action.kind,
+          reason: step.action.reason,
+          track: tracks.length > 0 ? (request.paths[tracks.indexOf(Math.max(...tracks))] ?? null) : null,
+        },
+      }
     })
-
-    const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
-    if (sceneMoved) {
-      sessionStore.recordScene({
-        session: 'live',
-        mood: step.scene.mood,
-        intensity: step.scene.intensity,
-        startedAt: step.scene.since,
-      })
-    }
-    // The clock gates the change cooldown, so it only moves when music would.
-    if (step.action.kind !== 'hold') lastChangeAt = now
-    liveScene = step.scene
-
-    // Every automatic decision is the training signal and the audit trail. A hold
-    // every 1.5 s would bury it, so holds are logged once per half minute.
-    if (step.action.kind !== 'hold' || now - lastLoggedAt > 30_000) {
-      lastLoggedAt = now
-      const best = tracks.length > 0 ? tracks.indexOf(Math.max(...tracks)) : -1
-      sessionStore.recordDecision({
-        at: now,
-        kind: 'music',
-        action: step.action.kind,
-        reason: step.action.reason,
-        track: best >= 0 ? (request.candidates[best] ?? null) : null,
-        probability: best >= 0 ? (tracks[best] ?? 0) : 0,
-        mood: step.scene.mood,
-        source: 'auto',
-      })
-    }
-
-    return { tracks, moods, plan: { scene: step.scene.mood, action: step.action.kind, reason: step.action.reason } }
+    sessionPipeline = run.catch(() => {})
+    return run
   },
 )
 handle(INVOKE.sessionDecision, (_e, row: Parameters<typeof sessionStore.recordDecision>[0]) => {

@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('doty', {
   sessionEvaluate: (request: {
     state: string
     candidates: string[]
+    paths: string[]
     msUntilTrackEnd: number | null
     autopilot: boolean
     override: boolean

@@ -5,6 +5,7 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { describeTrack } from '../lib/rankTracks'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
@@ -106,6 +107,11 @@ export default function Soundboard({
   // ── Decision log (beta) ──────────────────────────────────────────────
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const [scene, setScene] = useState<string | null>(null)
+  // Skips read the scene from an event handler, so they need it through a ref.
+  const sceneRef = useRef<string | null>(null)
+  useEffect(() => {
+    sceneRef.current = scene
+  }, [scene])
   const [report, setReport] = useState<{ autoActions: number; manualPicks: number; overrideRate: number } | null>(null)
   const sessionStartedAt = useRef(Date.now())
   /** Guards against queueing the same pick on every pass while a track is ending. */
@@ -237,12 +243,31 @@ export default function Soundboard({
   }, [sfxPinned])
 
   // ── Keyboard shortcuts: N = next, P = prev ───────────────────────────
+  /** A skip is the DM rejecting what is playing: a decision, not a preference. */
+  function recordSkip(track: string) {
+    onManualAction()
+    window.doty
+      .sessionDecision({
+        at: Date.now(),
+        kind: 'music',
+        action: 'play-now',
+        reason: 'the DM skipped',
+        track,
+        probability: 0,
+        mood: sceneRef.current,
+        source: 'manual',
+      })
+      .then(refreshReport)
+      .catch(() => {})
+  }
+
   function handleSkipNext() {
     if (queue.tracks.length === 0) return
     const track = queue.next(loopMode === 'queue')
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
+      recordSkip(track)
     }
   }
 
@@ -252,6 +277,7 @@ export default function Soundboard({
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
+      recordSkip(track)
     }
   }
 
@@ -419,9 +445,13 @@ export default function Soundboard({
   // The director: main owns the scene and the policy, this only executes the plan.
   // Player timing lives in refs so the effect does not re-run every quarter second.
   const playerRef = useRef({ currentTime, duration })
-  playerRef.current = { currentTime, duration }
   const autopilotRef = useRef(autopilot.enabled)
-  autopilotRef.current = autopilot.enabled
+  useEffect(() => {
+    playerRef.current = { currentTime, duration }
+  }, [currentTime, duration])
+  useEffect(() => {
+    autopilotRef.current = autopilot.enabled
+  }, [autopilot.enabled])
 
   /** Crossing into the last 21 s of a track is its own trigger: silence at the table
    *  must not mean the boundary goes unplanned. */
@@ -447,7 +477,10 @@ export default function Soundboard({
     window.doty
       .sessionEvaluate({
         state: sessionText,
-        candidates,
+        // The model judges descriptions, not filenames: paths alone hide the tags,
+        // BPM and energy that make a track recognisable.
+        candidates: candidates.map((f) => describeTrack(f, metaMap[f], tagsMap[f] || [])),
+        paths: candidates,
         msUntilTrackEnd: remaining,
         autopilot: autopilotRef.current,
         override,
@@ -460,13 +493,31 @@ export default function Soundboard({
 
         let best = 0
         for (let i = 1; i < tracks.length; i++) if (tracks[i] > tracks[best]) best = i
-        const track = candidates[best]
+        // Main resolves the path from the description it ranked; fall back to the
+        // index when it did not.
+        const track = plan.track ?? candidates[best]
         if (!track) return
+
+        const recordAuto = (probability: number) =>
+          window.doty
+            .sessionDecision({
+              at: Date.now(),
+              kind: 'music',
+              action: plan.action,
+              reason: plan.reason,
+              track,
+              probability,
+              mood: plan.scene,
+              source: 'auto',
+            })
+            .then(refreshReport)
+            .catch(() => {})
 
         if (plan.action === 'queue-next') {
           // Nothing playing yet: queueing would sit silent.
           if (!playing) {
             handlePlayTrack(track, true, 'auto')
+            recordAuto(tracks[best] ?? 0)
             return
           }
           // Dedupe on what is actually in the queue, not on the last pick: the top
@@ -476,9 +527,11 @@ export default function Soundboard({
           if (already && already.track === track && Date.now() - already.at < 120_000) return
           lastQueued.current = { track, at: Date.now() }
           queue.playNext(track)
+          recordAuto(tracks[best] ?? 0)
         } else {
           lastQueued.current = null
           handlePlayTrack(track, true, 'auto')
+          recordAuto(tracks[best] ?? 0)
         }
       })
       .catch((e) => console.error('[director] evaluate failed:', e))
@@ -487,7 +540,7 @@ export default function Soundboard({
     }
     // handlePlayTrack and queue are stable enough for this one-shot planner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, lastRanker, sessionText, override, nearEnd, refreshReport])
+  }, [candidates, lastRanker, sessionText, override, nearEnd, refreshReport, metaMap, tagsMap])
 
   // Feed confidence to autopilot when recommendations change.
   // Keep the callbacks in refs: they are rebuilt every render, so depending on

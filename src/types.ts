@@ -209,14 +209,17 @@ export interface DotyAPI {
   rankerDownload: () => Promise<{ ok: boolean; reason?: string }>
   sessionEvaluate: (request: {
     state: string
+    /** Option text handed to the model: described tracks, not filenames. */
     candidates: string[]
+    /** The same candidates as file paths, in the same order. */
+    paths: string[]
     msUntilTrackEnd: number | null
     autopilot: boolean
     override: boolean
   }) => Promise<{
     tracks: number[]
     moods: number[]
-    plan: { scene: string; action: 'hold' | 'queue-next' | 'play-now'; reason: string } | null
+    plan: { scene: string; action: 'hold' | 'queue-next' | 'play-now'; reason: string; track: string | null } | null
   }>
   sessionDecision: (row: {
     at: number
