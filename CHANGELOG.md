@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/CodeAndJam/doty/compare/v3.2.2...v4.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* there is no scene interpreter to choose, install or read a mood from, and the 400 MB and 487 MB GGUF models already on disk are unused. The ranker graph is not hosted yet, so recommendations run on the heuristic until it is.
+
+### Features
+
+* collapsible soundboard rails and per-worktree dev profiles ([#118](https://github.com/CodeAndJam/doty/issues/118)) ([bdf3283](https://github.com/CodeAndJam/doty/commit/bdf328358586527d20098ebf7f84e4c43e1a6fd7))
+
 ## [3.2.2](https://github.com/CodeAndJam/doty/compare/v3.2.1...v3.2.2) (2026-11-13)
 
 
