@@ -122,6 +122,7 @@ export default function Settings({
   const [whisperProgress, setWhisperProgress] = useState(0)
   const [whisperDownloadError, setWhisperDownloadError] = useState<string | null>(null)
   const [rankerInstalled, setRankerInstalled] = useState<boolean | null>(null)
+  const [rankerLanguageCovered, setRankerLanguageCovered] = useState(true)
   const [rankerProgress, setRankerProgress] = useState<number | null>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
@@ -144,7 +145,10 @@ export default function Settings({
       if (error) setWhisperDownloadError(error.error)
     })
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
-    window.doty.rankerStatus().then((s) => setRankerInstalled(s.cached))
+    window.doty.rankerStatus().then((s) => {
+      setRankerInstalled(s.cached)
+      setRankerLanguageCovered(s.languageCovered)
+    })
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
@@ -833,7 +837,10 @@ export default function Settings({
                 onChange={async (e) => {
                   const language = e.target.value
                   const result = await window.doty.setSttLanguage(language)
-                  if (result.ok) setSttLanguage(language)
+                  if (result.ok) {
+                    setSttLanguage(language)
+                    window.doty.rankerStatus().then((s) => setRankerLanguageCovered(s.languageCovered))
+                  }
                 }}
                 style={{
                   background: '#080705',
@@ -942,7 +949,9 @@ export default function Settings({
             <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '4px' }}>
               {rankerInstalled === false
                 ? 'Not installed — suggestions fall back to keyword matching'
-                : 'Ranked by the decision model on your machine'}
+                : !rankerLanguageCovered
+                  ? `Does not read ${LANGUAGE_LABELS[sttLanguage] ?? sttLanguage} — it will still rank, but may be weaker`
+                  : 'Ranked by the decision model on your machine'}
             </p>
           </div>
         </div>

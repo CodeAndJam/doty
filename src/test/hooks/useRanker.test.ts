@@ -13,11 +13,13 @@ describe('useRanker warmup', () => {
 
   it('defers the model load instead of warming it at mount', async () => {
     const rankerDecide = vi.fn<() => Promise<number[]>>().mockResolvedValue([])
+    const rankerStatus = vi.fn().mockResolvedValue({ cached: true, downloading: false, languageCovered: true })
     const unsub = vi.fn()
     Object.defineProperty(window, 'doty', {
       configurable: true,
       value: {
         onRankerStatus: vi.fn(() => unsub),
+        rankerStatus,
         rankerDecide,
       },
     })

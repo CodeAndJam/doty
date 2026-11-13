@@ -8,7 +8,14 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { extractRankerArchive, installRankerArchive, isRankerInstalled, sha256File, verifyArchive } from './d1-model'
+import {
+  coversLanguage,
+  extractRankerArchive,
+  installRankerArchive,
+  isRankerInstalled,
+  sha256File,
+  verifyArchive,
+} from './d1-model'
 
 const dirs: string[] = []
 
@@ -76,5 +83,29 @@ describe('installRankerArchive', () => {
     installRankerArchive(archive, target, digest)
     expect(isRankerInstalled(target)).toBe(true)
     expect(existsSync(archive)).toBe(false)
+  })
+})
+
+describe('coversLanguage', () => {
+  const reads = ['en', 'es', 'fr', 'pt']
+
+  it('accepts a language the model reads, in any variant', () => {
+    expect(coversLanguage(reads, 'pt-PT')).toBe(true)
+    expect(coversLanguage(reads, 'pt-BR')).toBe(true)
+    expect(coversLanguage(reads, 'en')).toBe(true)
+  })
+
+  it('refuses a language the model cannot read', () => {
+    expect(coversLanguage(reads, 'cs')).toBe(false)
+    expect(coversLanguage(reads, 'el')).toBe(false)
+  })
+
+  it('lets auto-detect through: the model reads the text itself', () => {
+    expect(coversLanguage(reads, 'auto')).toBe(true)
+    expect(coversLanguage(reads, undefined)).toBe(true)
+  })
+
+  it('does not disable the model when the language list is unknown', () => {
+    expect(coversLanguage([], 'cs')).toBe(true)
   })
 })

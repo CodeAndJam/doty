@@ -49,9 +49,11 @@ async function waitForModelRanking(page: Page, input: ReturnType<Page['getByTest
 
 test('keyword fallback answers while the model loads, then the model takes over', async () => {
   const app = await electron.launch({ args: [join(__dirname, '../out/main/index.js')] })
+  let page: Page | undefined
+  let previousFolder: string | null = null
 
   try {
-    const page = await app.firstWindow()
+    page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     page.on('pageerror', (err) => console.error('[renderer:error]', err.message))
 
@@ -64,6 +66,8 @@ test('keyword fallback answers while the model loads, then the model takes over'
     const status = await page.evaluate(() => window.doty.rankerStatus())
     expect(status.cached, 'ranker model missing — download it once in Settings first').toBe(true)
 
+    // The spec runs against the real user data dir, so the folder is restored on exit.
+    previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
     await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), FIXTURES_DIR)
 
     const input = page.getByTestId('dm-input')
@@ -91,7 +95,11 @@ test('keyword fallback answers while the model loads, then the model takes over'
     expect(ranked.some((n) => relevant.some((r) => n.includes(r))), `no mood-relevant track in ${ranked.join(', ')}`).toBe(
       true,
     )
+
   } finally {
+    if (page && previousFolder) {
+      await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), previousFolder).catch(() => {})
+    }
     await gracefulClose(app)
   }
 })

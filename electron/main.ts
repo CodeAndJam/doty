@@ -15,7 +15,14 @@ import {
   setOnParagraphBreak,
   startStream,
 } from './asr'
-import { installRankerArchive, isRankerInstalled, RANKER_URL, rankerPaths } from './d1-model'
+import {
+  coversLanguage,
+  installRankerArchive,
+  isRankerInstalled,
+  RANKER_URL,
+  rankerLanguages,
+  rankerPaths,
+} from './d1-model'
 import {
   closeDb,
   getAllTags,
@@ -700,7 +707,11 @@ handle(INVOKE.modelStatus, () => ({
   onboardingSkipped: store.get('sttOnboardingSkipped', false),
 }))
 
-handle(INVOKE.rankerStatus, () => ({ cached: isRankerInstalled(), downloading: rankerDownloading }))
+handle(INVOKE.rankerStatus, () => ({
+  cached: isRankerInstalled(),
+  downloading: rankerDownloading,
+  languageCovered: coversLanguage(rankerLanguages(), store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string),
+}))
 
 handle(INVOKE.rankerDownload, () => downloadRanker())
 

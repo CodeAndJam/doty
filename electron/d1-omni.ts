@@ -20,6 +20,8 @@ export const RANK_INSTRUCTIONS = 'Qual destas músicas se adequa melhor ao momen
 export interface D1Manifest {
   family: string
   context_length: number
+  /** What the checkpoint reads. A session outside this list is not ranked by it. */
+  languages?: string[]
   per_option_tokens: number
   shape: { seq: number; options: number }
   temperatures: Record<string, number>

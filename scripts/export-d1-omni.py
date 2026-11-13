@@ -304,6 +304,9 @@ def main() -> int:
         "license": "LFM Open License v1.0",
         "license_note": "commercial use by an organisation with US$10M+ annual revenue needs a separate agreement",
         "context_length": model.config.max_length,
+        # What the checkpoint was trained and evaluated for, from its model card.
+        # The app refuses to rank in a language that is not here.
+        "languages": ["en", "de", "es", "fr", "it", "nl", "pl", "pt", "ar", "hi", "ja", "ru", "tr", "vi", "zh"],
         "per_option_tokens": 24,
         "shape": {"seq": SEQ, "options": OPTIONS, "padding": "right, ids 0, attention_mask 0"},
         "precision": "fp32",

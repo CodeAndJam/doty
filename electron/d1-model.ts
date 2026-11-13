@@ -11,6 +11,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { MODELS_DIR } from './models-dir'
+import { resolveLanguage } from './stt-language'
 
 /** GitHub rejects release assets over 2 GB; this archive is ~1.5 GB. */
 export const RANKER_ARCHIVE = 'd1-omni-text-v1.tar.gz'
@@ -23,7 +24,7 @@ export const RANKER_ARCHIVE = 'd1-omni-text-v1.tar.gz'
 export const RANKER_URL = `https://github.com/CodeAndJam/doty/releases/download/models-v1/${RANKER_ARCHIVE}`
 
 /** sha256 of the archive, printed by `scripts/export-d1-omni.py --pack`. */
-export const RANKER_SHA256 = '873a44abce0f7bb02630d0aaaa8ced933c233b0dcb768c4eb234c95938d29ec1'
+export const RANKER_SHA256 = 'c825fa241b4c61db398dc93de2c77ffc1b0e944f7d7f5328aab94eb448d49c9f'
 
 const GRAPH = 'd1-omni-text.onnx'
 const MANIFEST = 'd1-omni-text-manifest.json'
@@ -49,6 +50,31 @@ export function isRankerInstalled(dir = MODELS_DIR): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * The languages this build's ranker can read, from the manifest. Empty when the
+ * model is not installed yet, which must not disable anything by itself.
+ */
+export function rankerLanguages(dir = MODELS_DIR): string[] {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(join(dir, MANIFEST), 'utf8')) as { languages?: unknown }
+    return Array.isArray(manifest.languages) ? (manifest.languages as string[]) : []
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Whether the ranker reads the language the table is speaking. `auto` is let
+ * through: the model reads the transcript itself, and guessing is no worse than
+ * refusing. An empty list (older manifest, model not installed) also passes, so
+ * a missing fact never silently disables the model.
+ */
+export function coversLanguage(languages: string[], configured: string | undefined): boolean {
+  if (!configured || configured === 'auto') return true
+  if (languages.length === 0) return true
+  return resolveLanguage(configured, languages) !== undefined
 }
 
 export function sha256File(path: string): string {
