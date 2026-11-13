@@ -31,6 +31,8 @@
 
 ## Done
 
+- [x] Architecture deepening on top of #111: one IPC channel registry with typed `handle`/`send`/`invoke`/`subscribe` plus a contract test, one model-download state machine for STT/LLM/embedding, `sfx-library` extracted, ranking moved into `rankTracks` with shared music/SFX scoring, orphaned `prefilter` deleted (`music://` was already deduplicated in #111)
+
 - [x] STT quality gate: WER/CER + noise + silence + realtime checks over Portuguese fixtures, committed baseline, nightly macOS workflow (`pnpm stt:eval`, `docs/QUALITY.md`)
 - [x] STT: live transcript no longer waits for session stop when a streaming model freezes `committed`; worker messages serialized
 - [x] STT: 10s chunked live decode for batch models (Parakeet Ultra), quiet-window cuts so no word is split

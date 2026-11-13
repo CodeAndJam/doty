@@ -11,7 +11,8 @@
  */
 
 import type { SfxMeta } from '../types'
-import { fold, matchesTag, tokenize } from './keywordMatch'
+import { fold, tokenize } from './keywordMatch'
+import { historyBoost, maxPlays, tagMatch, textOverlap } from './scoreCandidates'
 
 interface SfxMoodProfile {
   keywords: string[]
@@ -352,9 +353,7 @@ function detectMoods(tokens: string[]): SfxMoodProfile[] {
 
 /** Score a label/description against transcript tokens */
 function textScore(text: string, tokens: string[]): number {
-  const textTokens = tokenize(text)
-  const matches = textTokens.filter((t) => tokens.includes(t)).length
-  return Math.min(1, (matches / Math.max(1, textTokens.length)) * 2)
+  return textOverlap(text, tokens)
 }
 
 export function heuristicSfxRecommend(
@@ -377,7 +376,7 @@ export function heuristicSfxRecommend(
   const matchedCategories = new Set(moods.flatMap((m) => m.categories))
 
   // Compute max play count for normalization
-  const maxPlays = Math.max(1, ...Object.values(playFrequencies))
+  const topPlays = maxPlays(playFrequencies)
 
   const scored = sfxList.map((sfx) => {
     // Label match (weighted 2x)
@@ -400,13 +399,10 @@ export function heuristicSfxRecommend(
     const labelMoodScore = labelMoodMatch ? 1.5 : 0
 
     // Tag score (weighted 3x — user intent is explicit)
-    const sfxTags = tagsMap[sfx.filename] || []
-    const tagMatches = sfxTags.filter((tag) => matchesTag(tokens, tag)).length
-    const tagScore = Math.min(1, tagMatches / Math.max(1, sfxTags.length)) * 3
+    const tagScore = tagMatch(tagsMap[sfx.filename] || [], tokens)
 
     // History boost: frequently played SFX get a small bonus (weighted 0.5x)
-    const plays = playFrequencies[sfx.id] || 0
-    const historyScore = (plays / maxPlays) * 0.5
+    const historyScore = historyBoost(playFrequencies[sfx.id] || 0, topPlays)
 
     return { id: sfx.id, score: labelScore + descScore + catScore + labelMoodScore + tagScore + historyScore }
   })

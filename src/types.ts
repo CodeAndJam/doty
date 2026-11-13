@@ -288,7 +288,6 @@ export interface DotyAPI {
   setSfxFolder: (path: string) => Promise<{ ok: boolean }>
   getSfxRecommendationCount: () => Promise<number>
   setSfxRecommendationCount: (count: number) => Promise<{ ok: boolean }>
-  onSfxRecommendations: (cb: (ids: string[]) => void) => () => void
 
   // Autopilot (#12)
   getAutopilotConfig: () => Promise<import('./lib/autopilot').AutopilotConfig>

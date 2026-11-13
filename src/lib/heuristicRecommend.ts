@@ -12,7 +12,8 @@
  */
 
 import type { TrackMeta } from '../types'
-import { fold, matchesTag, tokenize } from './keywordMatch'
+import { fold, tokenize } from './keywordMatch'
+import { historyBoost, maxPlays, tagMatch, textOverlap } from './scoreCandidates'
 
 interface MoodProfile {
   keywords: string[]
@@ -315,9 +316,7 @@ function detectMood(tokens: string[]): MoodProfile | null {
 
 /** Score a filename against transcript tokens (word overlap) */
 function filenameScore(filename: string, tokens: string[]): number {
-  const nameTokens = tokenize(filename.replace(/\.[^.]+$/, ''))
-  const matches = nameTokens.filter((t) => tokens.includes(t)).length
-  return Math.min(1, (matches / Math.max(1, nameTokens.length)) * 2)
+  return textOverlap(filename.replace(/\.[^.]+$/, ''), tokens) * 2
 }
 
 export interface HeuristicResult {
@@ -346,16 +345,14 @@ export function heuristicRecommend(
   const mood = detectMood(tokens)
 
   // Compute max play count for normalization
-  const maxPlays = Math.max(1, ...Object.values(playFrequencies))
+  const topPlays = maxPlays(playFrequencies)
 
   const scored = files.map((file) => {
     const meta = metadata[file]
-    const fnScore = filenameScore(file, tokens) * 2 // filename match weighted 2x
+    const fnScore = filenameScore(file, tokens)
 
     // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
-    const fileTags = tagsMap[file] || []
-    const tagMatches = fileTags.filter((tag) => matchesTag(tokens, tag)).length
-    const tagScore = Math.min(1, tagMatches / Math.max(1, fileTags.length)) * 3
+    const tagScore = tagMatch(tagsMap[file] || [], tokens)
 
     let featureScore = 0
     if (meta && mood) {
@@ -370,8 +367,7 @@ export function heuristicRecommend(
     }
 
     // History boost: frequently played tracks get a small bonus (weighted 0.5x)
-    const plays = playFrequencies[file] || 0
-    const historyScore = (plays / maxPlays) * 0.5
+    const historyScore = historyBoost(playFrequencies[file] || 0, topPlays)
 
     return { file, score: fnScore + tagScore + featureScore + historyScore }
   })
