@@ -54,10 +54,23 @@ pnpm ranker:eval                          # prints and writes test-results/ranke
 RANKER_UPDATE_BASELINE=1 pnpm ranker:eval  # accept today's numbers as the baseline
 ```
 
-The gate fails if top-1 drops more than five points below `baseline.json`.
-`precision @ ≥0.9` is the number that governs autopilot: it is how often a
-confident pick was actually right, and therefore the chance an unasked change
-is wrong.
+The report answers two different questions, and they must not be averaged:
+
+**Ranking** — given the twenty it was offered, did it choose well? `top-1`,
+`top-3`, and `precision @ ≥0.9` (how often a confident pick was right, i.e. the
+chance an unasked change is wrong).
+
+**Retrieval** — were the twenty the right ones? Every label picked from the
+music folder that was *not* among the twenty is a recall miss, reported with the
+track names and excluded from the ranking numbers. A recall miss is a prefilter
+problem; no ranker tuning can fix it.
+
+Plus **abstention**: rows you labelled "nothing here fits", with the mean top
+probability there. That number being high is the dangerous case — the model
+wanted to act on a scene where nothing suited.
+
+The gate fails if top-1 or the offered share drops more than five points below
+`baseline.json`.
 
 Rows you leave unlabelled are ignored, so label in passes — the harness only
 grades what exists. Labels whose track was not among the twenty are reported

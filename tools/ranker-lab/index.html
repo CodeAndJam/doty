@@ -40,6 +40,8 @@
   #none.on { color:var(--bad); }
   code { font:12px monospace; color:var(--gold); background:#12100a; padding:1px 5px; border:1px solid var(--line); }
   .missing { font:11px monospace; color:#3a2e1a; }
+  .miss { font:11px monospace; color:var(--good); margin-top:6px; }
+  .miss::before { content:'● '; }
 </style>
 </head>
 <body>
@@ -74,10 +76,11 @@
     <div class="label">Candidates the model was offered</div>
     <ol id="list"></ol>
     <div id="none">nothing here fits the scene — press <b>0</b></div>
+    <div id="picknote" class="miss" style="display:none"></div>
     <div id="status" class="missing" aria-live="polite"></div>
 
     <div id="all">
-      <div class="label">Everything in the music folder</div>
+      <div class="label">Everything in the music folder <span id="count" class="missing"></span></div>
       <input id="search" type="search" placeholder="filter by name…" />
       <ul id="allList"><li class="missing">Open the music folder to list and play every track.</li></ul>
     </div>
@@ -267,6 +270,15 @@ function render() {
     list.appendChild(trackRow(cand.path, cand.description || cand.path, { label, rowId: row.id, index: i + 1 }))
   })
   $('none').className = label.picked === 'none' ? 'on' : ''
+
+  // A pick from the folder that was never offered is a retrieval miss: the model
+  // had no chance, and the eval counts it separately from a ranking mistake.
+  const note = $('picknote')
+  const outside =
+    label.picked && label.picked !== 'none' && !row.candidates.some((c) => c.path === label.picked)
+  note.style.display = outside ? 'block' : 'none'
+  if (outside) note.textContent = `recall miss — the model was never offered ${label.picked.split('/').pop()}`
+
   renderAll(row)
 }
 
@@ -290,6 +302,7 @@ $('musicDir').addEventListener('change', (e) => {
   for (const file of all) {
     if (/\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(file.name)) state.audio.set(normalise(file.webkitRelativePath), file)
   }
+  $('count').textContent = state.audio.size > 0 ? `· ${state.audio.size} playable` : ''
   status(all.length === 0
     ? 'No files came back from that folder.'
     : `Loaded ${state.audio.size} playable tracks of ${all.length} files.`)

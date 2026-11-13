@@ -22,6 +22,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { D1Omni } from '../d1-omni'
+import { grade } from './grade'
 
 const FIXTURES = join(__dirname, '..', '..', 'test-fixtures', 'ranker')
 const ROWS = join(FIXTURES, 'rows.json')
@@ -39,6 +40,8 @@ interface Label {
   id: string
   picked: string | null
   rejects: string[]
+  /** False when the DM picked a library track that was not among the twenty. */
+  offered?: boolean
 }
 
 const ready = fs.existsSync(ROWS) && fs.existsSync(LABELS) && fs.existsSync(join(MODELS, 'd1-omni-text.onnx'))
@@ -52,67 +55,86 @@ describe.skipIf(!ready)('ranker quality', () => {
     model = await D1Omni.load(MODELS, 'd1-omni-text.onnx', ['cpu'])
   }, 300_000)
 
-  async function grade(): Promise<Array<{ picked: string; top1: boolean; top3: boolean; probability: number }>> {
+  /** One model pass per labelled row; the grading itself is pure and tested. */
+  async function probabilities(): Promise<Map<string, number[]>> {
     const byId = new Map(rows.map((r) => [r.id, r]))
-    const graded: Array<{ picked: string; top1: boolean; top3: boolean; probability: number }> = []
+    const out = new Map<string, number[]>()
     for (const label of labels) {
       const row = byId.get(label.id)
-      if (!row || !label.picked || label.picked === 'none') continue
-      const probabilities = await model.rank(
-        row.transcript,
-        'Qual destas músicas se adequa melhor ao momento atual da sessão?',
-        row.candidates.map((c) => c.description),
+      if (!row || label.picked === null) continue
+      out.set(
+        label.id,
+        await model.rank(
+          row.transcript,
+          'Qual destas músicas se adequa melhor ao momento atual da sessão?',
+          row.candidates.map((c) => c.description),
+        ),
       )
-      const ranked = row.candidates
-        .map((c, i) => ({ path: c.path, p: probabilities[i] ?? 0 }))
-        .sort((a, b) => b.p - a.p)
-      graded.push({
-        picked: label.picked,
-        top1: ranked[0]?.path === label.picked,
-        top3: ranked.slice(0, 3).some((r) => r.path === label.picked),
-        probability: ranked[0]?.p ?? 0,
-      })
     }
-    return graded
+    return out
   }
 
-  it('measures the decisions against the DM’s labels', async () => {
-    const graded = await grade()
-    if (graded.length === 0) {
+  it('grades ranking and retrieval separately', async () => {
+    if (labels.every((l) => l.picked === null)) {
       console.log('[ranker] no usable labels yet')
       return
     }
 
-    const top1 = graded.filter((g) => g.top1).length / graded.length
-    const top3 = graded.filter((g) => g.top3).length / graded.length
-    const high = graded.filter((g) => g.probability >= 0.9)
-    const precisionAt9 = high.length === 0 ? null : high.filter((g) => g.top1).length / high.length
+    const result = grade({ rows, labels, probabilities: await probabilities() })
+    const pct = (v: number) => `${(v * 100).toFixed(1)}%`
 
     const report = [
       '# Ranker quality',
       '',
-      `Rows graded: ${graded.length}`,
+      `Labelled rows: ${labels.filter((l) => l.picked !== null).length}`,
+      '',
+      '## Ranking — given the twenty, did it choose well?',
       '',
       '| metric | value |',
       '| --- | --- |',
-      `| top-1 | ${(top1 * 100).toFixed(1)}% |`,
-      `| top-3 | ${(top3 * 100).toFixed(1)}% |`,
-      `| precision @ ≥0.9 | ${precisionAt9 === null ? 'never reached' : `${(precisionAt9 * 100).toFixed(1)}%`} |`,
-      `| rows at ≥0.9 | ${high.length} of ${graded.length} |`,
+      `| rows | ${result.ranking.n} |`,
+      `| top-1 | ${pct(result.ranking.top1)} |`,
+      `| top-3 | ${pct(result.ranking.top3)} |`,
+      `| precision @ ≥0.9 | ${result.ranking.precisionAt9 === null ? 'never reached' : pct(result.ranking.precisionAt9)} |`,
+      `| rows at ≥0.9 | ${result.ranking.at9} of ${result.ranking.n} |`,
+      '',
+      '## Retrieval — were the twenty the right ones?',
+      '',
+      '| metric | value |',
+      '| --- | --- |',
+      `| picks made | ${result.retrieval.n} |`,
+      `| offered by the prefilter | ${pct(result.retrieval.share)} |`,
+      `| recall misses | ${result.retrieval.misses} |`,
+      '',
+      result.retrieval.misses === 0
+        ? 'No recall misses: every pick was among the twenty.'
+        : `Never offered:\n${result.retrieval.missTracks.map((t) => `- ${t}`).join('\n')}`,
+      '',
+      '## Abstention — "nothing here fits"',
+      '',
+      `Rows: ${result.abstention.n} · mean top probability: ${result.abstention.meanTop.toFixed(3)}`,
+      '',
+      'A high mean here is the dangerous case: the model wanted to act on a',
+      'scene where nothing in the library suited.',
       '',
     ].join('\n')
+
     fs.mkdirSync(join(__dirname, '..', '..', 'test-results'), { recursive: true })
     fs.writeFileSync(REPORT, report)
     console.log(report)
 
     if (process.env.RANKER_UPDATE_BASELINE === '1') {
-      fs.writeFileSync(BASELINE, `${JSON.stringify({ top1, top3, precisionAt9 }, null, 2)}\n`)
+      fs.writeFileSync(
+        BASELINE,
+        `${JSON.stringify({ top1: result.ranking.top1, top3: result.ranking.top3, recall: result.retrieval.share }, null, 2)}\n`,
+      )
       return
     }
     if (!fs.existsSync(BASELINE)) return
 
-    const baseline = JSON.parse(fs.readFileSync(BASELINE, 'utf8')) as { top1: number }
+    const baseline = JSON.parse(fs.readFileSync(BASELINE, 'utf8')) as { top1: number; recall: number }
     // A regression of more than five points is a change in behaviour, not noise.
-    expect(top1).toBeGreaterThan(baseline.top1 - 0.05)
+    expect(result.ranking.top1).toBeGreaterThan(baseline.top1 - 0.05)
+    expect(result.retrieval.share).toBeGreaterThan(baseline.recall - 0.05)
   }, 600_000)
 })
