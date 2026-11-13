@@ -2,7 +2,7 @@
  * Autopilot configuration and types.
  *
  * Autopilot automatically manages music transitions and SFX triggers
- * when the reranker is highly confident in its recommendations.
+ * when the ranker is highly confident in its recommendations.
  */
 
 export interface AutopilotConfig {
@@ -12,7 +12,7 @@ export interface AutopilotConfig {
   musicEnabled: boolean
   /** Whether SFX auto-triggers are enabled (default: true) */
   sfxEnabled: boolean
-  /** Confidence threshold 0.0-1.0 (default: 0.95) */
+  /** Confidence threshold 0.0-1.0 (default: 0.9) */
   confidenceThreshold: number
   /** Crossfade duration in seconds (default: 3) */
   crossfadeDuration: number
@@ -34,7 +34,7 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
   enabled: false,
   musicEnabled: true,
   sfxEnabled: true,
-  confidenceThreshold: 0.95,
+  confidenceThreshold: 0.9,
   crossfadeDuration: 3,
   musicCooldownSeconds: 60,
   minPlaySeconds: 30,
@@ -47,6 +47,12 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
 /** Autopilot state machine states */
 export type AutopilotState = 'idle' | 'evaluating' | 'pending_transition' | 'transitioning' | 'cooldown'
 
+/**
+ * The ranker's probabilities are calibrated, so the number means what it says: above
+ * this the suggestion is highlighted, above `confidenceThreshold` autopilot acts on it.
+ */
+export const HIGHLIGHT_CONFIDENCE = 0.7
+
 /** Confidence label for UI display */
 export function confidenceLabel(threshold: number): string {
   if (threshold >= 0.95) return 'Conservative'
@@ -57,24 +63,4 @@ export function confidenceLabel(threshold: number): string {
 /** True when `lastPlayedAt` is inside the recently-played avoidance window. */
 export function isRecentlyPlayed(lastPlayedAt: number | undefined, now: number, minutes: number): boolean {
   return lastPlayedAt !== undefined && now - lastPlayedAt < minutes * 60_000
-}
-
-/** Compute softmax over an array of logits, returning probabilities */
-export function softmax(logits: number[]): number[] {
-  if (logits.length === 0) return []
-  const max = Math.max(...logits)
-  const exps = logits.map((l) => Math.exp(l - max))
-  const sum = exps.reduce((a, b) => a + b, 0)
-  return exps.map((e) => e / sum)
-}
-
-/** Get the confidence score (top-1 probability) from raw logits */
-export function topConfidence(logits: number[]): { index: number; confidence: number } {
-  if (logits.length === 0) return { index: -1, confidence: 0 }
-  const probs = softmax(logits)
-  let maxIdx = 0
-  for (let i = 1; i < probs.length; i++) {
-    if (probs[i] > probs[maxIdx]) maxIdx = i
-  }
-  return { index: maxIdx, confidence: probs[maxIdx] }
 }

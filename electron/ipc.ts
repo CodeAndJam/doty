@@ -15,14 +15,6 @@ export const INVOKE = {
   sttStart: 'stt:start',
   sttStop: 'stt:stop',
   sttTranscribeChunk: 'stt:transcribe-chunk',
-  // Scene Interpreter (LLM)
-  getLlmModelList: 'llm:get-model-list',
-  getLlmModel: 'llm:get-model',
-  setLlmModel: 'llm:set-model',
-  downloadLlm: 'llm:download',
-  downloadEmbeddingModel: 'llm:download-embedding',
-  getEmbeddingStatus: 'llm:get-embedding-status',
-  getEmbeddingProgress: 'embedding:get-progress',
   // Music
   pickMusicFolder: 'music:pick-folder',
   getMusicFolder: 'music:get-folder',
@@ -36,8 +28,8 @@ export const INVOKE = {
   cancelSttDownload: 'stt:cancel-download',
   skipModelOnboarding: 'stt:skip-onboarding',
   getSttModelList: 'stt:get-model-list',
-  rerankerStatus: 'reranker:status',
-  rerankerScore: 'reranker:score',
+  rankerStatus: 'ranker:status',
+  rankerDecide: 'ranker:decide',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection
@@ -111,17 +103,9 @@ export const EVENTS = {
   sttInterim: 'stt:interim',
   paragraphBreak: 'stt:paragraph-break',
   sttModelSwitched: 'stt:model-switched',
-  // Scene Interpreter (LLM)
-  sceneUpdate: 'scene:update',
-  llmStatus: 'llm:status',
-  llmDownloadProgress: 'llm:download-progress',
-  embeddingProgress: 'embedding:progress',
   // Music
-  recommendations: 'music:recommendations',
-  recommendationConfidence: 'recommend:confidence',
   // Model
-  rerankerStatus: 'reranker:ipc-status',
-  rerankerDownloadProgress: 'reranker:download-progress',
+  rankerStatus: 'ranker:ipc-status',
   modelProgress: 'model:progress',
   modelStatus: 'model:status',
   modelDownloadError: 'model:download-error',

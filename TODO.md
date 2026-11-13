@@ -16,6 +16,29 @@
       (`pnpm test -- --coverage` passes the flag after `--`); `pnpm test:coverage`
       reports ~25% globally. Enable per-directory instead of globally.
 - [ ] #22 HTTP remote control API + Stream Deck plugin (placeholder in Settings, needs implementation)
+- [x] Ranker: export d1-omni to ONNX. `d1-omni-text.onnx` (1.53 GB fp32) passes
+      the parity gate at 1.5e-06 against PyTorch; int8 failed it (2.2e-01 drift,
+      argmax flips) and is not shipped. `electron/d1-omni.test.ts` replays the
+      fixture: token rows byte-identical, probabilities within 1e-4 on CPU.
+      CoreML drifts ~3e-3 because it runs fp16, which is fine for the 0.9 gate.
+- [x] Ranker: swapped in behind `RankDeps` (one choice question over the 20
+      candidates) and the generative stack deleted. Autopilot acts at 0.9, a 0.7
+      highlight marks a suggestion without acting on it, and override is a mode
+      that silences the ranker until an explicit resume.
+- [ ] Ranker: host `d1-omni-text.onnx` as a release asset and wire it into
+      `ModelDownloads`. The LFM licence note goes on the download screen.
+- [ ] Ranker: label ~50 rows from real play — the last 800 chars of pt-PT DM
+      narration plus the 20 candidates and the track you would have picked — and
+      record top-1 for d1-omni against the current cross-encoder. This set also
+      sets `RANK_SWITCH_FLOOR`.
+- [ ] Audio metadata: integrated loudness (LUFS) and onset rate per track, for the
+      candidate prefilter. Deferred until the ranker eval shows combat and horror
+      being confused; both need a versioned metadata cache and a background
+      re-analysis pass (~1.5–3 h per 5000 tracks).
+- [ ] Orphaned models: `Qwen3-0.6B-Q4_K_M.gguf` (~400 MB) and
+      `nomic-embed-text-v2-moe.Q8_0.gguf` (~487 MB) stay in `~/.doty/models/`
+      after the decision-model swap. Harmless; delete by exact filename later if
+      anyone complains.
 
 ## Music Player — Implementation Order
 

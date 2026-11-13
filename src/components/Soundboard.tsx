@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useAutopilot } from '../hooks/useAutopilot'
 import { useQueue } from '../hooks/useQueue'
-import type { RankerType } from '../hooks/useQwen'
+import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
+import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
@@ -40,6 +41,10 @@ function saveSfxPins(pins: string[]) {
 
 interface Props {
   recommendations: string[]
+  /** The DM is driving by hand; the ranker stays idle until they resume. */
+  override: boolean
+  onManualAction: () => void
+  onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
   lastRanker: RankerType
@@ -51,6 +56,9 @@ interface Props {
 }
 
 export default function Soundboard({
+  override,
+  onManualAction,
+  onResumeAuto,
   recommendations,
   sfxRecommendations,
   lastConfidence,
@@ -251,7 +259,7 @@ export default function Soundboard({
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
-    autopilot.onManualAction()
+    onManualAction()
   }
 
   function togglePin(filename: string) {
@@ -300,7 +308,7 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
-    autopilot.onManualAction()
+    onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -356,6 +364,7 @@ export default function Soundboard({
       }
     },
     sfxPlayer.channels.length > 0,
+    override,
   )
 
   // Reload autopilot config when Settings modal closes
@@ -657,6 +666,9 @@ export default function Soundboard({
                       }}
                     >
                       Suggestions
+                      {lastRanker === 'model' && lastConfidence >= HIGHLIGHT_CONFIDENCE && (
+                        <span style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}> ▲ strong</span>
+                      )}
                     </span>
                     {/* Ranker + confidence badge */}
                     {lastRanker && (
@@ -665,15 +677,32 @@ export default function Soundboard({
                           fontSize: '9px',
                           fontFamily: 'monospace',
                           padding: '0 4px',
-                          border: `1px solid ${lastRanker === 'reranker' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
-                          color: lastRanker === 'reranker' ? '#c8922a' : '#6b4e15',
+                          border: `1px solid ${lastRanker === 'model' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
+                          color: lastRanker === 'model' ? '#c8922a' : '#6b4e15',
                           letterSpacing: '0.05em',
                         }}
                         title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
                       >
-                        {lastRanker === 'reranker' ? 'ML' : 'heuristic'}
+                        {lastRanker === 'model' ? 'model' : 'heuristic'}
                         {lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
                       </span>
+                    )}
+                    {override && (
+                      <button
+                        type="button"
+                        onClick={onResumeAuto}
+                        title="Playback is yours until you resume automatic suggestions"
+                        style={{
+                          fontSize: '9px',
+                          fontFamily: 'monospace',
+                          padding: '0 4px',
+                          border: '1px solid rgba(74,138,106,0.45)',
+                          color: '#4a8a6a',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        RESUME AUTO
+                      </button>
                     )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
                     {/* Decision log toggle */}

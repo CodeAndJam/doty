@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQwen } from '../hooks/useQwen'
+import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
@@ -16,12 +16,6 @@ export default function MainLayout() {
   const [asrStatus, setAsrStatus] = useState<'idle' | 'loading' | 'ready' | 'crashed'>('idle')
   const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([])
   const [interimText, setInterimText] = useState('')
-  const [currentScene, setCurrentScene] = useState<{
-    scene: string
-    mood: string
-    intensity: number
-    keywords: string[]
-  } | null>(null)
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -35,7 +29,8 @@ export default function MainLayout() {
     () => localStorage.getItem(SPEAKER_STORAGE_KEY) ?? undefined,
   )
   const [dmPrompt, setDmPrompt] = useState('')
-  const [rerankerCached, setRerankerCached] = useState<boolean | null>(null)
+  const [rankerCached, setRankerCached] = useState<boolean | null>(null)
+  const [override, setOverride] = useState(false)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
@@ -94,7 +89,7 @@ export default function MainLayout() {
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
   const { start, stop, micPermission } = useRecorder(micDeviceId)
-  const { recommend, modelStatus, lastRanker } = useQwen()
+  const { recommend, modelStatus, lastRanker } = useRanker()
   const recommendRef = useRef(recommend)
   // Stable handle for the IPC effect below (a plain function is rebuilt every render)
   const toggleRecordingRef = useRef<() => void>(() => {})
@@ -170,19 +165,21 @@ export default function MainLayout() {
     }
   }, [activeSession])
 
-  // Check if reranker model is already cached on mount
+  // Check if the ranker model is already on disk on mount
   useEffect(() => {
-    window.doty.rerankerStatus().then(({ cached }) => setRerankerCached(cached))
+    window.doty.rankerStatus().then(({ cached }) => setRankerCached(cached))
   }, [])
 
   // Once model is ready, mark as cached so the banner doesn't reappear
   useEffect(() => {
-    if (modelStatus === 'ready') setRerankerCached(true)
+    if (modelStatus === 'ready') setRankerCached(true)
   }, [modelStatus])
 
-  const showRerankerDownload = rerankerCached === false && modelStatus === 'loading'
+  const showRankerMissing = rankerCached === false && modelStatus !== 'ready'
 
   const runRecommendation = useCallback(async () => {
+    // Override: the DM is driving by hand, so the ranker stays idle.
+    if (override) return
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
     if (files.length === 0) {
@@ -201,7 +198,7 @@ export default function MainLayout() {
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
-  }, [])
+  }, [override])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     const sfxList = await window.doty.getSfxList()
@@ -302,19 +299,6 @@ export default function MainLayout() {
       })
     })
 
-    // Listen for scene interpreter updates
-    const unsubScene = window.doty.onSceneUpdate((scene) => {
-      setCurrentScene(scene)
-    })
-
-    // Scene-interpreter pipeline (main process) — fast path + vector search
-    const unsubRec = window.doty.onRecommendations((files) => {
-      setRecommendations(files)
-    })
-    const unsubRecConfidence = window.doty.onRecommendationConfidence((confidence) => {
-      setLastConfidence(confidence)
-    })
-
     // Folder/session changes coming from Settings or the main process
     const unsubFolder = window.doty.onMusicFolderChanged((folder) => setMusicFolder(folder))
     const unsubSessions = window.doty.onSessionsChanged(() => {
@@ -347,9 +331,6 @@ export default function MainLayout() {
       unsubInterim()
       unsubModelSwitch()
       unsubParagraphBreak()
-      unsubScene()
-      unsubRec()
-      unsubRecConfidence()
       unsubFolder()
       unsubSessions()
       window.removeEventListener('keydown', handleKeyDown)
@@ -503,7 +484,7 @@ export default function MainLayout() {
               </span>
             </button>
           )}
-          {showRerankerDownload && (
+          {showRankerMissing && (
             <span
               className="px-2 py-1"
               style={{
@@ -512,7 +493,7 @@ export default function MainLayout() {
                 fontSize: '11px',
                 fontFamily: 'monospace',
               }}
-              title="The reranker model downloads in the background. Recommendations use heuristics until it is ready."
+              title="The ranker model is not installed. Recommendations use heuristics until it is."
             >
               Ranker warming up
             </span>
@@ -622,7 +603,6 @@ export default function MainLayout() {
                 const md = `# Session Transcript\n\n${lines.join('\n\n')}\n`
                 navigator.clipboard.writeText(md)
               }}
-              currentScene={currentScene}
               availableModels={sttModelList}
             />
           </div>
@@ -651,6 +631,12 @@ export default function MainLayout() {
 
           <div className="flex-1 overflow-hidden">
             <Soundboard
+              override={override}
+              onManualAction={() => setOverride(true)}
+              onResumeAuto={() => {
+                setOverride(false)
+                runRecommendation()
+              }}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}
@@ -682,7 +668,7 @@ export default function MainLayout() {
           }}
           micDeviceId={micDeviceId}
           speakerDeviceId={speakerDeviceId}
-          qwenStatus={modelStatus}
+          rankerStatus={modelStatus}
           recommendCount={recommendCount}
           onRecommendCountChange={(count) => {
             setRecommendCount(count)

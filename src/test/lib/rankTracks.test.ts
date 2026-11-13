@@ -1,47 +1,67 @@
 import { describe, expect, it, vi } from 'vitest'
-import { rankTracks } from '../../lib/rankTracks'
+import { describeTrack, rankTracks } from '../../lib/rankTracks'
 
 const signals = { metadata: {}, tagsMap: {}, playFrequencies: {} }
 
 describe('rankTracks', () => {
   it('returns an empty result without candidates', async () => {
-    const score = vi.fn()
-    await expect(rankTracks('battle', [], signals, { ready: true, score })).resolves.toEqual({
+    const decide = vi.fn()
+    await expect(rankTracks('battle', [], signals, { ready: true, decide })).resolves.toEqual({
       files: [],
       confidence: 0,
       ranker: null,
     })
-    expect(score).not.toHaveBeenCalled()
+    expect(decide).not.toHaveBeenCalled()
   })
 
-  it('stays on the heuristic while the reranker is not ready', async () => {
-    const score = vi.fn()
-    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: false, score })
+  it('stays on the heuristic while the model is not ready', async () => {
+    const decide = vi.fn()
+    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: false, decide })
 
     expect(result.ranker).toBe('heuristic')
     expect(result.files.sort()).toEqual(['a.mp3', 'b.mp3'])
-    expect(score).not.toHaveBeenCalled()
+    expect(decide).not.toHaveBeenCalled()
   })
 
-  it('reorders the candidates by reranker score when ready', async () => {
-    const score = vi.fn(async (pairs: Array<{ text: string; text_pair: string }>) =>
-      pairs.map((_, i) => (i === 0 ? 0 : 10)),
+  it('orders candidates by the model probabilities and reports the top one', async () => {
+    // Already-calibrated probabilities, in candidate order: the second wins.
+    const decide = vi.fn(async (_prompt: string, candidates: string[]) =>
+      candidates.map((_, i) => (i === 0 ? 0.1 : 0.82)),
     )
-    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: true, score })
+    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: true, decide })
 
-    expect(result.ranker).toBe('reranker')
+    expect(result.ranker).toBe('model')
     expect(result.files).toEqual(['b.mp3', 'a.mp3'])
-    expect(result.confidence).toBeGreaterThan(0.9)
-    expect(score).toHaveBeenCalledTimes(1)
+    // The top probability is passed through, not softmaxed again.
+    expect(result.confidence).toBeCloseTo(0.82, 6)
+    expect(decide).toHaveBeenCalledTimes(1)
   })
 
-  it('falls back to the heuristic when scoring fails', async () => {
-    const score = vi.fn(async () => {
+  it('falls back to the heuristic when the model call fails', async () => {
+    const decide = vi.fn(async () => {
       throw new Error('worker crashed')
     })
-    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: true, score })
+    const result = await rankTracks('battle', ['a.mp3', 'b.mp3'], signals, { ready: true, decide })
 
     expect(result.ranker).toBe('heuristic')
     expect(result.files.sort()).toEqual(['a.mp3', 'b.mp3'])
+  })
+})
+
+describe('describeTrack', () => {
+  it('keeps the description inside the model option budget', () => {
+    const text = describeTrack('battle-of-the-ancients.mp3', { genre: 'Orchestral', bpm: 132, energy: 0.83 } as never, [
+      'combat',
+      'drums',
+      'epic',
+      'brass',
+    ])
+    expect(text).toBe('battle of the ancients — Orchestral, 132 BPM, energy 0.8, combat, drums')
+    // Two tags only: the model gives every option about 24 tokens.
+    expect(text).not.toContain('epic')
+  })
+
+  it('falls back to the name alone when there is no metadata', () => {
+    expect(describeTrack('tavern_theme.mp3', undefined)).toBe('tavern theme')
   })
 })

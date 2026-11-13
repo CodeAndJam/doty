@@ -20,7 +20,6 @@ interface StoreData {
   discordLastChannelId?: string // last joined channel
   // Sessions / models
   lastSession?: string
-  llmModel?: string
   // Autopilot (#12)
   autopilotEnabled?: boolean
   autopilotMusicEnabled?: boolean

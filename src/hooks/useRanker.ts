@@ -6,12 +6,6 @@ export type { RankerType } from '../lib/rankTracks'
 
 type Status = 'loading' | 'ready' | 'error'
 
-export interface RerankerDownloadProgress {
-  file: string
-  progress: number
-  status: string
-}
-
 export interface RecommendResult {
   files: string[]
   confidence: number
@@ -21,12 +15,12 @@ export interface RecommendResult {
 let _currentStatus: Status = 'loading'
 let _warmupRequested = false
 
-/** Load the reranker in the background (idle, or on the first recommendation). */
+/** Load the ranker in the background (idle, or on the first recommendation). */
 function requestWarmup(setModelStatus: (s: Status) => void): void {
   if (_warmupRequested) return
   _warmupRequested = true
   window.doty
-    .rerankerScore([{ text: 'test', text_pair: 'test' }])
+    .rankerDecide('', [])
     .then(() => {
       _currentStatus = 'ready'
       setModelStatus('ready')
@@ -38,26 +32,20 @@ function requestWarmup(setModelStatus: (s: Status) => void): void {
     })
 }
 
-export function useQwen() {
+export function useRanker() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
-  const [downloadProgress, setDownloadProgress] = useState<RerankerDownloadProgress | null>(null)
   const [lastRanker, setLastRanker] = useState<RankerType>(null)
 
   useEffect(() => {
-    // Listen for status from main process
-    const unsub = window.doty.onRerankerStatus((status: string) => {
+    const unsub = window.doty.onRankerStatus((status: string) => {
       _currentStatus = status as Status
       // A post-warmup worker error must allow the next recommendation to respawn it
       if (status === 'error') _warmupRequested = false
       setModelStatus(status as Status)
     })
-    const unsubProgress = window.doty.onRerankerDownloadProgress((p) => {
-      setDownloadProgress(p)
-      if (p.status === 'done' || p.status === 'ready') setDownloadProgress(null)
-    })
 
-    // Warm the model during idle time so startup and model downloads stay snappy.
-    // Recommendations use the heuristic path until it is ready.
+    // Warm the model during idle time so startup stays snappy. Recommendations
+    // use the heuristic path until it is ready.
     const warm = () => requestWarmup(setModelStatus)
     let idleId: number | undefined
     let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -69,7 +57,6 @@ export function useQwen() {
 
     return () => {
       unsub()
-      unsubProgress()
       if (idleId !== undefined) window.cancelIdleCallback(idleId)
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
@@ -91,7 +78,7 @@ export function useQwen() {
       transcript,
       files,
       { metadata, tagsMap, playFrequencies },
-      { ready, score: window.doty.rerankerScore },
+      { ready, decide: window.doty.rankerDecide },
       count,
     )
 
@@ -99,5 +86,5 @@ export function useQwen() {
     return result
   }, [])
 
-  return { recommend, modelStatus, downloading: false, downloadProgress, lastRanker }
+  return { recommend, modelStatus, lastRanker }
 }
