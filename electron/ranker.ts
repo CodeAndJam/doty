@@ -132,6 +132,20 @@ export async function decide(prompt: string, candidates: string[]): Promise<numb
   })
 }
 
+/** Which sound effect, if any, fits this moment. Same model, stricter question. */
+export async function rankSfx(state: string, candidates: string[]): Promise<number[]> {
+  await ensureWorker()
+  if (candidates.length === 0) return []
+  const id = nextId++
+  return new Promise<number[]>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pending.delete(id)) reject(new Error('SFX ranking timed out'))
+    }, DECIDE_TIMEOUT_MS)
+    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
+    worker?.postMessage({ type: 'sfx', id, prompt: state, candidates })
+  })
+}
+
 /** Track probabilities and the scene's mood distribution, from one model load. */
 export async function evaluateSession(
   state: string,

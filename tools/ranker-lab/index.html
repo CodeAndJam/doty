@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Doty ranker lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --bg:#080705; --panel:#0f0d09; --line:#2e2416; --gold:#c8922a; --dim:#6b4e15; --ink:#c8b07a; --good:#4a8a6a; --bad:#b43c28; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Crimson Text", Georgia, serif; }
+  header { display:flex; gap:10px; align-items:center; padding:12px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; flex-wrap:wrap; }
+  header h1 { font:600 13px/1 "Cinzel", serif; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0 12px 0 0; }
+  .stat { font:12px monospace; color:var(--dim); }
+  .spacer { flex:1; }
+  button { font:12px monospace; color:var(--gold); background:none; border:1px solid rgba(200,146,42,.35); padding:5px 9px; cursor:pointer; }
+  button:hover { background:rgba(200,146,42,.08); }
+  button:disabled { opacity:.35; cursor:default; }
+  input[type=search] { font:12px monospace; background:#0f0d09; color:var(--ink); border:1px solid var(--line); padding:5px 8px; width:100%; }
+  main { display:grid; grid-template-columns:minmax(300px,1fr) minmax(380px,1.1fr); height:calc(100vh - 57px); }
+  section { padding:18px 20px; overflow-y:auto; }
+  #scene { border-right:1px solid var(--line); display:flex; flex-direction:column; }
+  .label { font:11px "Cinzel", serif; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); margin:0 0 8px; }
+  #text { font-size:17px; line-height:1.65; white-space:pre-wrap; color:#d8c9a4; }
+  .hint { margin-top:16px; font:11px monospace; color:#3a2e1a; line-height:1.7; }
+  ol, ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; gap:8px; align-items:baseline; padding:7px 8px; border-bottom:1px solid #1a1408; cursor:pointer; }
+  li:hover { background:rgba(200,146,42,.05); }
+  li .n { font:11px monospace; color:var(--dim); width:18px; flex:none; }
+  li .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li.picked { background:rgba(200,146,42,.1); box-shadow:inset 2px 0 0 var(--gold); }
+  li.picked .name { color:#e8d5a3; }
+  li.accepted { background:rgba(74,138,106,.08); box-shadow:inset 2px 0 0 rgba(74,138,106,.7); }
+  li.accepted .name { color:#9fc4ab; }
+  li.rejected { opacity:.45; }
+  li.rejected .name { text-decoration:line-through; color:var(--bad); }
+  li.off { border-left:2px solid rgba(74,138,106,.6); }
+  .play { font:10px monospace; color:var(--dim); border:1px solid var(--line); padding:1px 5px; flex:none; }
+  .play.on { color:var(--good); border-color:rgba(74,138,106,.6); }
+  #all { margin-top:18px; border-top:1px solid var(--line); padding-top:12px; }
+  #allList { max-height:38vh; overflow-y:auto; margin-top:8px; }
+  #none { margin-top:8px; font:12px monospace; color:var(--dim); }
+  #none.on { color:var(--bad); }
+  code { font:12px monospace; color:var(--gold); background:#12100a; padding:1px 5px; border:1px solid var(--line); }
+  .missing { font:11px monospace; color:#3a2e1a; }
+  .miss { font:11px monospace; color:var(--good); margin-top:6px; }
+  .miss::before { content:'● '; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ranker lab</h1>
+  <span class="stat" id="progress">no file</span>
+  <span class="spacer"></span>
+  <input id="rowsFile" type="file" accept="application/json" hidden />
+  <input id="musicDir" type="file" webkitdirectory multiple hidden />
+  <button id="openRows">open rows.json</button>
+  <button id="openMusic">open music folder</button>
+  <button id="prev">←</button>
+  <button id="next">→</button>
+  <button id="export" disabled>export labels</button>
+  <button id="reset">reset</button>
+</header>
+
+<main>
+  <section id="scene">
+    <div class="label">What the table said</div>
+    <div id="text">Loading…</div>
+    <div id="clock" class="stat" style="margin-top:10px"></div>
+    <div class="hint">
+      1–9 pick a track · click again to clear · ▶ plays it<br />
+      shift-click every track you would also have played<br />
+      alt-click a track you would never play<br />
+      0 = nothing here fits · ← → move between rows<br />
+      Labels autosave in this browser. Picked a track outside the twenty? Use
+      <b>open music folder</b> below — that is a recall miss, and worth recording.
+    </div>
+  </section>
+
+  <section>
+    <div class="label">Candidates the model was offered</div>
+    <ol id="list"></ol>
+    <div id="none">nothing here fits the scene — press <b>0</b></div>
+    <div id="picknote" class="miss" style="display:none"></div>
+    <div id="status" class="missing" aria-live="polite"></div>
+
+    <div id="all">
+      <div class="label">Everything in the music folder <span id="count" class="missing"></span></div>
+      <input id="search" type="search" placeholder="filter by name…" />
+      <ul id="allList"><li class="missing">Open the music folder to list and play every track.</li></ul>
+    </div>
+  </section>
+</main>
+
+<script>
+const KEY = 'doty-ranker-labels-v1'
+const state = { rows: [], index: 0, labels: {}, audio: new Map(), playing: null, urls: new Map(), served: false, rowStartedAt: Date.now() }
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+// ---------- audio ----------
+function normalise(relPath) {
+  return relPath.replace(/\\/g, '/').replace(/^[^/]+\//, '').replace(/^\.?\//, '').toLowerCase()
+}
+const MIME = { mp3:'audio/mpeg', m4a:'audio/mp4', aac:'audio/aac', wav:'audio/wav', ogg:'audio/ogg', flac:'audio/flac' }
+
+/** Exact relative path first, then suffix, then the bare filename: a lab folder
+ *  and the harvested library routinely differ in their parent directories. */
+function resolve(path) {
+  const target = path.replace(/\\/g, '/').toLowerCase()
+  const base = target.split('/').pop()
+  let bySuffix = null
+  let byName = null
+  for (const [key, file] of state.audio) {
+    if (key === target) return { file, matched: key }
+    if (!bySuffix && key.endsWith(`/${target}`)) bySuffix = { file, matched: key }
+    if (!byName && key.split('/').pop() === base) byName = { file, matched: key }
+  }
+  return bySuffix || byName
+}
+
+function status(text) {
+  const el = $('status')
+  if (el) el.textContent = text
+}
+
+function servedUrl(path) {
+  return state.served ? `/audio?path=${encodeURIComponent(path)}` : null
+}
+
+function play(path) {
+  // Served mode: the server streams the file, so no folder picker is needed.
+  const direct = servedUrl(path)
+  if (direct) {
+    if (state.playing === path) { stop(); status(''); return }
+    stop()
+    const audio = new Audio(direct)
+    audio.preload = 'auto'
+    state.audioEl = audio
+    state.playing = path
+    audio.addEventListener('ended', () => { state.playing = null; status(''); render() })
+    audio.addEventListener('error', () => {
+      state.playing = null
+      status(`Cannot play ${path.split('/').pop()} — is it in the library folder?`)
+      render()
+    })
+    audio.play().then(() => status(`Playing ${path}`), (e) => { state.playing = null; status(`Playback blocked: ${e?.message ?? e}`); render() })
+    render()
+    return
+  }
+
+  const found = resolve(path)
+  if (!found) {
+    status(state.audio.size === 0
+      ? 'No sound: open the music folder first.'
+      : `No sound: "${path.split('/').pop()}" is not in the folder you opened.`)
+    return
+  }
+  if (state.playing === path) { stop(); status(''); return }
+  stop()
+  let url = state.urls.get(path)
+  if (!url) {
+    const ext = found.file.name.split('.').pop().toLowerCase()
+    // Without an explicit type some browsers refuse to decode the blob at all.
+    url = URL.createObjectURL(new Blob([found.file], { type: MIME[ext] || 'audio/mpeg' }))
+    state.urls.set(path, url)
+  }
+  const audio = new Audio()
+  audio.preload = 'auto'
+  audio.src = url
+  audio.volume = 1
+  state.audioEl = audio
+  state.playing = path
+  audio.addEventListener('ended', () => { state.playing = null; status(''); render() })
+  audio.addEventListener('error', () => {
+    state.playing = null
+    status(`Cannot decode ${found.file.name} in this browser (${audio.error?.code ?? 'error'}).`)
+    render()
+  })
+  audio.play().then(
+    () => status(`Playing ${found.matched}`),
+    (e) => { state.playing = null; status(`Playback blocked: ${e?.message ?? e}`); render() },
+  )
+  render()
+}
+function stop() {
+  if (state.audioEl) { state.audioEl.pause(); state.audioEl = null }
+  state.playing = null
+}
+
+// ---------- labels ----------
+function persist() {
+  try {
+    const labels = Object.fromEntries(Object.entries(state.labels).map(([k, v]) => [k, v]))
+    localStorage.setItem(KEY, JSON.stringify({ rows: state.rows, labels }))
+  } catch {}
+}
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null')
+    if (saved?.rows?.length) { state.rows = saved.rows; state.labels = saved.labels || {} }
+  } catch {}
+}
+function labelFor(id) { return (state.labels[id] ??= { picked: null, acceptable: [], rejects: [], offered: true }) }
+
+function pick(id, path, offered) {
+  const label = labelFor(id)
+  const clearing = label.picked === path
+  label.picked = clearing ? null : path
+  label.offered = offered
+  label.rejects = label.rejects.filter((p) => p !== path)
+  persist()
+  // A decision is the whole screen: move on rather than ask for another click.
+  if (!clearing) advance()
+  else render()
+}
+
+/** Next row still waiting for a decision, else the next row. */
+function advance() {
+  stop()
+  const pending = state.rows.findIndex((row, i) => i > state.index && !isDecided(row.id))
+  if (pending >= 0) { state.index = pending; state.rowStartedAt = Date.now(); render(); return }
+  const anyPending = state.rows.findIndex((row) => !isDecided(row.id))
+  if (anyPending >= 0) { state.index = anyPending; state.rowStartedAt = Date.now(); render(); return }
+  if (state.index < state.rows.length - 1) { state.index += 1; state.rowStartedAt = Date.now(); render(); return }
+  render()
+}
+
+function isDecided(id) {
+  const label = state.labels[id]
+  return Boolean(label && (label.picked !== null || label.rejects.length))
+}
+
+// ---------- rendering ----------
+function seededOrder(row) {
+  let seed = 0
+  for (const c of row.transcript) seed = (seed * 31 + c.charCodeAt(0)) >>> 0
+  return row.candidates.map((c, i) => ({ c, k: (seed ^ (i * 2654435761)) >>> 0 })).sort((a, b) => a.k - b.k).map((x) => x.c)
+}
+
+function trackRow(path, name, opts) {
+  const li = document.createElement('li')
+  const label = opts.label
+  const acceptable = label.acceptable ?? []
+  if (label.picked === path) li.className = opts.offClass ? 'picked off' : 'picked'
+  else if (acceptable.includes(path)) li.className = 'accepted'
+  else if (label.rejects.includes(path)) li.className = 'rejected'
+  else if (opts.offClass) li.className = 'off'
+
+  const n = document.createElement('span')
+  n.className = 'n'
+  n.textContent = opts.index ?? ''
+  const nameEl = document.createElement('span')
+  nameEl.className = 'name'
+  nameEl.textContent = name
+  nameEl.title = path
+  const playBtn = document.createElement('button')
+  playBtn.className = state.playing === path ? 'play on' : 'play'
+  playBtn.textContent = state.playing === path ? '■' : '▶'
+  playBtn.title = resolve(path) ? 'Play this track' : 'No audio matched: open the music folder'
+  playBtn.addEventListener('click', (e) => { e.stopPropagation(); play(path) })
+
+  li.append(n, nameEl, playBtn)
+  li.addEventListener('click', (e) => {
+    if (e.shiftKey) {
+      label.rejects = label.rejects.includes(path) ? label.rejects.filter((p) => p !== path) : [...label.rejects, path]
+      if (label.picked === path) label.picked = null
+      persist(); render()
+      return
+    }
+    if (opts.offered === false) pick(opts.rowId, path, false)
+    else if (opts.index !== undefined) pick(opts.rowId, path, true)
+    else pick(opts.rowId, path, false)
+  })
+  return li
+}
+
+function renderAll(row) {
+  const list = $('allList')
+  list.innerHTML = ''
+  if (state.audio.size === 0) {
+    list.innerHTML = '<li class="missing">Open the music folder to list and play every track.</li>'
+    return
+  }
+  const label = row ? labelFor(row.id) : { picked: null, rejects: [] }
+  const query = ($('search').value || '').toLowerCase()
+  const offered = new Set(row?.candidates.map((c) => normalise(c.path)) ?? [])
+  const entries = [...state.audio.entries()]
+    .filter(([key]) => !query || key.includes(query))
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(0, 400)
+  for (const [key, file] of entries) {
+    const path = file.webkitRelativePath.replace(/^[^/]+\//, '')
+    const li = trackRow(path, path, {
+      label,
+      rowId: row?.id,
+      offered: false,
+      offClass: !offered.has(normalise(path)),
+    })
+    li.title = file.size ? `${(file.size / 1048576).toFixed(1)} MB` : ''
+    list.appendChild(li)
+  }
+}
+
+function render() {
+  const row = state.rows[state.index]
+  const total = state.rows.length
+  const labelled = Object.values(state.labels).filter((l) => l && (l.picked !== null || l.rejects.length)).length
+  $('progress').textContent = total ? `${state.index + 1} / ${total} · ${labelled} labelled` : 'no file'
+  $('export').disabled = total === 0
+  $('prev').disabled = state.index === 0
+  $('next').disabled = state.index >= total - 1
+
+  const elapsed = Math.round((Date.now() - state.rowStartedAt) / 1000)
+  $('clock').textContent = total ? `this example: ${elapsed}s${elapsed > 30 ? ' — over 30s' : ''}` : ''
+  if (!row) { $('list').innerHTML = ''; renderAll(null); return }
+  $('text').textContent = row.transcript
+
+  const label = labelFor(row.id)
+  const list = $('list')
+  list.innerHTML = ''
+  seededOrder(row).forEach((cand, i) => {
+    list.appendChild(trackRow(cand.path, cand.description || cand.path, { label, rowId: row.id, index: i + 1 }))
+  })
+  $('none').className = label.picked === 'none' ? 'on' : ''
+
+  // A pick from the folder that was never offered is a retrieval miss: the model
+  // had no chance, and the eval counts it separately from a ranking mistake.
+  const note = $('picknote')
+  const outside =
+    label.picked && label.picked !== 'none' && !row.candidates.some((c) => c.path === label.picked)
+  note.style.display = outside ? 'block' : 'none'
+  if (outside) note.textContent = `recall miss — the model was never offered ${label.picked.split('/').pop()}`
+
+  renderAll(row)
+}
+
+// ---------- wiring ----------
+$('openRows').addEventListener('click', () => $('rowsFile').click())
+$('rowsFile').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const parsed = JSON.parse(await file.text())
+  state.rows = Array.isArray(parsed) ? parsed : parsed.rows
+  state.labels = {}
+  state.index = 0
+  persist(); render()
+})
+$('openMusic').addEventListener('click', () => $('musicDir').click())
+$('musicDir').addEventListener('change', (e) => {
+  state.audio.clear()
+  for (const url of state.urls.values()) URL.revokeObjectURL(url)
+  state.urls.clear()
+  const all = e.target.files ?? []
+  for (const file of all) {
+    if (/\.(mp3|m4a|ogg|wav|flac|aac)$/i.test(file.name)) state.audio.set(normalise(file.webkitRelativePath), file)
+  }
+  $('count').textContent = state.audio.size > 0 ? `· ${state.audio.size} playable` : ''
+  status(all.length === 0
+    ? 'No files came back from that folder.'
+    : `Loaded ${state.audio.size} playable tracks of ${all.length} files.`)
+  render()
+})
+$('search').addEventListener('input', () => renderAll(state.rows[state.index]))
+$('prev').addEventListener('click', () => {
+  if (state.index > 0) { state.index--; stop(); state.rowStartedAt = Date.now(); render() }
+})
+$('next').addEventListener('click', () => {
+  if (state.index < state.rows.length - 1) { state.index++; stop(); state.rowStartedAt = Date.now(); render() }
+})
+$('reset').addEventListener('click', () => {
+  if (!confirm('Discard every label in this browser?')) return
+  localStorage.removeItem(KEY); state.rows = []; state.labels = {}; state.index = 0; stop(); render()
+})
+$('export').addEventListener('click', () => {
+  const labels = state.rows.map((row) => ({
+    id: row.id,
+    picked: state.labels[row.id]?.picked ?? null,
+    acceptable: state.labels[row.id]?.acceptable ?? [],
+    rejects: state.labels[row.id]?.rejects ?? [],
+    offered: state.labels[row.id]?.offered ?? true,
+  }))
+  const blob = new Blob([JSON.stringify(labels, null, 1)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'labels.json'
+  a.click()
+  URL.revokeObjectURL(a.href)
+})
+document.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return
+  const row = state.rows[state.index]
+  if (!row) return
+  const label = labelFor(row.id)
+  if (e.key === 'ArrowRight') { e.preventDefault(); $('next').click(); return }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); $('prev').click(); return }
+  if (e.key === 'Backspace') { label.picked = null; label.rejects = []; persist(); render(); return }
+  if (e.key === '0') {
+    const clearing = label.picked === 'none'
+    label.picked = clearing ? null : 'none'
+    label.offered = true
+    persist()
+    if (clearing) render()
+    else advance()
+    return
+  }
+  const n = Number.parseInt(e.key, 10)
+  if (n >= 1 && n <= 9) {
+    const cand = seededOrder(row)[n - 1]
+    if (cand) pick(row.id, cand.path, true)
+  }
+})
+
+async function boot() {
+  restore()
+  try {
+    const res = await fetch('/rows.json')
+    if (res.ok) {
+      state.rows = await res.json()
+      state.served = true
+      // Resume at the first undecided example, so a session picks up where it stopped.
+      const pending = state.rows.findIndex((row) => !isDecided(row.id))
+      state.index = pending >= 0 ? pending : 0
+      state.rowStartedAt = Date.now()
+      status(`Loaded ${state.rows.length} examples from the server.`)
+      try {
+        const lib = await (await fetch('/library.json')).json()
+        $('count').textContent = `· ${lib.files.length} tracks in ${lib.folder}`
+      } catch {}
+    }
+  } catch {
+    // Opened as a file:// page: fall back to the pickers.
+  }
+  render()
+  setInterval(() => {
+    if (!state.rows.length) return
+    const elapsed = Math.round((Date.now() - state.rowStartedAt) / 1000)
+    const clock = $('clock')
+    if (clock) clock.textContent = `this example: ${elapsed}s${elapsed > 30 ? ' — over 30s' : ''}`
+  }, 1000)
+}
+boot()
+</script>
+</body>
+</html>

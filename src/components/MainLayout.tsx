@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
+import { confidentSfx } from '../lib/sfxRank'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
 import Soundboard from './Soundboard'
@@ -18,6 +19,9 @@ export default function MainLayout() {
   const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
+  const [lastChoiceConfidence, setLastChoiceConfidence] = useState(0)
+  const [probabilities, setProbabilities] = useState<Record<string, number>>({})
+  const [candidates, setCandidates] = useState<string[]>([])
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   /** The transcript window the director reads: wider than the UI snippet. */
   const [sessionText, setSessionText] = useState('')
@@ -203,6 +207,9 @@ export default function MainLayout() {
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
+    setLastChoiceConfidence(result.choiceConfidence)
+    setProbabilities(result.probabilities)
+    setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(recentTranscript)
   }, [override])
@@ -221,6 +228,24 @@ export default function MainLayout() {
     const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap, playFrequencies)
     console.log('[sfx-recommend] results:', results.length, results)
     setSfxRecommendations(results)
+
+    // The model decides when a sound is worth firing; the keyword shortlist only
+    // narrows what it chooses between. A missing model leaves the heuristic list.
+    if (!text.trim()) return
+    const descriptions = results.map((id) => {
+      const sfx = sfxList.find((s) => s.id === id)
+      const tags = (tagsMap[id] ?? []).join(', ')
+      return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
+    })
+    if (descriptions.length === 0) return
+    window.doty
+      .sfxRank(text, descriptions)
+      .then((probabilities) => {
+        const confident = confidentSfx(results, probabilities)
+        // Nothing clears the bar: silence is the right answer, not the second best.
+        setSfxRecommendations(confident.map((c) => c.path))
+      })
+      .catch(() => {})
   }, [])
 
   const runDmRecommendation = useCallback(
@@ -243,6 +268,9 @@ export default function MainLayout() {
       console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
       setRecommendations(result.files)
       setLastConfidence(result.confidence)
+      setLastChoiceConfidence(result.choiceConfidence)
+      setProbabilities(result.probabilities)
+      setCandidates(result.candidates)
       setLastTranscriptSnippet(prompt.slice(-120))
       setSessionText(combined)
       // Also trigger SFX recommendations with the same combined text
@@ -649,6 +677,9 @@ export default function MainLayout() {
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}
+              lastChoiceConfidence={lastChoiceConfidence}
+              probabilities={probabilities}
+              candidates={candidates}
               sessionText={sessionText}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}

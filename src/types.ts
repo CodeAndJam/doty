@@ -209,14 +209,17 @@ export interface DotyAPI {
   rankerDownload: () => Promise<{ ok: boolean; reason?: string }>
   sessionEvaluate: (request: {
     state: string
+    /** Option text handed to the model: described tracks, not filenames. */
     candidates: string[]
+    /** The same candidates as file paths, in the same order. */
+    paths: string[]
     msUntilTrackEnd: number | null
     autopilot: boolean
     override: boolean
   }) => Promise<{
     tracks: number[]
     moods: number[]
-    plan: { scene: string; action: 'hold' | 'queue-next' | 'play-now'; reason: string } | null
+    plan: { scene: string; action: 'hold' | 'queue-next' | 'play-now'; reason: string; track: string | null } | null
   }>
   sessionDecision: (row: {
     at: number
@@ -235,6 +238,12 @@ export interface DotyAPI {
     scene: string | null
     source: 'auto' | 'manual'
   }) => Promise<unknown>
+  embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
+  /** Vector matches from the whole library, empty when nothing is indexed yet. */
+  similarTracks: (text: string, k: number) => Promise<string[]>
+  /** Probabilities for each SFX description, in the order given. */
+  sfxRank: (state: string, candidates: string[]) => Promise<number[]>
+  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number
     autoActions: number

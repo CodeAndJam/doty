@@ -8,7 +8,10 @@ type Status = 'loading' | 'ready' | 'error'
 
 export interface RecommendResult {
   files: string[]
+  candidates: string[]
   confidence: number
+  choiceConfidence: number
+  probabilities: Record<string, number>
   ranker: RankerType
 }
 
@@ -63,7 +66,9 @@ export function useRanker() {
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {
-    if (files.length === 0) return { files: [], confidence: 0, ranker: null }
+    if (files.length === 0) {
+      return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+    }
 
     const [metadata, tagsMap, playFrequencies] = await Promise.all([
       window.doty.getAllMetadata() as Promise<Record<string, TrackMeta>>,

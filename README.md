@@ -61,6 +61,22 @@ Optionally save session transcripts to a folder of your choice. Transcripts are 
 ### Audio analysis
 On first scan, Doty analyses every track in your library using essentia.js to extract BPM, key, danceability, and energy. This metadata is stored locally in SQLite and used to improve recommendations.
 
+## Models
+
+Doty runs two models, both optional and both local. They are **not bundled in the
+app**: they live in `~/.doty/models/`, outside the bundle, so installing a new
+version never re-downloads them.
+
+| model | size | job | licence |
+| --- | --- | --- | --- |
+| d1-omni-600M (ONNX, fp32) | 1.41 GB | ranks the 20 candidate tracks for the moment of play | LFM Open License v1.0 — commercial use by an organisation with ≥US$10M revenue needs a separate agreement |
+| EmbeddingGemma-300M (ONNX, q4) | 197 MB | finds candidates by meaning, so a calm scene can reach a calm track | Gemma Terms of Use |
+
+Each is downloaded once and skipped forever after; a missing model degrades to
+keyword matching and the soundboard says so. A 1.85 GB "offline" DMG is possible
+with `extraResources`, but it doubles every download and auto-update to save a
+first-run fetch, so it is deliberately not the default.
+
 ## Installation
 
 ### Download the app

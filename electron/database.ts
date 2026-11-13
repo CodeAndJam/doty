@@ -66,6 +66,29 @@ export function getDb(): Database.Database {
 
 // ── Tag queries ───────────────────────────────────────────────────────────────
 
+/**
+ * Forget tracks that are no longer under the library folder. Library folders
+ * move, files get deleted, and a stale row still competes for a candidate slot
+ * with a name that can never be played.
+ */
+export function pruneMissingTracks(folder: string, files: string[]): number {
+  const db = getDb()
+  const keep = new Set(files.map((f) => f.replace(/\\/g, '/')))
+  const rows = db.prepare('SELECT path FROM tracks').all() as Array<{ path: string }>
+  const drop = rows.map((r) => r.path).filter((p) => !keep.has(p.replace(/\\/g, '/')))
+  if (drop.length === 0) return 0
+  const del = db.prepare('DELETE FROM tracks WHERE path = ?')
+  const delTags = db.prepare('DELETE FROM track_tags WHERE filename = ?')
+  db.transaction(() => {
+    for (const path of drop) {
+      del.run(path)
+      delTags.run(path)
+    }
+  })()
+  if (folder) console.log(`[library] pruned ${drop.length} tracks no longer under ${folder}`)
+  return drop.length
+}
+
 export function getTags(filename: string): string[] {
   const db = getDb()
   const rows = db.prepare('SELECT tag FROM track_tags WHERE filename = ? ORDER BY tag').all(filename) as {

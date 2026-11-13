@@ -4,7 +4,9 @@
  * one interface so callers never branch on ranker availability.
  */
 import type { TrackMeta } from '../types'
-import { heuristicRecommend } from './heuristicRecommend'
+import { choiceConfidence } from './confidence'
+import { candidateSet, heuristicRecommend } from './heuristicRecommend'
+import { classifyTrack } from './trackKind'
 
 export type RankerType = 'model' | 'heuristic' | null
 
@@ -16,7 +18,14 @@ export interface RankSignals {
 
 export interface RankResult {
   files: string[]
+  /** Every candidate the model ranked, best first: what the UI lists in full. */
+  candidates: string[]
+  /** Probability of the first file: what autopilot thresholds. */
   confidence: number
+  /** TypeSafe's choice confidence over all candidates: how settled the answer is. */
+  choiceConfidence: number
+  /** Per-file probability, so the UI can show each option's share. */
+  probabilities: Record<string, number>
   ranker: RankerType
 }
 
@@ -27,17 +36,35 @@ export interface RankDeps {
   decide?: (prompt: string, candidates: string[]) => Promise<number[]>
 }
 
-/** Candidates handed to the ranker: enough to choose from, few enough to stay fast. */
+/**
+ * Candidates handed to the ranker: enough to choose from, few enough to stay fast.
+ * Also the exported graph's marker count — 20 options are baked into its shape, so
+ * raising this needs a re-export, while a smaller library simply passes fewer.
+ */
 const RERANK_CANDIDATES = 20
 
 /** Tags the ranker sees per track. The model gives each option ~24 tokens. */
 const OPTION_TAGS = 2
 
-/** Text the ranker sees for one track: terse, because the option budget is the constraint. */
+/** Genre values that appear on nearly everything and therefore distinguish nothing. */
+const UNINFORMATIVE_GENRES = new Set(['music', 'unknown', 'games', 'other', ''])
+
+function isInformativeGenre(genre: string | null | undefined): genre is string {
+  return !!genre && !UNINFORMATIVE_GENRES.has(genre.trim().toLowerCase())
+}
+
 export function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
-  const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  // Collapse the runs of spaces that replacing separators leaves behind: the text
+  // is tokenised by the model, so "Downtime   Bonfire" wastes option budget.
+  const name = filename
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   const facts = [
-    meta?.genre,
+    // "Music" is what the tagger writes when it has nothing to say, and it appears
+    // on every music file: a token that never varies carries no signal, only cost.
+    isInformativeGenre(meta?.genre) ? meta?.genre : null,
     meta?.bpm ? `${meta.bpm} BPM` : null,
     meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
   ].filter(Boolean)
@@ -53,26 +80,38 @@ export async function rankTracks(
   deps: RankDeps,
   count = 5,
 ): Promise<RankResult> {
-  if (files.length === 0) return { files: [], confidence: 0, ranker: null }
+  if (files.length === 0) {
+    return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+  }
 
   const { metadata, tagsMap, playFrequencies } = signals
   const byHeuristic = (text: string, limit = count): RankResult => {
     const result = heuristicRecommend(text, files, metadata, limit, tagsMap, playFrequencies)
-    return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
+    // A keyword score is not a probability, so there is nothing to show per option.
+    return {
+      files: result.files,
+      candidates: result.files,
+      confidence: result.confidence,
+      choiceConfidence: 0,
+      probabilities: {},
+      ranker: 'heuristic',
+    }
   }
+
+  // An effect that ended up in the music folder can never fit a scene: it is
+  // seconds long and it is not a bed. Drop it before it costs a candidate slot.
+  const playable = files.filter(
+    (file) => classifyTrack({ path: file, duration: metadata[file]?.duration, genre: metadata[file]?.genre }) !== 'sfx',
+  )
+  if (playable.length === 0)
+    return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+  files = playable
 
   const recentPrompt = prompt.slice(-800).trim()
   if (!deps.ready || !deps.decide || !recentPrompt) return byHeuristic(prompt)
 
   try {
-    const candidates = heuristicRecommend(
-      recentPrompt,
-      files,
-      metadata,
-      RERANK_CANDIDATES,
-      tagsMap,
-      playFrequencies,
-    ).files
+    const candidates = candidateSet(recentPrompt, files, metadata, RERANK_CANDIDATES, tagsMap, playFrequencies)
     const probabilities = await deps.decide(
       recentPrompt,
       candidates.map((file) => describeTrack(file, metadata[file], tagsMap[file])),
@@ -84,8 +123,11 @@ export async function rankTracks(
 
     return {
       files: ranked.slice(0, count).map((entry) => entry.file),
+      candidates: ranked.map((entry) => entry.file),
       // The model's probabilities are already calibrated: no softmax over them.
       confidence: ranked[0]?.probability ?? 0,
+      choiceConfidence: choiceConfidence(probabilities),
+      probabilities: Object.fromEntries(ranked.map((entry) => [entry.file, entry.probability])),
       ranker: 'model',
     }
   } catch (e) {

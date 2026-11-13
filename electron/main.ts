@@ -32,6 +32,7 @@ import {
   getTags,
   getTagsMap,
   getTopPlayed,
+  pruneMissingTracks,
   recordPlay,
   setTags,
 } from './database'
@@ -74,9 +75,13 @@ import {
 } from './model-paths'
 import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
-import { decide, disposeRanker, evaluateSession, setOnRankerStatus } from './ranker'
+import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { planStep } from './session/director'
+import { EMBEDDING_MODEL, embedderAvailable, loadEmbedder } from './session/embedder'
+import { topK } from './session/embedding'
+import { createIndexer } from './session/indexer'
+import { learnedPick } from './session/preferences'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
@@ -294,6 +299,13 @@ function launchScanner(folder: string, force = false) {
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
+      // A scan is the only moment the library is known to be complete, so it is
+      // also the moment to forget files that moved away.
+      try {
+        pruneMissingTracks(folder, getMusicFiles(folder))
+      } catch (e) {
+        console.error('[library] prune failed:', e)
+      }
       send(EVENTS.scanComplete)
     },
     force,
@@ -434,7 +446,11 @@ app.whenReady().then(async () => {
   }
 
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) launchScanner(musicFolder)
+  if (musicFolder) {
+    launchScanner(musicFolder)
+    // Minutes of work, so it runs in the background and resumes next launch.
+    setTimeout(() => startIndexing(musicFolder).catch(() => {}), 3_000)
+  }
 
   // One background download, once per machine. No prompt: the app is useless
   // without it, and 1.5 GB of silence during a session would be worse.
@@ -724,6 +740,8 @@ const sessionStore = createSessionStore(getDb())
 let liveScene: Scene | null = null
 let lastChangeAt = 0
 let lastLoggedAt = 0
+/** One session pass at a time: two in flight would race the scene and the clock. */
+let sessionPipeline: Promise<unknown> = Promise.resolve()
 
 handle(
   INVOKE.sessionEvaluate,
@@ -732,63 +750,89 @@ handle(
     request: {
       state: string
       candidates: string[]
+      paths: string[]
       msUntilTrackEnd: number | null
       autopilot: boolean
       override: boolean
     },
   ) => {
-    const { tracks, moods } = await evaluateSession(request.state, request.candidates)
-    if (moods.length === 0) return { tracks, moods, plan: null }
+    const run = sessionPipeline.then(async () => {
+      const { tracks, moods } = await evaluateSession(request.state, request.candidates)
+      if (moods.length === 0) return { tracks, moods, plan: null }
 
-    let best = 0
-    for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
-    const now = Date.now()
-    const step = planStep({
-      previous: liveScene,
-      observation: {
-        mood: MOODS[best] ?? 'exploration',
-        intensity: 0.5,
-        moodProbability: moods[best] ?? 0,
-        trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
-      },
-      now,
-      msUntilTrackEnd: request.msUntilTrackEnd,
-      msSinceLastChange: now - lastChangeAt,
-      autopilot: request.autopilot,
-      override: request.override,
+      let best = 0
+      for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
+      const now = Date.now()
+
+      // Where the model cannot decide, prefer what the DM chose for this scene.
+      const learned = learnedPick({
+        probabilities: tracks,
+        paths: request.paths,
+        preferences: sessionStore.recentPreferences(200),
+        scene: liveScene?.mood ?? MOODS[best] ?? null,
+      })
+      // The learned pick changes *which* track, never the probability: rewriting
+      // the numbers would fake a confidence the model never had.
+      const pickIndex =
+        learned && learned.path ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
+      const step = planStep({
+        previous: liveScene,
+        observation: {
+          mood: MOODS[best] ?? 'exploration',
+          intensity: 0.5,
+          moodProbability: moods[best] ?? 0,
+          trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
+        },
+        now,
+        msUntilTrackEnd: request.msUntilTrackEnd,
+        msSinceLastChange: now - lastChangeAt,
+        autopilot: request.autopilot,
+        override: request.override,
+      })
+
+      const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
+      if (sceneMoved) {
+        sessionStore.recordScene({
+          session: 'live',
+          mood: step.scene.mood,
+          intensity: step.scene.intensity,
+          startedAt: step.scene.since,
+        })
+      }
+      // The clock gates the change cooldown, so it only moves when music would.
+      if (step.action.kind !== 'hold') lastChangeAt = now
+      liveScene = step.scene
+
+      // Holds are main's to log (throttled: one per half minute). Actions are logged
+      // by the renderer once it has actually executed them, so `autoActions` counts
+      // changes that happened rather than changes that were proposed.
+      if (step.action.kind === 'hold' && now - lastLoggedAt > 30_000) {
+        lastLoggedAt = now
+        sessionStore.recordDecision({
+          at: now,
+          kind: 'music',
+          action: step.action.kind,
+          reason: step.action.reason,
+          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
+          probability: best >= 0 ? (tracks[best] ?? 0) : 0,
+          mood: step.scene.mood,
+          source: 'auto',
+        })
+      }
+
+      return {
+        tracks,
+        moods,
+        plan: {
+          scene: step.scene.mood,
+          action: step.action.kind,
+          reason: step.action.reason,
+          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
+        },
+      }
     })
-
-    const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
-    if (sceneMoved) {
-      sessionStore.recordScene({
-        session: 'live',
-        mood: step.scene.mood,
-        intensity: step.scene.intensity,
-        startedAt: step.scene.since,
-      })
-    }
-    // The clock gates the change cooldown, so it only moves when music would.
-    if (step.action.kind !== 'hold') lastChangeAt = now
-    liveScene = step.scene
-
-    // Every automatic decision is the training signal and the audit trail. A hold
-    // every 1.5 s would bury it, so holds are logged once per half minute.
-    if (step.action.kind !== 'hold' || now - lastLoggedAt > 30_000) {
-      lastLoggedAt = now
-      const best = tracks.length > 0 ? tracks.indexOf(Math.max(...tracks)) : -1
-      sessionStore.recordDecision({
-        at: now,
-        kind: 'music',
-        action: step.action.kind,
-        reason: step.action.reason,
-        track: best >= 0 ? (request.candidates[best] ?? null) : null,
-        probability: best >= 0 ? (tracks[best] ?? 0) : 0,
-        mood: step.scene.mood,
-        source: 'auto',
-      })
-    }
-
-    return { tracks, moods, plan: { scene: step.scene.mood, action: step.action.kind, reason: step.action.reason } }
+    sessionPipeline = run.catch(() => {})
+    return run
   },
 )
 handle(INVOKE.sessionDecision, (_e, row: Parameters<typeof sessionStore.recordDecision>[0]) => {
@@ -800,6 +844,86 @@ handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.record
   return { ok: true }
 })
 handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
+
+// ── Embeddings: indexed in the background, used when they exist ───────────────
+const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
+let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
+let embedding: { done: number; total: number } = { done: 0, total: 0 }
+let indexing = false
+
+/** Load the model and index whatever is missing, in batches, without blocking. */
+async function startIndexing(folder: string): Promise<void> {
+  if (indexing || !embedderAvailable(EMBEDDER_DIR)) return
+  indexing = true
+  try {
+    embedder ??= await loadEmbedder(EMBEDDER_DIR)
+    const allMetadata = getAllMetadata()
+    const files = getMusicFiles(folder)
+    embedding = { done: 0, total: files.length }
+    const indexer = createIndexer({
+      paths: () => files,
+      store: sessionStore,
+      embed: (texts) => embedder!.embedDocuments(texts),
+      model: EMBEDDING_MODEL,
+      // What gets embedded decides what retrieval can find. The path alone only
+      // carries vocabulary — a chase found caves, not urgency — so the metadata the
+      // ranker sees goes in too.
+      describe: (path) => {
+        const meta = allMetadata[path]
+        const name = path.replace(/\.[^.]+$/, '').replace(/[-_/]/g, ' ')
+        const facts = [
+          meta?.genre,
+          meta?.bpm ? `${meta.bpm} BPM` : null,
+          meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
+          meta?.scale,
+        ].filter(Boolean)
+        return facts.length > 0 ? `${name} — ${facts.join(', ')}` : name
+      },
+      batch: 8,
+      onProgress: (p) => {
+        embedding = p
+        send(EVENTS.embeddingProgress, p)
+      },
+    })
+    await indexer.run()
+  } catch (e) {
+    console.error('[embedding] indexing failed:', e)
+  } finally {
+    indexing = false
+  }
+}
+
+handle(INVOKE.embeddingStatus, () => {
+  const folder = store.get('musicFolder', '') as string
+  const total = folder ? getMusicFiles(folder).length : 0
+  return { ready: embedder !== null, indexed: embedding.done, total }
+})
+
+handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
+  if (candidates.length === 0 || !state.trim()) return []
+  try {
+    return await rankSfx(state, candidates)
+  } catch (e) {
+    console.error('[sfx] ranking failed:', e)
+    return []
+  }
+})
+
+handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
+  if (!embedder || !text.trim()) return []
+  try {
+    const query = await embedder.embedQuery(text)
+    const vectors = new Map<string, Float32Array>()
+    for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
+      const vector = sessionStore.getVector(path, EMBEDDING_MODEL)
+      if (vector) vectors.set(path, vector)
+    }
+    return topK(query, vectors, Math.max(1, Math.min(k, 50)))
+  } catch (e) {
+    console.error('[embedding] query failed:', e)
+    return []
+  }
+})
 
 handle(INVOKE.rankerDecide, async (_e, prompt: string, candidates: string[]) => {
   return decide(prompt, candidates)

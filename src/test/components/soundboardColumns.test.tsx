@@ -29,6 +29,9 @@ function renderBoard() {
       onResumeAuto={() => {}}
       sfxRecommendations={[]}
       lastConfidence={0}
+      lastChoiceConfidence={0}
+      probabilities={{}}
+      candidates={['battle-theme.mp3']}
       sessionText=""
       lastRanker={null}
       rankerStatus="ready"

@@ -319,6 +319,105 @@ function filenameScore(filename: string, tokens: string[]): number {
   return textOverlap(filename.replace(/\.[^.]+$/, ''), tokens) * 2
 }
 
+/** Score every file against the transcript, best first. */
+function rankBy(
+  files: string[],
+  tokens: string[],
+  metadata: Record<string, TrackMeta>,
+  tagsMap: Record<string, string[]>,
+  playFrequencies: Record<string, number>,
+  topPlays: number,
+  mood: MoodProfile | null,
+): Array<{ file: string; score: number }> {
+  const scored = files.map((file) => {
+    const meta = metadata[file]
+    const fnScore = filenameScore(file, tokens)
+
+    // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
+    const tagScore = tagMatch(tagsMap[file] || [], tokens)
+
+    let featureScore = 0
+    if (meta && mood) {
+      const bpm = bpmScore(meta.bpm, mood.bpmMin, mood.bpmMax)
+      const energy = rangeScore(meta.energy, mood.energyMin, mood.energyMax)
+      const scale = mood.scale ? (meta.scale === mood.scale ? 1 : 0) : 0.5
+      const dance = meta.danceability * 0.3
+      featureScore = (bpm + energy + scale + dance) / 3.3
+    } else if (meta) {
+      // No mood detected — prefer mid-energy tracks as neutral background
+      featureScore = rangeScore(meta.energy, 0.3, 0.6) * 0.5
+    }
+
+    // History boost: frequently played tracks get a small bonus (weighted 0.5x)
+    const historyScore = historyBoost(playFrequencies[file] || 0, topPlays)
+
+    return { file, score: fnScore + tagScore + featureScore + historyScore }
+  })
+
+  scored.sort((a, b) => b.score - a.score)
+  return scored
+}
+
+/** Energy bands every candidate list is drawn from, so no scene is unrepresented. */
+const ENERGY_BANDS: Array<(energy: number) => boolean> = [
+  (e) => e < 0.35, // calm beds, drones, ambience
+  (e) => e >= 0.35 && e < 0.65, // mid: travel, mystery, tavern
+  (e) => e >= 0.65, // combat, chase, celebration
+]
+
+/**
+ * The candidates handed to the decision model.
+ *
+ * The heuristic alone is a single-mood judge: one passing word ("não sei se
+ * estamos a falar ainda sobre a batalha") selects the combat profile, whose BPM
+ * and energy ranges then crowd out every quiet track. The model can only choose
+ * among what it is offered, so the prefilter must protect recall and leave the
+ * judging to the model.
+ *
+ * Half the list is the heuristic's best guess; the rest is the best of each
+ * energy band, so a quiet scene always has quiet tracks to pick from whatever
+ * the transcript says.
+ */
+export function candidateSet(
+  transcript: string,
+  files: string[],
+  metadata: Record<string, TrackMeta>,
+  limit: number,
+  tagsMap: Record<string, string[]> = {},
+  playFrequencies: Record<string, number> = {},
+): string[] {
+  if (files.length === 0) return []
+  const tokens = tokenize(transcript)
+  if (tokens.length === 0) return defaultRecommendations(files, playFrequencies, limit)
+
+  const topPlays = maxPlays(playFrequencies)
+  const overall = rankBy(files, tokens, metadata, tagsMap, playFrequencies, topPlays, detectMood(tokens))
+
+  const head = Math.max(2, Math.floor(limit / 2))
+  const picked = overall.slice(0, head).map((s) => s.file)
+  const seen = new Set(picked)
+  const add = (file: string) => {
+    if (seen.has(file) || seen.size >= limit) return
+    seen.add(file)
+    picked.push(file)
+  }
+
+  const perBand = Math.max(1, Math.ceil((limit - head) / ENERGY_BANDS.length))
+  for (const inBand of ENERGY_BANDS) {
+    overall
+      .filter((entry) => {
+        const energy = metadata[entry.file]?.energy
+        return energy !== undefined && inBand(energy)
+      })
+      .slice(0, perBand)
+      .forEach((entry) => add(entry.file))
+  }
+  // Fill anything left from the heuristic's own order.
+  overall.forEach((entry) => add(entry.file))
+
+  return picked.slice(0, limit)
+}
+
 export interface HeuristicResult {
   files: string[]
   /** Estimated confidence 0-1 based on score distribution (top-1 vs rest) */
@@ -347,32 +446,7 @@ export function heuristicRecommend(
   // Compute max play count for normalization
   const topPlays = maxPlays(playFrequencies)
 
-  const scored = files.map((file) => {
-    const meta = metadata[file]
-    const fnScore = filenameScore(file, tokens)
-
-    // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
-    const tagScore = tagMatch(tagsMap[file] || [], tokens)
-
-    let featureScore = 0
-    if (meta && mood) {
-      const bpm = bpmScore(meta.bpm, mood.bpmMin, mood.bpmMax)
-      const energy = rangeScore(meta.energy, mood.energyMin, mood.energyMax)
-      const scale = mood.scale ? (meta.scale === mood.scale ? 1 : 0) : 0.5
-      const dance = meta.danceability * 0.3
-      featureScore = (bpm + energy + scale + dance) / 3.3
-    } else if (meta) {
-      // No mood detected — prefer mid-energy tracks as neutral background
-      featureScore = rangeScore(meta.energy, 0.3, 0.6) * 0.5
-    }
-
-    // History boost: frequently played tracks get a small bonus (weighted 0.5x)
-    const historyScore = historyBoost(playFrequencies[file] || 0, topPlays)
-
-    return { file, score: fnScore + tagScore + featureScore + historyScore }
-  })
-
-  scored.sort((a, b) => b.score - a.score)
+  const scored = rankBy(files, tokens, metadata, tagsMap, playFrequencies, topPlays, mood)
 
   // Estimate confidence from score distribution:
   // High confidence = top score is much higher than the rest

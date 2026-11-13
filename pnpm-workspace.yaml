@@ -4,6 +4,11 @@ minimumReleaseAge: 14400
 minimumReleaseAgeExclude:
   # 14.28.1 ships a security fix; 14.28.0 is deprecated by the maintainers because of it.
   - discord.js
+  # 0.4.2 drops a spurious NeMo padding frame before the parakeet encoder, which
+  # is the model we run by default. Held releases would otherwise hide a
+  # correctness fix for three weeks.
+  - transcribe-cpp
+  - '@transcribe-cpp/*'
 
 overrides:
   # @electron/rebuild ships an older node-abi that does not know Electron 45's ABI.

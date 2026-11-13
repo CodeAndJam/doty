@@ -87,12 +87,11 @@ test('keyword fallback answers while the model loads, then the model takes over'
     const confidence = Number(badgeText.replace(/[^0-9.]/g, ''))
     expect(confidence).toBeGreaterThan(0)
 
-    const ranked = await shownTracks(page)
+    const allRanked = await shownTracks(page)
+    const ranked = allRanked.slice(0, 5)
     console.log('[e2e] model ranking:', ranked)
     expect(ranked).not.toEqual(early)
 
-<<<<<<< HEAD
-=======
     // The director ran: main holds a scene and the UI shows it.
     await expect(page.getByTestId('session-scene')).toBeVisible({ timeout: 30_000 })
 
@@ -113,7 +112,6 @@ test('keyword fallback answers while the model loads, then the model takes over'
     expect(shown).toHaveLength(allRanked.length)
     expect(shown[0]).toBe(Math.max(...shown))
 
->>>>>>> 8edb8fb (feat(session): execute the director's plans and measure the result)
     const relevant = ['Campfire', 'Bonfire', 'Tavern', 'Downtime', 'Halfling', 'Peaceful', 'Ambience']
     expect(ranked.some((n) => relevant.some((r) => n.includes(r))), `no mood-relevant track in ${ranked.join(', ')}`).toBe(
       true,

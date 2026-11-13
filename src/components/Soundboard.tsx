@@ -6,6 +6,7 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { describeTrack } from '../lib/rankTracks'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
@@ -89,6 +90,12 @@ interface Props {
   onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
+  /** TypeSafe choice confidence: how settled the pick is across the candidates. */
+  lastChoiceConfidence: number
+  /** Per-file probability, aligned with the suggestions. */
+  probabilities: Record<string, number>
+  /** Every candidate the model ranked, best first. */
+  candidates: string[]
   /** The transcript window the director decides on. */
   sessionText: string
   lastRanker: RankerType
@@ -108,6 +115,9 @@ export default function Soundboard({
   recommendations,
   sfxRecommendations,
   lastConfidence,
+  lastChoiceConfidence,
+  probabilities,
+  candidates,
   sessionText,
   lastRanker,
   rankerStatus,
@@ -139,6 +149,11 @@ export default function Soundboard({
   // ── Decision log (beta) ──────────────────────────────────────────────
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const [scene, setScene] = useState<string | null>(null)
+  // Skips read the scene from an event handler, so they need it through a ref.
+  const sceneRef = useRef<string | null>(null)
+  useEffect(() => {
+    sceneRef.current = scene
+  }, [scene])
   const [report, setReport] = useState<{ autoActions: number; manualPicks: number; overrideRate: number } | null>(null)
   const sessionStartedAt = useRef(Date.now())
   /** Guards against queueing the same pick on every pass while a track is ending. */
@@ -270,12 +285,41 @@ export default function Soundboard({
   }, [sfxPinned])
 
   // ── Keyboard shortcuts: N = next, P = prev ───────────────────────────
+  /**
+   * Every manual playback change is both a decision and a label. Skips are weak
+   * labels (rejection, not preference), queue picks are strong ones.
+   */
+  function recordPreference(track: string) {
+    window.doty
+      .sessionPreference({ at: Date.now(), segment: sessionText, track, scene: sceneRef.current, source: 'manual' })
+      .catch(() => {})
+  }
+
+  function recordSkip(track: string) {
+    onManualAction()
+    window.doty
+      .sessionDecision({
+        at: Date.now(),
+        kind: 'music',
+        action: 'play-now',
+        reason: 'the DM skipped',
+        track,
+        probability: 0,
+        mood: sceneRef.current,
+        source: 'manual',
+      })
+      .then(refreshReport)
+      .catch(() => {})
+  }
+
   function handleSkipNext() {
     if (queue.tracks.length === 0) return
     const track = queue.next(loopMode === 'queue')
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
+      recordSkip(track)
+      recordPreference(track)
     }
   }
 
@@ -285,6 +329,7 @@ export default function Soundboard({
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
+      recordSkip(track)
     }
   }
 
@@ -367,6 +412,8 @@ export default function Soundboard({
   function handleQueuePlay(index: number) {
     const track = queue.tracks[index]
     if (!track) return
+    recordPreference(track)
+    onManualAction()
     queue.setCurrentIndex(index)
     if (playing === track) {
       // Same track — toggle pause/resume (matches the pause icon in the queue)
@@ -452,9 +499,13 @@ export default function Soundboard({
   // The director: main owns the scene and the policy, this only executes the plan.
   // Player timing lives in refs so the effect does not re-run every quarter second.
   const playerRef = useRef({ currentTime, duration })
-  playerRef.current = { currentTime, duration }
   const autopilotRef = useRef(autopilot.enabled)
-  autopilotRef.current = autopilot.enabled
+  useEffect(() => {
+    playerRef.current = { currentTime, duration }
+  }, [currentTime, duration])
+  useEffect(() => {
+    autopilotRef.current = autopilot.enabled
+  }, [autopilot.enabled])
 
   /** Crossing into the last 21 s of a track is its own trigger: silence at the table
    *  must not mean the boundary goes unplanned. */
@@ -472,7 +523,7 @@ export default function Soundboard({
   }, [refreshReport])
 
   useEffect(() => {
-    if (lastRanker !== 'model' || recommendations.length === 0 || !sessionText) return
+    if (lastRanker !== 'model' || candidates.length === 0 || !sessionText) return
     let cancelled = false
     const { currentTime: at, duration: total } = playerRef.current
     const remaining = total > 0 ? Math.max(0, (total - at) * 1000) : null
@@ -480,7 +531,10 @@ export default function Soundboard({
     window.doty
       .sessionEvaluate({
         state: sessionText,
-        candidates: recommendations,
+        // The model judges descriptions, not filenames: paths alone hide the tags,
+        // BPM and energy that make a track recognisable.
+        candidates: candidates.map((f) => describeTrack(f, metaMap[f], tagsMap[f] || [])),
+        paths: candidates,
         msUntilTrackEnd: remaining,
         autopilot: autopilotRef.current,
         override,
@@ -493,13 +547,31 @@ export default function Soundboard({
 
         let best = 0
         for (let i = 1; i < tracks.length; i++) if (tracks[i] > tracks[best]) best = i
-        const track = recommendations[best]
+        // Main resolves the path from the description it ranked; fall back to the
+        // index when it did not.
+        const track = plan.track ?? candidates[best]
         if (!track) return
+
+        const recordAuto = (probability: number) =>
+          window.doty
+            .sessionDecision({
+              at: Date.now(),
+              kind: 'music',
+              action: plan.action,
+              reason: plan.reason,
+              track,
+              probability,
+              mood: plan.scene,
+              source: 'auto',
+            })
+            .then(refreshReport)
+            .catch(() => {})
 
         if (plan.action === 'queue-next') {
           // Nothing playing yet: queueing would sit silent.
           if (!playing) {
             handlePlayTrack(track, true, 'auto')
+            recordAuto(tracks[best] ?? 0)
             return
           }
           // Dedupe on what is actually in the queue, not on the last pick: the top
@@ -509,9 +581,11 @@ export default function Soundboard({
           if (already && already.track === track && Date.now() - already.at < 120_000) return
           lastQueued.current = { track, at: Date.now() }
           queue.playNext(track)
+          recordAuto(tracks[best] ?? 0)
         } else {
           lastQueued.current = null
           handlePlayTrack(track, true, 'auto')
+          recordAuto(tracks[best] ?? 0)
         }
       })
       .catch((e) => console.error('[director] evaluate failed:', e))
@@ -520,7 +594,7 @@ export default function Soundboard({
     }
     // handlePlayTrack and queue are stable enough for this one-shot planner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recommendations, lastRanker, sessionText, override, nearEnd, refreshReport])
+  }, [candidates, lastRanker, sessionText, override, nearEnd, refreshReport, metaMap, tagsMap])
 
   // Feed confidence to autopilot when recommendations change.
   // Keep the callbacks in refs: they are rebuilt every render, so depending on
@@ -569,6 +643,9 @@ export default function Soundboard({
 
   // Music: recommendations minus pinned
   const suggestions = recommendations.filter((f) => !pinned.includes(f))
+  // Everything else the model ranked, so all of its options are inspectable.
+  const considered =
+    lastRanker === 'model' ? candidates.filter((f) => !suggestions.includes(f) && !pinned.includes(f)) : []
   const hasTracks = pinned.length > 0 || suggestions.length > 0
 
   // SFX: pinned SFX objects
@@ -672,6 +749,34 @@ export default function Soundboard({
               onExpand={() => setShowMusic(true)}
             />
           )}
+          {showMusic && autopilot.pendingTransition && (
+            <div
+              className="flex items-center gap-2 shrink-0 mb-2 px-2 py-1"
+              data-testid="autopilot-countdown"
+              style={{ border: '1px solid rgba(200,146,42,0.45)', background: 'rgba(200,146,42,0.06)' }}
+            >
+              <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                autopilot switches in {autopilot.pendingTransition.countdown}s
+              </span>
+              <span className="flex-1 min-w-0 truncate" style={{ fontSize: '11px', color: '#8a7050' }}>
+                {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
+              </span>
+              <button
+                type="button"
+                onClick={autopilot.cancelTransition}
+                style={{
+                  fontSize: '10px',
+                  fontFamily: 'monospace',
+                  color: '#6b4e15',
+                  border: '1px solid rgba(107,78,21,0.4)',
+                  padding: '0 4px',
+                }}
+              >
+                KEEP CURRENT
+              </button>
+            </div>
+          )}
+
           {/* Music column header */}
           <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
@@ -689,6 +794,10 @@ export default function Soundboard({
               </span>
               {autopilot.enabled && autopilot.config.musicEnabled && (
                 <span
+                  data-testid="autopilot-chip"
+                  title={`Autopilot changes the track by itself when the top suggestion passes ${Math.round(
+                    autopilot.config.confidenceThreshold * 100,
+                  )}%. Below that it only shows the suggestion.`}
                   style={{
                     fontSize: '9px',
                     color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
@@ -698,7 +807,7 @@ export default function Soundboard({
                     letterSpacing: '0.1em',
                   }}
                 >
-                  AUTO
+                  AUTO ≥{Math.round(autopilot.config.confidenceThreshold * 100)}%
                 </span>
               )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
@@ -711,7 +820,11 @@ export default function Soundboard({
                   <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
                     {pinned.length > 0 ? `${pinned.length} pinned` : ''}
                     {pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}
-                    {suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
+                    {suggestions.length > 0
+                      ? lastRanker === 'model' && candidates.length > suggestions.length
+                        ? `${suggestions.length} of ${candidates.length} ranked`
+                        : `${suggestions.length} attuned`
+                      : ''}
                   </span>
                 )}
                 {musicFolder && (
@@ -825,7 +938,13 @@ export default function Soundboard({
                     >
                       Suggestions
                       {lastRanker === 'model' && lastConfidence >= HIGHLIGHT_CONFIDENCE && (
-                        <span style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}> ▲ strong</span>
+                        <span
+                          style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}
+                          title={`Above ${Math.round(HIGHLIGHT_CONFIDENCE * 100)}% the suggestion is called out. Autopilot only acts above its own threshold.`}
+                        >
+                          {' '}
+                          ▲ strong
+                        </span>
                       )}
                     </span>
                     {/* Ranker + confidence badge */}
@@ -840,7 +959,7 @@ export default function Soundboard({
                           color: lastRanker === 'model' ? '#c8922a' : '#6b4e15',
                           letterSpacing: '0.05em',
                         }}
-                        title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
+                        title={`Ranked by ${lastRanker}${lastChoiceConfidence > 0 ? ` — confidence ${(lastChoiceConfidence * 100).toFixed(1)}% (how settled the choice is; each card shows its own probability)` : ''}`}
                       >
                         {lastRanker === 'model'
                           ? 'model'
@@ -849,7 +968,9 @@ export default function Soundboard({
                             : rankerStatus === 'error'
                               ? 'keywords · model failed'
                               : 'keywords'}
-                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                        {lastRanker === 'model' &&
+                          lastChoiceConfidence > 0 &&
+                          ` ${(lastChoiceConfidence * 100).toFixed(0)}% conf`}
                       </span>
                     )}
                     {scene && (
@@ -920,6 +1041,7 @@ export default function Soundboard({
                     meta={metaMap[f]}
                     tags={tagsMap[f] || []}
                     allTags={allTags}
+                    probability={lastRanker === 'model' ? probabilities[f] : undefined}
                     onPlay={() => handlePlayTrack(f)}
                     onPin={() => togglePin(f)}
                     onMoveUp={() => {}}
@@ -929,6 +1051,51 @@ export default function Soundboard({
                     onAddToQueue={() => queue.enqueue(f)}
                   />
                 ))}
+
+                {/* Everything else the model ranked: all of its options are inspectable */}
+                {considered.length > 0 && (
+                  <div className="shrink-0 mt-1" data-testid="considered-list">
+                    <div className="flex items-center gap-2" style={{ height: '18px' }}>
+                      <span
+                        style={{
+                          fontFamily: "'Cinzel', serif",
+                          fontSize: '10px',
+                          letterSpacing: '0.2em',
+                          color: '#2e2416',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        also considered · {candidates.length} ranked
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.35)' }} />
+                    </div>
+                    <div className="overflow-y-auto" style={{ maxHeight: '168px' }}>
+                      {considered.map((f) => (
+                        <div key={`alt-${f}`} className="mb-1" style={{ opacity: 0.55 }}>
+                          <TrackCard
+                            filename={f}
+                            isPlaying={playing === f}
+                            isPinned={false}
+                            showReorder={false}
+                            canMoveUp={false}
+                            canMoveDown={false}
+                            meta={metaMap[f]}
+                            tags={tagsMap[f] || []}
+                            allTags={allTags}
+                            probability={probabilities[f]}
+                            onPlay={() => handlePlayTrack(f)}
+                            onPin={() => togglePin(f)}
+                            onMoveUp={() => {}}
+                            onMoveDown={() => {}}
+                            onTagsChange={(tags) => handleTagsChange(f, tags)}
+                            onPlayNext={() => queue.playNext(f)}
+                            onAddToQueue={() => queue.enqueue(f)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Decision log panel (beta) */}
                 {showDecisionLog && (

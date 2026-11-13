@@ -2,6 +2,21 @@
 
 ## Pending
 
+- [x] STT: retry once on the CPU when the GPU fails to load, instead of ending
+      the session. Ported from Handy's supervisor, which does the same.
+- [x] STT: transcribe.cpp 0.4.2 (parakeet mel-padding fix, mmapped weights).
+      The 10-day release hold is waived for it in `pnpm-workspace.yaml`.
+- [ ] STT: spoken-language detection over the transcript text, the way Handy uses
+      `whatlang`. Rust cannot be copied into an Electron app; the JS equivalents
+      (`tinyld`, `franc`) do the same job on the text we already have, and would
+      replace the script guard with a real decision — plus enable "auto, but only
+      among my preferred languages".
+- [ ] STT: a real VAD model (transcribe-cpp exposes a `vad` role — Silero
+      scores frames, `minSpeechMs`/`minSilenceMs`) instead of the RMS gate. The
+      RMS gate stops a quiet room being decoded, but it cannot stop Roman-script
+      hallucination ("Yeah, it's trying to make things") under a `pt` hint, and
+      neither can the script guard: both are Latin. A VAD segmenter also gives
+      better chunk cuts than the current quietest-frame heuristic.
 - [ ] Profiles: instances share `~/.doty/models`, so two profiles downloading the
       same model at once write the same `.part` file. Serialize on a lock file or
       give the `.part` a per-process suffix before this bites a first run.
@@ -32,7 +47,18 @@
 - [x] Ranker: download-once plumbing. One 1.41 GB archive carries the graph, its
       manifest and the tokenizer; it is fetched in the background when a library
       exists, sha256-verified, unpacked once and skipped on every later launch.
-- [ ] Ranker: label ~50 rows from real play, to set RANK_SWITCH_FLOOR.
+- [x] Ranker eval harness: `pnpm ranker:rows` builds production-shaped rows, the
+      labelling app lives at `tools/ranker-lab/index.html`, and `pnpm ranker:eval`
+      grades top-1/top-3/precision@0.9 against a baseline.
+- [x] Ranker: 50 examples labelled (26 decided) and graded. First truth:
+      top-1 0/24, top-3 25%, prefilter offered 92% of the DM's picks.
+- [ ] Ranker: the option text is the ceiling. Every description is
+      "name — BPM, energy" plus a constant genre ("Music"), so the model judges
+      filenames. Add real tags, instrumental/vocal and loudness before touching
+      a threshold — the 0/24 comes from what it is shown, not how it is asked.
+- [ ] Ranker: label the rows. Add real narration moments to
+      `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
+      browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.
 - [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
       `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
       the sha256 in `electron/d1-model.ts` matches it. Until then the background
@@ -44,13 +70,49 @@
       Next change executes `plan.action` (`queue-next` at the boundary, `play-now`
       only on a confirmed categorical change), records every decision through
       `session:decision`, and shows `sessionReport().overrideRate` in the UI.
-- [ ] Embeddings: index tracks with EmbeddingGemma-300M
-      (`onnx-community/embeddinggemma-300m-ONNX`, `model_q4`, 197 MB, 768-dim,
-      Gemma licence). Retrieval then ranks candidates by cosine over the
-      `track_vectors` table instead of keywords; store is already there. Keep the
-      keyword/energy prefilter as the fallback and the guarantee of band coverage.
-- [ ] Preferences: `session:preference` is stored but never read. Use it to boost
-      a track the DM chose for a similar past segment before the model is asked.
+- [x] Embeddings: background indexer (`electron/session/indexer.ts`), cosine
+      retrieval over `track_vectors`, and the keyword prefilter kept as the floor.
+      Batched, resumable, and a no-op until the model is on disk.
+- [x] Embeddings: moved to EmbeddingGemma **2** (`embeddinggemma-2-q4`, Apache 2.0).
+      Verified: one fused ONNX graph, needs empty `[0,512]` media tensors for a
+      text row, 768-dim output, and it runs on CPU because CoreML rejects
+      zero-element inputs.
+- [x] Retrieval is text-first (ADR 0003). The eval says top-1 0/24 with 92% of picks
+      offered, so a better retriever cannot move the number; the description can.
+- [x] SFX mixed into the music folder: `classifyTrack` separates by duration first
+      (seconds = effect, minutes = cue), then by genre/path, and leaves a middling
+      clip `unknown` rather than guessing. Effects are dropped from music
+      candidates so they stop costing slots.
+- [ ] SFX routing UI: the classifier does not yet *move* anything — it filters.
+      Moving files on disk is the user's decision, so surface the finding instead
+      (a badge in the browse panel, and a "move to effects" action).
+- [x] Overrides recorded from every manual change: card play, queue pick and skip
+      now all write a preference, so the signal is no longer limited to one button.
+- [ ] Ranker: enrich `describeTrack` — loudness and onset rate from essentia, an
+      instrumental flag, and hand tags. The option text is currently a filename,
+      BPM and `"Music"`. This is the measured bottleneck.
+- [ ] Embeddings: **audio** path, triggered by a retrieval miss in the eval — `audio_encoder_q4.onnx` takes
+      `input_features` shaped `[1, frames, 128]` plus `input_features_mask`;
+      mel parameters must be read from the model config and validated on one real
+      track before indexing — a wrong mel yields plausible vectors that mean
+      nothing. `tagsFromAudio` and the vocabulary are written and tested; they
+      need audio vectors to score.
+- [x] Embeddings: retrieval verified on the real library. A calm scene returns
+      dungeon/campfire ambience; a chase query returned caves before the indexed
+      text included BPM/energy, which is what taught us the filename is not enough.
+- [x] Embeddings: model retrieved into `~/.doty/models/embeddinggemma-300m/`
+      (197 MB q4 + tokenizer). Verified against the real graph: pooled
+      `sentence_embedding` output, 768 dims, and a calm transcript scores 0.241
+      against Campfire versus 0.166 against The Enemy. Task prefixes are applied
+      (query vs document), which the model card requires.
+- [ ] Embeddings: hosting. The model is installed by hand today; a first-run
+      download (or bundling, see README) has to ship with the app.
+- [ ] App updates never re-download models: they live in `~/.doty/models`, outside
+      the app bundle, so a new DMG reuses them. Do not move them into the bundle.
+- [x] Preferences: read. Where the model's top two are within 0.02, the track the
+      DM chose for this scene before breaks the tie. Probabilities are never
+      rewritten — that would fake confidence the model did not have — and a
+      decisive model is never overruled.
 - [ ] Session report UI: overrides per session and time-to-first-manual-pick, the
       KPI from AGENTS.md.
       narration plus the 20 candidates and the track you would have picked — and

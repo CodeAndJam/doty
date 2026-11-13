@@ -21,7 +21,11 @@
     "lint:fix": "biome check --fix .",
     "format": "biome format --write .",
     "prepare": "husky",
-    "verify:dmg": "bash build/verify-dmg.sh"
+    "verify:dmg": "bash build/verify-dmg.sh",
+    "ranker:rows": "RANKER_ROWS=1 vitest run electron/session/harvest.test.ts",
+    "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts",
+    "ranker:headless": "RANKER_HEADLESS=1 vitest run electron/session/headless.test.ts",
+    "ranker:lab": "node tools/ranker-lab/serve.mjs"
   },
   "build": {
     "appId": "com.codeandjam.doty",
@@ -100,7 +104,7 @@
     "opusscript": "0.1.1",
     "prism-media": "^1.3.5",
     "sodium-native": "^5.2.0",
-    "transcribe-cpp": "^0.4.1"
+    "transcribe-cpp": "^0.4.2"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
