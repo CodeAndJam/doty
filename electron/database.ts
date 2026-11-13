@@ -1,8 +1,8 @@
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
-import { app } from 'electron'
+import { DOTY_HOME } from './profile'
 
-const DB_PATH = join(app.getPath('home'), '.doty', 'doty.db')
+const DB_PATH = join(DOTY_HOME, 'doty.db')
 
 let db: Database.Database | null = null
 

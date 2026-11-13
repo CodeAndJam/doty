@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import fsPromises from 'node:fs/promises'
 import { basename, join, resolve, sep } from 'node:path'
-import { app } from 'electron'
+import { DOTY_HOME } from './profile'
 import { store } from './store'
 
 export interface SessionMeta {
@@ -16,7 +16,7 @@ export interface VttCue {
   text: string
 }
 
-const DEFAULT_SESSIONS_DIR = join(app.getPath('home'), '.doty', 'sessions')
+const DEFAULT_SESSIONS_DIR = join(DOTY_HOME, 'sessions')
 
 export function getSessionsDir(): string {
   const custom = store.get('transcriptFolder', '') as string

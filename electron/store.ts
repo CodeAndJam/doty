@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
+import { USER_DATA_DIR } from './profile'
 
 interface StoreData {
   musicFolder?: string
@@ -34,7 +34,7 @@ interface StoreData {
   autopilotRecentlyPlayedMinutes?: number // minutes
 }
 
-const storePath = join(app.getPath('userData'), 'config.json')
+const storePath = join(USER_DATA_DIR, 'config.json')
 
 function read(): StoreData {
   try {
