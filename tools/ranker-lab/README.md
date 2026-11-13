@@ -64,7 +64,10 @@ can label a track the model was never offered (a recall miss, recorded as
 
 - `1`–`9` pick by position, `←`/`→` move between moments, `Backspace` clears
 - `▶` plays a candidate, or any track in the folder
-- `shift`-click a track you would *never* play at this moment
+- `shift`-click every track you would **also have played** — the acceptable set
+  is what the session actually needs; one "best" answer is a stricter,
+  noisier label
+- `alt`-click a track you would *never* play at this moment
 - `0` marks "nothing here fits" — the most useful label of all, because that is
   the case autopilot must not act on
 

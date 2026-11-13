@@ -29,6 +29,8 @@
   li .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   li.picked { background:rgba(200,146,42,.1); box-shadow:inset 2px 0 0 var(--gold); }
   li.picked .name { color:#e8d5a3; }
+  li.accepted { background:rgba(74,138,106,.08); box-shadow:inset 2px 0 0 rgba(74,138,106,.7); }
+  li.accepted .name { color:#9fc4ab; }
   li.rejected { opacity:.45; }
   li.rejected .name { text-decoration:line-through; color:var(--bad); }
   li.off { border-left:2px solid rgba(74,138,106,.6); }
@@ -66,7 +68,8 @@
     <div id="clock" class="stat" style="margin-top:10px"></div>
     <div class="hint">
       1–9 pick a track · click again to clear · ▶ plays it<br />
-      shift-click a track you would never play<br />
+      shift-click every track you would also have played<br />
+      alt-click a track you would never play<br />
       0 = nothing here fits · ← → move between rows<br />
       Labels autosave in this browser. Picked a track outside the twenty? Use
       <b>open music folder</b> below — that is a recall miss, and worth recording.
@@ -197,7 +200,7 @@ function restore() {
     if (saved?.rows?.length) { state.rows = saved.rows; state.labels = saved.labels || {} }
   } catch {}
 }
-function labelFor(id) { return (state.labels[id] ??= { picked: null, rejects: [], offered: true }) }
+function labelFor(id) { return (state.labels[id] ??= { picked: null, acceptable: [], rejects: [], offered: true }) }
 
 function pick(id, path, offered) {
   const label = labelFor(id)
@@ -237,7 +240,9 @@ function seededOrder(row) {
 function trackRow(path, name, opts) {
   const li = document.createElement('li')
   const label = opts.label
+  const acceptable = label.acceptable ?? []
   if (label.picked === path) li.className = opts.offClass ? 'picked off' : 'picked'
+  else if (acceptable.includes(path)) li.className = 'accepted'
   else if (label.rejects.includes(path)) li.className = 'rejected'
   else if (opts.offClass) li.className = 'off'
 
@@ -370,6 +375,7 @@ $('export').addEventListener('click', () => {
   const labels = state.rows.map((row) => ({
     id: row.id,
     picked: state.labels[row.id]?.picked ?? null,
+    acceptable: state.labels[row.id]?.acceptable ?? [],
     rejects: state.labels[row.id]?.rejects ?? [],
     offered: state.labels[row.id]?.offered ?? true,
   }))
