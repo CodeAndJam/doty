@@ -238,6 +238,10 @@ export interface DotyAPI {
     scene: string | null
     source: 'auto' | 'manual'
   }) => Promise<unknown>
+  embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
+  /** Vector matches from the whole library, empty when nothing is indexed yet. */
+  similarTracks: (text: string, k: number) => Promise<string[]>
+  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number
     autoActions: number

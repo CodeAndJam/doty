@@ -51,11 +51,13 @@
       Next change executes `plan.action` (`queue-next` at the boundary, `play-now`
       only on a confirmed categorical change), records every decision through
       `session:decision`, and shows `sessionReport().overrideRate` in the UI.
-- [ ] Embeddings: index tracks with EmbeddingGemma-300M
-      (`onnx-community/embeddinggemma-300m-ONNX`, `model_q4`, 197 MB, 768-dim,
-      Gemma licence). Retrieval then ranks candidates by cosine over the
-      `track_vectors` table instead of keywords; store is already there. Keep the
-      keyword/energy prefilter as the fallback and the guarantee of band coverage.
+- [x] Embeddings: background indexer (`electron/session/indexer.ts`), cosine
+      retrieval over `track_vectors`, and the keyword prefilter kept as the floor.
+      Batched, resumable, and a no-op until the model is on disk.
+- [ ] Embeddings: download `embeddinggemma-300m` (`model_q4.onnx`, 197 MB,
+      tokenizer.json) into `~/.doty/models/embeddinggemma-300m/`. Until it is
+      there, `embedderAvailable()` is false and retrieval stays keyword-only.
+      The ORT forward pass in `embedder.ts` is written but has never run.
 - [x] Preferences: read. Where the model's top two are within 0.02, the track the
       DM chose for this scene before breaks the tie. Probabilities are never
       rewritten — that would fake confidence the model did not have — and a

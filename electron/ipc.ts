@@ -35,6 +35,8 @@ export const INVOKE = {
   sessionDecision: 'session:decision',
   sessionPreference: 'session:preference',
   sessionReport: 'session:report',
+  embeddingStatus: 'embedding:status',
+  similarTracks: 'embedding:similar',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection
@@ -112,6 +114,7 @@ export const EVENTS = {
   // Model
   rankerStatus: 'ranker:ipc-status',
   rankerDownloadProgress: 'ranker:download-progress',
+  embeddingProgress: 'embedding:progress',
   modelProgress: 'model:progress',
   modelStatus: 'model:status',
   modelDownloadError: 'model:download-error',

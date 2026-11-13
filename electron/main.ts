@@ -77,6 +77,9 @@ import { handleMusicRequest } from './music-protocol'
 import { decide, disposeRanker, evaluateSession, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { planStep } from './session/director'
+import { EMBEDDING_MODEL, embedderAvailable, loadEmbedder } from './session/embedder'
+import { topK } from './session/embedding'
+import { createIndexer } from './session/indexer'
 import { learnedPick } from './session/preferences'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
@@ -435,7 +438,11 @@ app.whenReady().then(async () => {
   }
 
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) launchScanner(musicFolder)
+  if (musicFolder) {
+    launchScanner(musicFolder)
+    // Minutes of work, so it runs in the background and resumes next launch.
+    setTimeout(() => startIndexing(musicFolder).catch(() => {}), 3_000)
+  }
 
   // One background download, once per machine. No prompt: the app is useless
   // without it, and 1.5 GB of silence during a session would be worse.
@@ -828,6 +835,64 @@ handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.record
   return { ok: true }
 })
 handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
+
+// ── Embeddings: indexed in the background, used when they exist ───────────────
+const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-300m')
+let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
+let embedding: { done: number; total: number } = { done: 0, total: 0 }
+let indexing = false
+
+/** Load the model and index whatever is missing, in batches, without blocking. */
+async function startIndexing(folder: string): Promise<void> {
+  if (indexing || !embedderAvailable(EMBEDDER_DIR)) return
+  indexing = true
+  try {
+    embedder ??= await loadEmbedder(EMBEDDER_DIR)
+    const files = getMusicFiles(folder)
+    embedding = { done: 0, total: files.length }
+    const indexer = createIndexer({
+      paths: () => files,
+      store: sessionStore,
+      embed: (texts) => embedder!.embed(texts),
+      model: EMBEDDING_MODEL,
+      // The folder path is most of what the model needs to know about a track:
+      // "Combat/Boss/The Enemy" says more than any tag we could invent.
+      describe: (path) => path.replace(/\.[^.]+$/, '').replace(/[-_/]/g, ' '),
+      batch: 8,
+      onProgress: (p) => {
+        embedding = p
+        send(EVENTS.embeddingProgress, p)
+      },
+    })
+    await indexer.run()
+  } catch (e) {
+    console.error('[embedding] indexing failed:', e)
+  } finally {
+    indexing = false
+  }
+}
+
+handle(INVOKE.embeddingStatus, () => {
+  const folder = store.get('musicFolder', '') as string
+  const total = folder ? getMusicFiles(folder).length : 0
+  return { ready: embedder !== null, indexed: embedding.done, total }
+})
+
+handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
+  if (!embedder || !text.trim()) return []
+  try {
+    const [query] = await embedder.embed([text])
+    const vectors = new Map<string, Float32Array>()
+    for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
+      const vector = sessionStore.getVector(path, EMBEDDING_MODEL)
+      if (vector) vectors.set(path, vector)
+    }
+    return topK(query, vectors, Math.max(1, Math.min(k, 50)))
+  } catch (e) {
+    console.error('[embedding] query failed:', e)
+    return []
+  }
+})
 
 handle(INVOKE.rankerDecide, async (_e, prompt: string, candidates: string[]) => {
   return decide(prompt, candidates)
