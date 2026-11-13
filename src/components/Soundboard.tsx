@@ -243,7 +243,16 @@ export default function Soundboard({
   }, [sfxPinned])
 
   // ── Keyboard shortcuts: N = next, P = prev ───────────────────────────
-  /** A skip is the DM rejecting what is playing: a decision, not a preference. */
+  /**
+   * Every manual playback change is both a decision and a label. Skips are weak
+   * labels (rejection, not preference), queue picks are strong ones.
+   */
+  function recordPreference(track: string) {
+    window.doty
+      .sessionPreference({ at: Date.now(), segment: sessionText, track, scene: sceneRef.current, source: 'manual' })
+      .catch(() => {})
+  }
+
   function recordSkip(track: string) {
     onManualAction()
     window.doty
@@ -268,6 +277,7 @@ export default function Soundboard({
       playTrack(track, true)
       autopilot.notePlayed(track)
       recordSkip(track)
+      recordPreference(track)
     }
   }
 
@@ -360,6 +370,8 @@ export default function Soundboard({
   function handleQueuePlay(index: number) {
     const track = queue.tracks[index]
     if (!track) return
+    recordPreference(track)
+    onManualAction()
     queue.setCurrentIndex(index)
     if (playing === track) {
       // Same track — toggle pause/resume (matches the pause icon in the queue)

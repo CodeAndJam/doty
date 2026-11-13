@@ -6,6 +6,7 @@
 import type { TrackMeta } from '../types'
 import { choiceConfidence } from './confidence'
 import { candidateSet, heuristicRecommend } from './heuristicRecommend'
+import { classifyTrack } from './trackKind'
 
 export type RankerType = 'model' | 'heuristic' | null
 
@@ -97,6 +98,15 @@ export async function rankTracks(
       ranker: 'heuristic',
     }
   }
+
+  // An effect that ended up in the music folder can never fit a scene: it is
+  // seconds long and it is not a bed. Drop it before it costs a candidate slot.
+  const playable = files.filter(
+    (file) => classifyTrack({ path: file, duration: metadata[file]?.duration, genre: metadata[file]?.genre }) !== 'sfx',
+  )
+  if (playable.length === 0)
+    return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+  files = playable
 
   const recentPrompt = prompt.slice(-800).trim()
   if (!deps.ready || !deps.decide || !recentPrompt) return byHeuristic(prompt)

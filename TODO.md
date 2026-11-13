@@ -75,6 +75,15 @@
       zero-element inputs.
 - [x] Retrieval is text-first (ADR 0003). The eval says top-1 0/24 with 92% of picks
       offered, so a better retriever cannot move the number; the description can.
+- [x] SFX mixed into the music folder: `classifyTrack` separates by duration first
+      (seconds = effect, minutes = cue), then by genre/path, and leaves a middling
+      clip `unknown` rather than guessing. Effects are dropped from music
+      candidates so they stop costing slots.
+- [ ] SFX routing UI: the classifier does not yet *move* anything — it filters.
+      Moving files on disk is the user's decision, so surface the finding instead
+      (a badge in the browse panel, and a "move to effects" action).
+- [x] Overrides recorded from every manual change: card play, queue pick and skip
+      now all write a preference, so the signal is no longer limited to one button.
 - [ ] Ranker: enrich `describeTrack` — loudness and onset rate from essentia, an
       instrumental flag, and hand tags. The option text is currently a filename,
       BPM and `"Music"`. This is the measured bottleneck.
