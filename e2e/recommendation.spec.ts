@@ -92,6 +92,13 @@ test('keyword fallback answers while the model loads, then the model takes over'
     console.log('[e2e] model ranking:', ranked)
     expect(ranked).not.toEqual(early)
 
+    // The director ran: main holds a scene and the UI shows it.
+    await expect(page.getByTestId('session-scene')).toBeVisible({ timeout: 30_000 })
+
+    // Instrumentation: a manual pick is recorded as a label and shows in the report.
+    await page.getByTestId('track-card').first().locator('button').first().click()
+    await expect(page.getByTestId('session-report')).toContainText('manual 1', { timeout: 15_000 })
+
     // Every option the model ranked is inspectable, not just the five suggested.
     await expect(page.getByTestId('considered-list')).toBeVisible()
     console.log('[e2e] options ranked:', allRanked.length)

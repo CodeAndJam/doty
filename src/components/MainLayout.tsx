@@ -22,6 +22,8 @@ export default function MainLayout() {
   const [probabilities, setProbabilities] = useState<Record<string, number>>({})
   const [candidates, setCandidates] = useState<string[]>([])
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
+  /** The transcript window the director reads: wider than the UI snippet. */
+  const [sessionText, setSessionText] = useState('')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -208,6 +210,7 @@ export default function MainLayout() {
     setProbabilities(result.probabilities)
     setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
+    setSessionText(recentTranscript)
   }, [override])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -250,6 +253,7 @@ export default function MainLayout() {
       setProbabilities(result.probabilities)
       setCandidates(result.candidates)
       setLastTranscriptSnippet(prompt.slice(-120))
+      setSessionText(combined)
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
     },
@@ -657,6 +661,7 @@ export default function MainLayout() {
               lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}
               candidates={candidates}
+              sessionText={sessionText}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}
