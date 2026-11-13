@@ -46,6 +46,12 @@
 - [x] Ranker eval harness: `pnpm ranker:rows` builds production-shaped rows, the
       labelling app lives at `tools/ranker-lab/index.html`, and `pnpm ranker:eval`
       grades top-1/top-3/precision@0.9 against a baseline.
+- [x] Ranker: 50 examples labelled (26 decided) and graded. First truth:
+      top-1 0/24, top-3 25%, prefilter offered 92% of the DM's picks.
+- [ ] Ranker: the option text is the ceiling. Every description is
+      "name — BPM, energy" plus a constant genre ("Music"), so the model judges
+      filenames. Add real tags, instrumental/vocal and loudness before touching
+      a threshold — the 0/24 comes from what it is shown, not how it is asked.
 - [ ] Ranker: label the rows. Add real narration moments to
       `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
       browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.

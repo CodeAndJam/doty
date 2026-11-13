@@ -49,6 +49,8 @@ export interface Grade {
     /** Mean top probability there: high means the model wanted to act anyway. */
     meanTop: number
   }
+  /** One line per ranked row: where the DM's pick landed, and what won. */
+  details: Array<{ id: string; pickedRank: number; topPath: string | null; topProbability: number }>
 }
 
 export interface GradeInput {
@@ -101,6 +103,7 @@ export function grade({ rows, labels, probabilities }: GradeInput): Grade {
   const ranking = { n: 0, top1: 0, top3: 0, at9: 0, correctAt9: 0 }
   const retrieval = { n: 0, misses: 0, missTracks: [] as string[] }
   const abstention = { n: 0, total: 0 }
+  const details: Grade['details'] = []
 
   for (const label of labels) {
     const outcome = classify(label, byId.get(label.id), probabilities.get(label.id) ?? [])
@@ -119,6 +122,15 @@ export function grade({ rows, labels, probabilities }: GradeInput): Grade {
       continue
     }
     addRanking(ranking, outcome)
+    const ranked = (probabilities.get(label.id) ?? [])
+      .map((p, i) => ({ path: rows.find((r) => r.id === label.id)?.candidates[i]?.path ?? null, p }))
+      .sort((a, b) => b.p - a.p)
+    details.push({
+      id: label.id,
+      pickedRank: ranked.findIndex((entry) => entry.path === label.picked) + 1,
+      topPath: ranked[0]?.path ?? null,
+      topProbability: ranked[0]?.p ?? 0,
+    })
   }
 
   return {
@@ -139,5 +151,6 @@ export function grade({ rows, labels, probabilities }: GradeInput): Grade {
       n: abstention.n,
       meanTop: abstention.n === 0 ? 0 : abstention.total / abstention.n,
     },
+    details,
   }
 }

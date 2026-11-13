@@ -117,6 +117,15 @@ describe.skipIf(!ready)('ranker quality', () => {
       'A high mean here is the dangerous case: the model wanted to act on a',
       'scene where nothing in the library suited.',
       '',
+      '## Per example',
+      '',
+      '| example | your pick ranked | model top pick | p |',
+      '| --- | --- | --- | --- |',
+      ...result.details.map(
+        (d) =>
+          `| ${d.id} | ${d.pickedRank === 0 ? 'not found' : `${d.pickedRank} of 20`} | ${d.topPath?.split('/').pop() ?? '—'} | ${(d.topProbability * 100).toFixed(0)}% |`,
+      ),
+      '',
     ].join('\n')
 
     fs.mkdirSync(join(__dirname, '..', '..', 'test-results'), { recursive: true })
