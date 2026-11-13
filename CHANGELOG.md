@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.2.2](https://github.com/CodeAndJam/doty/compare/v3.2.1...v3.2.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* resolve app-wide bug-hunt findings ([#111](https://github.com/CodeAndJam/doty/issues/111)) ([ecd49ad](https://github.com/CodeAndJam/doty/commit/ecd49ad44d9ca37c88cd3b71ed4ba4171857c789))
+* **ui:** restore Tailwind spacing after the v4 upgrade ([#116](https://github.com/CodeAndJam/doty/issues/116)) ([85185c3](https://github.com/CodeAndJam/doty/commit/85185c3241a296f8b246a38ab2779dde34806b56))
+
 ## [3.2.1](https://github.com/CodeAndJam/doty/compare/v3.2.0...v3.2.1) (2026-11-12)
 
 
