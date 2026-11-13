@@ -24,12 +24,21 @@ load().then(
   (e) => parentPort!.postMessage({ type: 'fatal', error: e instanceof Error ? e.message : String(e) }),
 )
 
-parentPort!.on('message', async (msg: { type: string; id?: number; prompt?: string; candidates?: string[] }) => {
-  if (msg.type !== 'decide' || msg.id === undefined) return
+type Incoming = { type: string; id?: number; prompt?: string; candidates?: string[] }
+
+parentPort!.on('message', async (msg: Incoming) => {
+  if (msg.id === undefined) return
   try {
     await load()
-    const probabilities = await model!.rank(msg.prompt ?? '', RANK_INSTRUCTIONS, msg.candidates ?? [])
-    parentPort!.postMessage({ type: 'probabilities', id: msg.id, probabilities })
+    if (msg.type === 'decide') {
+      const probabilities = await model!.rank(msg.prompt ?? '', RANK_INSTRUCTIONS, msg.candidates ?? [])
+      parentPort!.postMessage({ type: 'probabilities', id: msg.id, probabilities })
+      return
+    }
+    if (msg.type === 'evaluate') {
+      const { tracks, moods } = await model!.evaluate(msg.prompt ?? '', msg.candidates ?? [])
+      parentPort!.postMessage({ type: 'evaluated', id: msg.id, tracks, moods })
+    }
   } catch (e) {
     parentPort!.postMessage({ type: 'decide-error', id: msg.id, error: e instanceof Error ? e.message : String(e) })
   }

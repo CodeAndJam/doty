@@ -17,6 +17,25 @@ import * as ort from 'onnxruntime-node'
  */
 export const RANK_INSTRUCTIONS = 'Qual destas músicas se adequa melhor ao momento atual da sessão?'
 
+/** The second question: what is happening, in the vocabulary the scene machine uses. */
+export const MOOD_INSTRUCTIONS = 'Que tipo de cena está a acontecer agora?'
+
+export const MOODS = [
+  'combat',
+  'chase',
+  'tense',
+  'horror',
+  'mystery',
+  'exploration',
+  'tavern',
+  'celebration',
+  'sad',
+  'epic',
+  'peaceful',
+  'voyage',
+  'stealth',
+] as const
+
 export interface D1Manifest {
   family: string
   context_length: number
@@ -150,6 +169,21 @@ export class D1Omni {
       this.manifest.shape.seq,
       this.manifest.per_option_tokens,
     )
+  }
+
+  /**
+   * One model request, two questions: which track fits, and which mood the scene
+   * is in. The mood feeds the scene machine's hysteresis, so the score stops
+   * flickering on a single misread.
+   */
+  async evaluate(
+    state: string,
+    options: string[],
+    moods: readonly string[] = MOODS,
+  ): Promise<{ tracks: number[]; moods: number[] }> {
+    const tracks = options.length > 0 ? await this.rank(state, RANK_INSTRUCTIONS, options) : []
+    const moodProbabilities = moods.length > 0 ? await this.rank(state, MOOD_INSTRUCTIONS, [...moods]) : []
+    return { tracks, moods: moodProbabilities }
   }
 
   /** Probabilities over `options`, ordered as given. */

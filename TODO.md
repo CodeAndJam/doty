@@ -32,12 +32,27 @@
 - [x] Ranker: download-once plumbing. One 1.41 GB archive carries the graph, its
       manifest and the tokenizer; it is fetched in the background when a library
       exists, sha256-verified, unpacked once and skipped on every later launch.
+- [ ] Ranker: label ~50 rows from real play, to set RANK_SWITCH_FLOOR.
 - [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
       `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
       the sha256 in `electron/d1-model.ts` matches it. Until then the background
       fetch 404s and the app stays on keyword matching. The LFM licence note
       belongs on that download.
-- [ ] Ranker: label ~50 rows from real play — the last 800 chars of pt-PT DM
+- [ ] Ranker: wire the session loop. `electron/session/{policy,scene,director,store}.ts`
+      and the two-question `session:evaluate` are in place and tested, but nothing
+      calls them yet: `Soundboard` still drives autopilot from the old threshold.
+      Next change executes `plan.action` (`queue-next` at the boundary, `play-now`
+      only on a confirmed categorical change), records every decision through
+      `session:decision`, and shows `sessionReport().overrideRate` in the UI.
+- [ ] Embeddings: index tracks with EmbeddingGemma-300M
+      (`onnx-community/embeddinggemma-300m-ONNX`, `model_q4`, 197 MB, 768-dim,
+      Gemma licence). Retrieval then ranks candidates by cosine over the
+      `track_vectors` table instead of keywords; store is already there. Keep the
+      keyword/energy prefilter as the fallback and the guarantee of band coverage.
+- [ ] Preferences: `session:preference` is stored but never read. Use it to boost
+      a track the DM chose for a similar past segment before the model is asked.
+- [ ] Session report UI: overrides per session and time-to-first-manual-pick, the
+      KPI from AGENTS.md.
       narration plus the 20 candidates and the track you would have picked — and
       record top-1 for d1-omni against the current cross-encoder. This set also
       sets `RANK_SWITCH_FLOOR`.

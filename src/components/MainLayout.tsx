@@ -19,6 +19,8 @@ export default function MainLayout() {
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
+  /** The transcript window the director reads: wider than the UI snippet. */
+  const [sessionText, setSessionText] = useState('')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -202,6 +204,7 @@ export default function MainLayout() {
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
+    setSessionText(recentTranscript)
   }, [override])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -241,6 +244,7 @@ export default function MainLayout() {
       setRecommendations(result.files)
       setLastConfidence(result.confidence)
       setLastTranscriptSnippet(prompt.slice(-120))
+      setSessionText(combined)
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
     },
@@ -645,6 +649,7 @@ export default function MainLayout() {
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}
+              sessionText={sessionText}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}

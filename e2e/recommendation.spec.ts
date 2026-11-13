@@ -91,6 +91,29 @@ test('keyword fallback answers while the model loads, then the model takes over'
     console.log('[e2e] model ranking:', ranked)
     expect(ranked).not.toEqual(early)
 
+<<<<<<< HEAD
+=======
+    // The director ran: main holds a scene and the UI shows it.
+    await expect(page.getByTestId('session-scene')).toBeVisible({ timeout: 30_000 })
+
+    // Instrumentation: a manual pick is recorded as a label and shows in the report.
+    await page.getByTestId('track-card').first().locator('button').first().click()
+    await expect(page.getByTestId('session-report')).toContainText('manual 1', { timeout: 15_000 })
+
+    // Every option the model ranked is inspectable, not just the five suggested.
+    await expect(page.getByTestId('considered-list')).toBeVisible()
+    console.log('[e2e] options ranked:', allRanked.length)
+    expect(allRanked.length).toBeGreaterThan(5)
+
+    // Each suggestion shows its own probability, and the top card holds the most.
+    const shown = await page
+      .getByTestId('track-probability')
+      .evaluateAll((els) => els.map((el) => Number.parseFloat(el.textContent ?? '0')))
+    console.log('[e2e] per-option probabilities:', shown)
+    expect(shown).toHaveLength(allRanked.length)
+    expect(shown[0]).toBe(Math.max(...shown))
+
+>>>>>>> 8edb8fb (feat(session): execute the director's plans and measure the result)
     const relevant = ['Campfire', 'Bonfire', 'Tavern', 'Downtime', 'Halfling', 'Peaceful', 'Ambience']
     expect(ranked.some((n) => relevant.some((r) => n.includes(r))), `no mood-relevant track in ${ranked.join(', ')}`).toBe(
       true,

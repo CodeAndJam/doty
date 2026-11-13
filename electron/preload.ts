@@ -44,6 +44,16 @@ contextBridge.exposeInMainWorld('doty', {
   rankerStatus: () => invoke(INVOKE.rankerStatus),
   rankerDecide: (prompt: string, candidates: string[]) => invoke(INVOKE.rankerDecide, prompt, candidates),
   rankerDownload: () => invoke(INVOKE.rankerDownload) as Promise<{ ok: boolean; reason?: string }>,
+  sessionEvaluate: (request: {
+    state: string
+    candidates: string[]
+    msUntilTrackEnd: number | null
+    autopilot: boolean
+    override: boolean
+  }) => invoke(INVOKE.sessionEvaluate, request),
+  sessionDecision: (row: unknown) => invoke(INVOKE.sessionDecision, row),
+  sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
+  sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
     subscribe(EVENTS.rankerDownloadProgress, cb),
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),

@@ -6,13 +6,38 @@ Named after the ever-faithful automaton scribe from Critical Role, Doty sits qui
 
 ![Main interface](docs/main_ui.png)
 
+## The goal
+
+**A DM should never have to touch Doty mid-session.**
+
+Music and sound effects follow the table on their own: a tavern scene gets a
+tavern bed, a fight starts when the fight starts, a fireball lands with a
+fireball. The score should change at moments that feel composed rather than
+corrected, and it should never leave the DM thinking "the music is wrong right
+now", reaching for the track list, or waiting for a good moment to switch.
+
+That is not a nice-to-have, it is the product. Everything below is in service of
+it, and it is the tiebreaker for every design decision in this repository — see
+"Product intent" in [AGENTS.md](AGENTS.md) and
+[docs/adr/0001-rank-with-a-decision-model.md](docs/adr/0001-rank-with-a-decision-model.md).
+A recommendation nobody acts on, a track that has to be skipped, or a switch the
+DM has to time by hand counts as a defect, not a missing feature.
+
 ## Features
 
 ### Real-time speech-to-text
 Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Nemotron 3.5 Streaming, ~0.4 s latency); Parakeet Ultra is available in Settings when accuracy matters more than the typing effect. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
 
 ### AI music recommendations
-As the conversation flows, Doty uses a multilingual cross-encoder (mmarco-mMiniLMv2) to score every track in your library against the rolling transcript and surfaces the best matches. Recommendations update automatically as the scene evolves.
+Doty ranks your library with a **decision model** — d1-omni-600M, exported to ONNX and run locally — rather than a text generator. Each pass scores 20 candidate tracks and returns a calibrated probability for every one of them, so "the model is 26% sure" is a real signal that the scene does not fit the library, not a broken score. Candidates are chosen by a cheap keyword/tag/BPM prefilter that deliberately spans calm, mid and loud tracks, because the model can only pick well among what it is offered.
+
+The soundboard shows the top suggestions and, underneath, every option the model ranked, each with its probability. The active mode and its confidence are always visible.
+
+### Automatic sound effects
+The soundboard carries a second library of one-shots. With Autopilot on, Doty can fire them from the transcript as well as music — a door, a sword hit, a roar — respecting per-effect and global cooldowns so effects never stack on top of each other.
+
+### Hands-off session
+Turn Autopilot on and the session runs itself: music changes when the scene changes, the next track is queued at the boundary rather than swapped mid-scene, and anything you take by hand silences the automation until you explicitly resume it. The decision log records why each choice was or was not made.
 
 ### DM scene prompt
 Type a scene description like "dark dungeon", "tavern celebration", or "dragon fight" into the prompt bar and Doty immediately re-ranks your library to match. The DM prompt takes priority over the transcript, so you can steer the mood at any time.
@@ -61,7 +86,7 @@ Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/re
 1. Open Settings and select your **music folder** and **microphone**.
 2. Click the **Standby** status toggle to start listening.
 3. Doty transcribes what it hears and automatically recommends matching tracks in the soundboard.
-4. Click any track card to play it. Use the player bar at the bottom to control playback.
+4. Click any track card to play it — or turn on **Autopilot** and skip this step entirely.
 5. Type a scene description in the **prompt bar** above the soundboard to manually steer recommendations.
 
 ### Settings

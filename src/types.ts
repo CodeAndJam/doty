@@ -207,6 +207,40 @@ export interface DotyAPI {
   rankerStatus: () => Promise<{ cached: boolean; downloading: boolean; languageCovered: boolean }>
   rankerDecide: (prompt: string, candidates: string[]) => Promise<number[]>
   rankerDownload: () => Promise<{ ok: boolean; reason?: string }>
+  sessionEvaluate: (request: {
+    state: string
+    candidates: string[]
+    msUntilTrackEnd: number | null
+    autopilot: boolean
+    override: boolean
+  }) => Promise<{
+    tracks: number[]
+    moods: number[]
+    plan: { scene: string; action: 'hold' | 'queue-next' | 'play-now'; reason: string } | null
+  }>
+  sessionDecision: (row: {
+    at: number
+    kind: string
+    action: string
+    reason: string
+    track: string | null
+    probability: number
+    mood: string | null
+    source: 'auto' | 'manual'
+  }) => Promise<unknown>
+  sessionPreference: (row: {
+    at: number
+    segment: string
+    track: string
+    scene: string | null
+    source: 'auto' | 'manual'
+  }) => Promise<unknown>
+  sessionReport: (since: number) => Promise<{
+    decisions: number
+    autoActions: number
+    manualPicks: number
+    overrideRate: number
+  }>
   onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => () => void
   onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
