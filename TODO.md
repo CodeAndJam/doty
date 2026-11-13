@@ -63,6 +63,16 @@
 - [x] Embeddings: background indexer (`electron/session/indexer.ts`), cosine
       retrieval over `track_vectors`, and the keyword prefilter kept as the floor.
       Batched, resumable, and a no-op until the model is on disk.
+- [x] Embeddings: moved to EmbeddingGemma **2** (`embeddinggemma-2-q4`, Apache 2.0).
+      Verified: one fused ONNX graph, needs empty `[0,512]` media tensors for a
+      text row, 768-dim output, and it runs on CPU because CoreML rejects
+      zero-element inputs.
+- [ ] Embeddings: **audio** path. `audio_encoder_q4.onnx` takes
+      `input_features` shaped `[1, frames, 128]` plus `input_features_mask`;
+      mel parameters must be read from the model config and validated on one real
+      track before indexing — a wrong mel yields plausible vectors that mean
+      nothing. `tagsFromAudio` and the vocabulary are written and tested; they
+      need audio vectors to score.
 - [x] Embeddings: model retrieved into `~/.doty/models/embeddinggemma-300m/`
       (197 MB q4 + tokenizer). Verified against the real graph: pooled
       `sentence_embedding` output, 768 dims, and a calm transcript scores 0.241

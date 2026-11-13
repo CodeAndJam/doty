@@ -846,7 +846,7 @@ handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.record
 handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
 // ── Embeddings: indexed in the background, used when they exist ───────────────
-const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-300m')
+const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
 let embedding: { done: number; total: number } = { done: 0, total: 0 }
 let indexing = false

@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { embedderAvailable, loadEmbedder } from './embedder'
 import { cosine } from './embedding'
 
-const DIR = join(homedir(), '.doty', 'models', 'embeddinggemma-300m')
+const DIR = join(homedir(), '.doty', 'models', 'embeddinggemma-2')
 
 describe.skipIf(!existsSync(DIR) || !embedderAvailable(DIR))('embedder', () => {
   it('puts a calm scene nearer a calm track than a combat track', async () => {
