@@ -75,7 +75,7 @@ import {
 } from './model-paths'
 import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
-import { decide, disposeRanker, evaluateSession, setOnRankerStatus } from './ranker'
+import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { planStep } from './session/director'
 import { EMBEDDING_MODEL, embedderAvailable, loadEmbedder } from './session/embedder'
@@ -885,6 +885,16 @@ handle(INVOKE.embeddingStatus, () => {
   const folder = store.get('musicFolder', '') as string
   const total = folder ? getMusicFiles(folder).length : 0
   return { ready: embedder !== null, indexed: embedding.done, total }
+})
+
+handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
+  if (candidates.length === 0 || !state.trim()) return []
+  try {
+    return await rankSfx(state, candidates)
+  } catch (e) {
+    console.error('[sfx] ranking failed:', e)
+    return []
+  }
 })
 
 handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {

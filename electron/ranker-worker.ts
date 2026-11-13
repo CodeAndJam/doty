@@ -4,7 +4,7 @@
  */
 import { join } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import { D1Omni, RANK_INSTRUCTIONS } from './d1-omni'
+import { D1Omni, RANK_INSTRUCTIONS, SFX_INSTRUCTIONS } from './d1-omni'
 
 const { homePath } = workerData as { homePath: string }
 
@@ -32,6 +32,11 @@ parentPort!.on('message', async (msg: Incoming) => {
     await load()
     if (msg.type === 'decide') {
       const probabilities = await model!.rank(msg.prompt ?? '', RANK_INSTRUCTIONS, msg.candidates ?? [])
+      parentPort!.postMessage({ type: 'probabilities', id: msg.id, probabilities })
+      return
+    }
+    if (msg.type === 'sfx') {
+      const probabilities = await model!.rank(msg.prompt ?? '', SFX_INSTRUCTIONS, msg.candidates ?? [])
       parentPort!.postMessage({ type: 'probabilities', id: msg.id, probabilities })
       return
     }

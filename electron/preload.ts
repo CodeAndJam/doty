@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('doty', {
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
   similarTracks: (text: string, k: number) => invoke(INVOKE.similarTracks, text, k) as Promise<string[]>,
+  sfxRank: (state: string, candidates: string[]) => invoke(INVOKE.sfxRank, state, candidates) as Promise<number[]>,
   onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => subscribe(EVENTS.embeddingProgress, cb),
   onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
     subscribe(EVENTS.rankerDownloadProgress, cb),

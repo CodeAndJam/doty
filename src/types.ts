@@ -241,6 +241,8 @@ export interface DotyAPI {
   embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
   /** Vector matches from the whole library, empty when nothing is indexed yet. */
   similarTracks: (text: string, k: number) => Promise<string[]>
+  /** Probabilities for each SFX description, in the order given. */
+  sfxRank: (state: string, candidates: string[]) => Promise<number[]>
   onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number

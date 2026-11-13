@@ -20,6 +20,9 @@ export const RANK_INSTRUCTIONS = 'Qual destas músicas se adequa melhor ao momen
 /** The second question: what is happening, in the vocabulary the scene machine uses. */
 export const MOOD_INSTRUCTIONS = 'Que tipo de cena está a acontecer agora?'
 
+/** Sound effects are asked separately: the bar for a sound is much higher. */
+export const SFX_INSTRUCTIONS = 'Que som, se algum, aconteceu agora na cena?'
+
 export const MOODS = [
   'combat',
   'chase',
