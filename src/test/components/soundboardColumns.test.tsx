@@ -15,6 +15,7 @@ function stubDoty() {
       getAutopilotConfig: vi.fn().mockResolvedValue({ enabled: false, musicEnabled: false, sfxEnabled: false }),
       setAutopilotConfig: vi.fn(),
       recordPlay: vi.fn().mockResolvedValue(undefined),
+      sessionReport: vi.fn().mockResolvedValue({ autoActions: 0, manualPicks: 0, overrideRate: 0 }),
     },
   })
 }
@@ -28,6 +29,7 @@ function renderBoard() {
       onResumeAuto={() => {}}
       sfxRecommendations={[]}
       lastConfidence={0}
+      sessionText=""
       lastRanker={null}
       rankerStatus="ready"
       lastTranscriptSnippet=""

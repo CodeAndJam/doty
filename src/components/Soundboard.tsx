@@ -89,6 +89,8 @@ interface Props {
   onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
+  /** The transcript window the director decides on. */
+  sessionText: string
   lastRanker: RankerType
   /** Whether the decision model is loaded, loading, or failed. */
   rankerStatus: 'loading' | 'ready' | 'error'
@@ -106,6 +108,7 @@ export default function Soundboard({
   recommendations,
   sfxRecommendations,
   lastConfidence,
+  sessionText,
   lastRanker,
   rankerStatus,
   lastTranscriptSnippet,
@@ -135,6 +138,11 @@ export default function Soundboard({
 
   // ── Decision log (beta) ──────────────────────────────────────────────
   const [showDecisionLog, setShowDecisionLog] = useState(false)
+  const [scene, setScene] = useState<string | null>(null)
+  const [report, setReport] = useState<{ autoActions: number; manualPicks: number; overrideRate: number } | null>(null)
+  const sessionStartedAt = useRef(Date.now())
+  /** Guards against queueing the same pick on every pass while a track is ending. */
+  const lastQueued = useRef<{ track: string; at: number } | null>(null)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
   const lastAutoLogEntryRef = useRef<object | null>(null)
@@ -300,11 +308,31 @@ export default function Soundboard({
 
   // ── Music handlers ───────────────────────────────────────────────────
 
-  function handlePlayTrack(filename: string, forceRestart?: boolean) {
+  function handlePlayTrack(filename: string, forceRestart?: boolean, source: 'manual' | 'auto' = 'manual') {
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
+    // An automatic change is not the DM taking over: latching override here would
+    // switch the director off on its own first cut.
+    if (source === 'auto') return
     onManualAction()
+    // Every manual pick is a label: what the DM chose for this moment.
+    window.doty
+      .sessionPreference({ at: Date.now(), segment: sessionText, track: filename, scene, source: 'manual' })
+      .catch(() => {})
+    window.doty
+      .sessionDecision({
+        at: Date.now(),
+        kind: 'music',
+        action: 'play-now',
+        reason: 'the DM picked this',
+        track: filename,
+        probability: 0,
+        mood: scene,
+        source: 'manual',
+      })
+      .then(refreshReport)
+      .catch(() => {})
   }
 
   function togglePin(filename: string) {
@@ -420,6 +448,79 @@ export default function Soundboard({
     }
     prevSettingsOpenRef.current = settingsOpen
   }, [settingsOpen, autopilot.reloadConfig])
+
+  // The director: main owns the scene and the policy, this only executes the plan.
+  // Player timing lives in refs so the effect does not re-run every quarter second.
+  const playerRef = useRef({ currentTime, duration })
+  playerRef.current = { currentTime, duration }
+  const autopilotRef = useRef(autopilot.enabled)
+  autopilotRef.current = autopilot.enabled
+
+  /** Crossing into the last 21 s of a track is its own trigger: silence at the table
+   *  must not mean the boundary goes unplanned. */
+  const nearEnd = duration > 0 && duration - currentTime <= 21
+
+  const refreshReport = useCallback(() => {
+    window.doty
+      .sessionReport(sessionStartedAt.current)
+      .then((r) => setReport({ autoActions: r.autoActions, manualPicks: r.manualPicks, overrideRate: r.overrideRate }))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshReport()
+  }, [refreshReport])
+
+  useEffect(() => {
+    if (lastRanker !== 'model' || recommendations.length === 0 || !sessionText) return
+    let cancelled = false
+    const { currentTime: at, duration: total } = playerRef.current
+    const remaining = total > 0 ? Math.max(0, (total - at) * 1000) : null
+
+    window.doty
+      .sessionEvaluate({
+        state: sessionText,
+        candidates: recommendations,
+        msUntilTrackEnd: remaining,
+        autopilot: autopilotRef.current,
+        override,
+      })
+      .then(({ tracks, plan }) => {
+        if (cancelled || !plan) return
+        setScene(plan.scene)
+        refreshReport()
+        if (plan.action === 'hold') return
+
+        let best = 0
+        for (let i = 1; i < tracks.length; i++) if (tracks[i] > tracks[best]) best = i
+        const track = recommendations[best]
+        if (!track) return
+
+        if (plan.action === 'queue-next') {
+          // Nothing playing yet: queueing would sit silent.
+          if (!playing) {
+            handlePlayTrack(track, true, 'auto')
+            return
+          }
+          // Dedupe on what is actually in the queue, not on the last pick: the top
+          // candidate flips between passes and would be queued repeatedly.
+          if (queue.tracks.includes(track)) return
+          const already = lastQueued.current
+          if (already && already.track === track && Date.now() - already.at < 120_000) return
+          lastQueued.current = { track, at: Date.now() }
+          queue.playNext(track)
+        } else {
+          lastQueued.current = null
+          handlePlayTrack(track, true, 'auto')
+        }
+      })
+      .catch((e) => console.error('[director] evaluate failed:', e))
+    return () => {
+      cancelled = true
+    }
+    // handlePlayTrack and queue are stable enough for this one-shot planner.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recommendations, lastRanker, sessionText, override, nearEnd, refreshReport])
 
   // Feed confidence to autopilot when recommendations change.
   // Keep the callbacks in refs: they are rebuilt every render, so depending on
@@ -749,6 +850,25 @@ export default function Soundboard({
                               ? 'keywords · model failed'
                               : 'keywords'}
                         {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                      </span>
+                    )}
+                    {scene && (
+                      <span
+                        data-testid="session-scene"
+                        style={{ fontSize: '9px', fontFamily: 'monospace', color: '#4a3a20' }}
+                        title="The scene the director currently holds, after hysteresis"
+                      >
+                        scene · {scene}
+                      </span>
+                    )}
+                    {report && (report.autoActions > 0 || report.manualPicks > 0) && (
+                      <span
+                        data-testid="session-report"
+                        style={{ fontSize: '9px', fontFamily: 'monospace', color: '#4a3a20' }}
+                        title="Automatic changes, manual picks, and the share of acted-on decisions the DM replaced"
+                      >
+                        auto {report.autoActions} · manual {report.manualPicks} · override{' '}
+                        {Math.round(report.overrideRate * 100)}%
                       </span>
                     )}
                     {override && (

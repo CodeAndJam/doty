@@ -5,7 +5,7 @@ import { createSessionStore } from './store'
 const at = 1_700_000_000_000
 
 function store() {
-  return createSessionStore(new Database(':memory:') as never)
+  return createSessionStore(new Database(':memory:'))
 }
 
 describe('session store', () => {

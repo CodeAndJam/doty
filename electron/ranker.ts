@@ -54,13 +54,14 @@ function reset(err: Error): void {
 
 /** Settle the request a message answers. Unknown ids are ignored: the caller timed out. */
 function settle(msg: WorkerMessage): void {
-  if (msg.type !== 'probabilities' && msg.type !== 'decide-error') return
+  if (msg.type !== 'probabilities' && msg.type !== 'evaluated' && msg.type !== 'decide-error') return
   if (msg.id === undefined) return
   const p = pending.get(msg.id)
   if (!p) return
   clearTimeout(p.timer)
   pending.delete(msg.id)
   if (msg.type === 'probabilities') p.resolve(msg.probabilities ?? [])
+  else if (msg.type === 'evaluated') p.resolve({ tracks: msg.tracks ?? [], moods: msg.moods ?? [] })
   else p.reject(new Error(msg.error ?? 'Ranker failed'))
 }
 

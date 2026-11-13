@@ -1,3 +1,5 @@
+import type Database from 'better-sqlite3'
+
 /**
  * Session memory: what the scene was, what was decided and why, and what the
  * DM chose over the model.
@@ -40,15 +42,6 @@ export interface SessionReport {
   manualPicks: number
   /** Share of acted-on suggestions the DM replaced. The KPI from AGENTS.md. */
   overrideRate: number
-}
-
-interface Db {
-  exec(sql: string): unknown
-  prepare(sql: string): {
-    run(...args: never[]): unknown
-    all(...args: never[]): unknown[]
-    get(...args: never[]): unknown
-  }
 }
 
 const SCHEMA = `
@@ -100,7 +93,7 @@ export interface SessionStore {
   getVector(path: string, model: string): Float32Array | null
 }
 
-export function createSessionStore(db: Db): SessionStore {
+export function createSessionStore(db: Database.Database): SessionStore {
   db.exec(SCHEMA)
 
   const insertScene = db.prepare(
@@ -131,34 +124,19 @@ export function createSessionStore(db: Db): SessionStore {
 
   return {
     recordScene(row) {
-      insertScene.run(row.session as never, row.mood as never, row.intensity as never, row.startedAt as never)
+      insertScene.run(row.session, row.mood, row.intensity, row.startedAt)
     },
     recordDecision(row) {
-      insertDecision.run(
-        row.at as never,
-        row.kind as never,
-        row.action as never,
-        row.reason as never,
-        row.track as never,
-        row.probability as never,
-        row.mood as never,
-        row.source as never,
-      )
+      insertDecision.run(row.at, row.kind, row.action, row.reason, row.track, row.probability, row.mood, row.source)
     },
     recordPreference(row) {
-      insertPreference.run(
-        row.at as never,
-        row.segment as never,
-        row.track as never,
-        row.scene as never,
-        row.source as never,
-      )
+      insertPreference.run(row.at, row.segment, row.track, row.scene, row.source)
     },
     recentPreferences(limit) {
-      return selectPreferences.all(limit as never) as PreferenceRow[]
+      return selectPreferences.all(limit) as PreferenceRow[]
     },
     report(since) {
-      const row = selectReport.get(since as never) as { decisions: number; autoActions: number; manualPicks: number }
+      const row = selectReport.get(since) as { decisions: number; autoActions: number; manualPicks: number }
       const manual = row.manualPicks ?? 0
       const auto = row.autoActions ?? 0
       const acted = manual + auto
@@ -171,10 +149,10 @@ export function createSessionStore(db: Db): SessionStore {
     },
     putVector(path, model, vector) {
       const bytes = Buffer.from(vector.buffer, vector.byteOffset, vector.byteLength)
-      upsertVector.run(path as never, model as never, vector.length as never, bytes as never, Date.now() as never)
+      upsertVector.run(path, model, vector.length, bytes, Date.now())
     },
     getVector(path, model) {
-      const row = selectVector.get(path as never, model as never) as { dim: number; vector: Buffer } | undefined
+      const row = selectVector.get(path, model) as { dim: number; vector: Buffer } | undefined
       if (!row) return null
       const copy = new Float32Array(row.vector.byteLength / 4)
       Buffer.from(row.vector).copy(Buffer.from(copy.buffer))

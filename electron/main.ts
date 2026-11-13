@@ -23,6 +23,7 @@ import {
   rankerLanguages,
   rankerPaths,
 } from './d1-model'
+import { MOODS } from './d1-omni'
 import {
   closeDb,
   getAllTags,
@@ -718,10 +719,11 @@ handle(INVOKE.rankerStatus, () => ({
 
 handle(INVOKE.rankerDownload, () => downloadRanker())
 
-const sessionStore = createSessionStore(getDb() as never)
+const sessionStore = createSessionStore(getDb())
 
 let liveScene: Scene | null = null
 let lastChangeAt = 0
+let lastLoggedAt = 0
 
 handle(
   INVOKE.sessionEvaluate,
@@ -740,7 +742,6 @@ handle(
 
     let best = 0
     for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
-    const { MOODS } = await import('./d1-omni')
     const now = Date.now()
     const step = planStep({
       previous: liveScene,
@@ -757,8 +758,8 @@ handle(
       override: request.override,
     })
 
-    if (step.scene !== liveScene && liveScene !== null) {
-      lastChangeAt = now
+    const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
+    if (sceneMoved) {
       sessionStore.recordScene({
         session: 'live',
         mood: step.scene.mood,
@@ -766,7 +767,26 @@ handle(
         startedAt: step.scene.since,
       })
     }
+    // The clock gates the change cooldown, so it only moves when music would.
+    if (step.action.kind !== 'hold') lastChangeAt = now
     liveScene = step.scene
+
+    // Every automatic decision is the training signal and the audit trail. A hold
+    // every 1.5 s would bury it, so holds are logged once per half minute.
+    if (step.action.kind !== 'hold' || now - lastLoggedAt > 30_000) {
+      lastLoggedAt = now
+      const best = tracks.length > 0 ? tracks.indexOf(Math.max(...tracks)) : -1
+      sessionStore.recordDecision({
+        at: now,
+        kind: 'music',
+        action: step.action.kind,
+        reason: step.action.reason,
+        track: best >= 0 ? (request.candidates[best] ?? null) : null,
+        probability: best >= 0 ? (tracks[best] ?? 0) : 0,
+        mood: step.scene.mood,
+        source: 'auto',
+      })
+    }
 
     return { tracks, moods, plan: { scene: step.scene.mood, action: step.action.kind, reason: step.action.reason } }
   },
