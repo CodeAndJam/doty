@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/CodeAndJam/doty/compare/v4.0.1...v4.1.0) (2026-11-13)
+
+
+### Features
+
+* **session:** scene state, boundary policy and the session director ([#123](https://github.com/CodeAndJam/doty/issues/123)) ([4d8673c](https://github.com/CodeAndJam/doty/commit/4d8673ccd780d541fc9443a5304bc0cf1c4080b5))
+
 ## [4.0.1](https://github.com/CodeAndJam/doty/compare/v4.0.0...v4.0.1) (2026-11-13)
 
 
