@@ -1,5 +1,16 @@
 # Changelog
 
+## [5.0.0](https://github.com/CodeAndJam/doty/compare/v4.1.0...v5.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* there is no scene interpreter to choose, install or read a mood from, and the 400 MB and 487 MB GGUF models already on disk are unused. The ranker graph is not hosted yet, so recommendations run on the heuristic until it is.
+
+### Features
+
+* decision-model ranker and autonomous session director ([#125](https://github.com/CodeAndJam/doty/issues/125)) ([978a3bd](https://github.com/CodeAndJam/doty/commit/978a3bd7f857b4f511dfcde8219853d64972d16e))
+
 ## [4.1.0](https://github.com/CodeAndJam/doty/compare/v4.0.1...v4.1.0) (2026-11-13)
 
 
