@@ -54,10 +54,15 @@
 - [x] Embeddings: background indexer (`electron/session/indexer.ts`), cosine
       retrieval over `track_vectors`, and the keyword prefilter kept as the floor.
       Batched, resumable, and a no-op until the model is on disk.
-- [ ] Embeddings: download `embeddinggemma-300m` (`model_q4.onnx`, 197 MB,
-      tokenizer.json) into `~/.doty/models/embeddinggemma-300m/`. Until it is
-      there, `embedderAvailable()` is false and retrieval stays keyword-only.
-      The ORT forward pass in `embedder.ts` is written but has never run.
+- [x] Embeddings: model retrieved into `~/.doty/models/embeddinggemma-300m/`
+      (197 MB q4 + tokenizer). Verified against the real graph: pooled
+      `sentence_embedding` output, 768 dims, and a calm transcript scores 0.241
+      against Campfire versus 0.166 against The Enemy. Task prefixes are applied
+      (query vs document), which the model card requires.
+- [ ] Embeddings: hosting. The model is installed by hand today; a first-run
+      download (or bundling, see README) has to ship with the app.
+- [ ] App updates never re-download models: they live in `~/.doty/models`, outside
+      the app bundle, so a new DMG reuses them. Do not move them into the bundle.
 - [x] Preferences: read. Where the model's top two are within 0.02, the track the
       DM chose for this scene before breaks the tie. Probabilities are never
       rewritten — that would fake confidence the model did not have — and a
