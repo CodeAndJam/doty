@@ -47,6 +47,10 @@ interface Props {
   onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
+  /** TypeSafe choice confidence: how settled the pick is across the candidates. */
+  lastChoiceConfidence: number
+  /** Per-file probability, aligned with the suggestions. */
+  probabilities: Record<string, number>
   lastRanker: RankerType
   /** Whether the decision model is loaded, loading, or failed. */
   rankerStatus: 'loading' | 'ready' | 'error'
@@ -64,6 +68,8 @@ export default function Soundboard({
   recommendations,
   sfxRecommendations,
   lastConfidence,
+  lastChoiceConfidence,
+  probabilities,
   lastRanker,
   rankerStatus,
   lastTranscriptSnippet,
@@ -685,7 +691,7 @@ export default function Soundboard({
                           color: lastRanker === 'model' ? '#c8922a' : '#6b4e15',
                           letterSpacing: '0.05em',
                         }}
-                        title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
+                        title={`Ranked by ${lastRanker}${lastChoiceConfidence > 0 ? ` — confidence ${(lastChoiceConfidence * 100).toFixed(1)}% (how settled the choice is; each card shows its own probability)` : ''}`}
                       >
                         {lastRanker === 'model'
                           ? 'model'
@@ -694,7 +700,9 @@ export default function Soundboard({
                             : rankerStatus === 'error'
                               ? 'keywords · model failed'
                               : 'keywords'}
-                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                        {lastRanker === 'model' &&
+                          lastChoiceConfidence > 0 &&
+                          ` ${(lastChoiceConfidence * 100).toFixed(0)}% conf`}
                       </span>
                     )}
                     {override && (
@@ -746,6 +754,7 @@ export default function Soundboard({
                     meta={metaMap[f]}
                     tags={tagsMap[f] || []}
                     allTags={allTags}
+                    probability={lastRanker === 'model' ? probabilities[f] : undefined}
                     onPlay={() => handlePlayTrack(f)}
                     onPin={() => togglePin(f)}
                     onMoveUp={() => {}}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactDOM from 'react-dom'
+import { formatProbability } from '../lib/confidence'
 import { formatTime } from '../lib/formatTime'
 import type { TrackMeta } from '../types'
 import { ChevronDown, ChevronUp, InfoIcon, PauseIcon, PinIcon, PlayIcon, TagIcon } from './Icons'
@@ -117,6 +118,8 @@ interface TrackCardProps {
   onPin: () => void
   onMoveUp: () => void
   onMoveDown: () => void
+  /** Model probability that this is the right track, when the ranker produced one. */
+  probability?: number
   onTagsChange?: (tags: string[]) => void
   onPlayNext?: () => void
   onAddToQueue?: () => void
@@ -132,6 +135,7 @@ export default function TrackCard({
   meta,
   tags = [],
   allTags = [],
+  probability,
   onPlay,
   onPin,
   onMoveUp,
@@ -192,6 +196,20 @@ export default function TrackCard({
         >
           {name}
         </span>
+        {probability !== undefined && (
+          <span
+            data-testid="track-probability"
+            title="The model's probability that this is the right track, out of the candidates it ranked"
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '10px',
+              color: '#6b4e15',
+              flexShrink: 0,
+            }}
+          >
+            {formatProbability(probability)}
+          </span>
+        )}
       </div>
 
       {/* Hover overlay toolbar — appears on top of the right side */}

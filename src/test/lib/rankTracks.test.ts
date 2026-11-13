@@ -9,6 +9,8 @@ describe('rankTracks', () => {
     await expect(rankTracks('battle', [], signals, { ready: true, decide })).resolves.toEqual({
       files: [],
       confidence: 0,
+      choiceConfidence: 0,
+      probabilities: {},
       ranker: null,
     })
     expect(decide).not.toHaveBeenCalled()
@@ -34,6 +36,9 @@ describe('rankTracks', () => {
     expect(result.files).toEqual(['b.mp3', 'a.mp3'])
     // The top probability is passed through, not softmaxed again.
     expect(result.confidence).toBeCloseTo(0.82, 6)
+    expect(result.probabilities).toEqual({ 'a.mp3': 0.1, 'b.mp3': 0.82 })
+    // Two candidates: the choice confidence is (0.82 - 0.5) / 0.5.
+    expect(result.choiceConfidence).toBeCloseTo(0.64, 6)
     expect(decide).toHaveBeenCalledTimes(1)
   })
 

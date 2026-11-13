@@ -18,6 +18,8 @@ export default function MainLayout() {
   const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
+  const [lastChoiceConfidence, setLastChoiceConfidence] = useState(0)
+  const [probabilities, setProbabilities] = useState<Record<string, number>>({})
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
@@ -201,6 +203,8 @@ export default function MainLayout() {
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
+    setLastChoiceConfidence(result.choiceConfidence)
+    setProbabilities(result.probabilities)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
   }, [override])
 
@@ -240,6 +244,8 @@ export default function MainLayout() {
       console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
       setRecommendations(result.files)
       setLastConfidence(result.confidence)
+      setLastChoiceConfidence(result.choiceConfidence)
+      setProbabilities(result.probabilities)
       setLastTranscriptSnippet(prompt.slice(-120))
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
@@ -645,6 +651,8 @@ export default function MainLayout() {
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}
+              lastChoiceConfidence={lastChoiceConfidence}
+              probabilities={probabilities}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}

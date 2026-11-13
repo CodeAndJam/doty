@@ -4,6 +4,7 @@
  * one interface so callers never branch on ranker availability.
  */
 import type { TrackMeta } from '../types'
+import { choiceConfidence } from './confidence'
 import { heuristicRecommend } from './heuristicRecommend'
 
 export type RankerType = 'model' | 'heuristic' | null
@@ -16,7 +17,12 @@ export interface RankSignals {
 
 export interface RankResult {
   files: string[]
+  /** Probability of the first file: what autopilot thresholds. */
   confidence: number
+  /** TypeSafe's choice confidence over all candidates: how settled the answer is. */
+  choiceConfidence: number
+  /** Per-file probability, so the UI can show each option's share. */
+  probabilities: Record<string, number>
   ranker: RankerType
 }
 
@@ -53,12 +59,21 @@ export async function rankTracks(
   deps: RankDeps,
   count = 5,
 ): Promise<RankResult> {
-  if (files.length === 0) return { files: [], confidence: 0, ranker: null }
+  if (files.length === 0) {
+    return { files: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+  }
 
   const { metadata, tagsMap, playFrequencies } = signals
   const byHeuristic = (text: string, limit = count): RankResult => {
     const result = heuristicRecommend(text, files, metadata, limit, tagsMap, playFrequencies)
-    return { files: result.files, confidence: result.confidence, ranker: 'heuristic' }
+    // A keyword score is not a probability, so there is nothing to show per option.
+    return {
+      files: result.files,
+      confidence: result.confidence,
+      choiceConfidence: 0,
+      probabilities: {},
+      ranker: 'heuristic',
+    }
   }
 
   const recentPrompt = prompt.slice(-800).trim()
@@ -86,6 +101,8 @@ export async function rankTracks(
       files: ranked.slice(0, count).map((entry) => entry.file),
       // The model's probabilities are already calibrated: no softmax over them.
       confidence: ranked[0]?.probability ?? 0,
+      choiceConfidence: choiceConfidence(probabilities),
+      probabilities: Object.fromEntries(ranked.map((entry) => [entry.file, entry.probability])),
       ranker: 'model',
     }
   } catch (e) {

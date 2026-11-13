@@ -91,6 +91,14 @@ test('keyword fallback answers while the model loads, then the model takes over'
     console.log('[e2e] model ranking:', ranked)
     expect(ranked).not.toEqual(early)
 
+    // Each suggestion shows its own probability, and the top card holds the most.
+    const shown = await page
+      .getByTestId('track-probability')
+      .evaluateAll((els) => els.map((el) => Number.parseFloat(el.textContent ?? '0')))
+    console.log('[e2e] per-option probabilities:', shown)
+    expect(shown).toHaveLength(ranked.length)
+    expect(shown[0]).toBe(Math.max(...shown))
+
     const relevant = ['Campfire', 'Bonfire', 'Tavern', 'Downtime', 'Halfling', 'Peaceful', 'Ambience']
     expect(ranked.some((n) => relevant.some((r) => n.includes(r))), `no mood-relevant track in ${ranked.join(', ')}`).toBe(
       true,
