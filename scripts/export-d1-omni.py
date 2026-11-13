@@ -211,6 +211,7 @@ def main() -> int:
     ap.add_argument("--out", default=os.path.expanduser("~/.doty/models"), help="where to write the graphs")
     ap.add_argument("--src", default=None, help="cache dir for the author's files (default: <out>/d1-omni-src)")
     ap.add_argument("--skip-int8", action="store_true")
+    ap.add_argument("--pack", action="store_true", help="also write the release archive and print its sha256")
     args = ap.parse_args()
 
     import numpy as np
@@ -321,6 +322,19 @@ def main() -> int:
     log(f"wrote {out / 'd1-omni-text-manifest.json'}")
     log(f"wrote {out / 'd1-omni-text-fixture.json'}")
     log("gate passed")
+
+    if args.pack:
+        import tarfile
+
+        archive = out / "d1-omni-text-v1.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            for name in ("d1-omni-text.onnx", "d1-omni-text-manifest.json",
+                         "d1-omni-src/tokenizer.json", "d1-omni-src/tokenizer_config.json"):
+                tar.add(out / name, arcname=name)
+        digest = sha256(archive)
+        log(f"archive: {archive} ({archive.stat().st_size} bytes)")
+        log(f"sha256:  {digest}")
+        log("upload it to the models-v1 release and put that sha256 in electron/d1-model.ts")
     return 0
 
 

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { MODELS_DIR } from './models-dir'
 import { store } from './store'
 
 // ── STT model types ───────────────────────────────────────────────────────────
@@ -32,7 +33,6 @@ export interface SttModelInfo {
 }
 
 const HOME_DIR = app.getPath('home')
-const MODELS_DIR = join(HOME_DIR, '.doty', 'models')
 
 /** Doty targets European Portuguese first; override in Settings. */
 export const DEFAULT_STT_MODEL: SttModelType = 'nemotron-3.5-streaming'

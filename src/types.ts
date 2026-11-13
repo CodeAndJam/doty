@@ -204,8 +204,10 @@ export interface DotyAPI {
       ready: boolean
     }>
   >
-  rankerStatus: () => Promise<{ cached: boolean }>
+  rankerStatus: () => Promise<{ cached: boolean; downloading: boolean }>
   rankerDecide: (prompt: string, candidates: string[]) => Promise<number[]>
+  rankerDownload: () => Promise<{ ok: boolean; reason?: string }>
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => () => void
   onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>

@@ -25,8 +25,14 @@
       candidates) and the generative stack deleted. Autopilot acts at 0.9, a 0.7
       highlight marks a suggestion without acting on it, and override is a mode
       that silences the ranker until an explicit resume.
-- [ ] Ranker: host `d1-omni-text.onnx` as a release asset and wire it into
-      `ModelDownloads`. The LFM licence note goes on the download screen.
+- [x] Ranker: download-once plumbing. One 1.41 GB archive carries the graph, its
+      manifest and the tokenizer; it is fetched in the background when a library
+      exists, sha256-verified, unpacked once and skipped on every later launch.
+- [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
+      `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
+      the sha256 in `electron/d1-model.ts` matches it. Until then the background
+      fetch 404s and the app stays on keyword matching. The LFM licence note
+      belongs on that download.
 - [ ] Ranker: label ~50 rows from real play — the last 800 chars of pt-PT DM
       narration plus the 20 candidates and the track you would have picked — and
       record top-1 for d1-omni against the current cross-encoder. This set also

@@ -15,6 +15,7 @@ import {
   setOnParagraphBreak,
   startStream,
 } from './asr'
+import { installRankerArchive, isRankerInstalled, RANKER_URL, rankerPaths } from './d1-model'
 import {
   closeDb,
   getAllTags,
@@ -94,15 +95,51 @@ if (app.isPackaged) {
   process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
 }
 
-/** The ranker is ready when the exported graph and its manifest are both on disk. */
-function isRankerCached(): boolean {
+let rankerDownloading = false
+
+const rankerDownloads = createModelDownloads({
+  download: downloadFile,
+  onEvent: (event) => {
+    if (event.type === 'progress') {
+      send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
+    } else if (event.type === 'error') {
+      rankerDownloading = false
+      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+      console.error('[ranker] download failed:', event.error)
+    }
+  },
+})
+
+/**
+ * Fetch the ranker once. The graph, manifest and tokenizer arrive as one
+ * archive, so a partial download is never mistaken for an installed model:
+ * nothing lands in the models dir until the checksum passes.
+ */
+async function downloadRanker(): Promise<{ ok: boolean; reason?: string }> {
+  if (isRankerInstalled()) return { ok: true }
+  if (rankerDownloading) return { ok: false, reason: 'already downloading' }
+
+  rankerDownloading = true
+  const { archive } = rankerPaths()
   try {
-    return (
-      fs.existsSync(join(MODELS_DIR, 'd1-omni-text.onnx')) &&
-      fs.existsSync(join(MODELS_DIR, 'd1-omni-text-manifest.json'))
-    )
-  } catch {
-    return false
+    const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive)
+    if (!result.ok) {
+      rankerDownloading = false
+      return result
+    }
+    installRankerArchive(archive)
+    rankerDownloading = false
+    send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
+    // Warm the fresh graph so the first prompt is not the first load.
+    decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
+    return { ok: true }
+  } catch (e) {
+    rankerDownloading = false
+    fs.rmSync(archive, { force: true })
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[ranker] install failed:', reason)
+    send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+    return { ok: false, reason }
   }
 }
 
@@ -387,6 +424,12 @@ app.whenReady().then(async () => {
 
   const musicFolder = store.get('musicFolder', '') as string
   if (musicFolder) launchScanner(musicFolder)
+
+  // One background download, once per machine. No prompt: the app is useless
+  // without it, and 1.5 GB of silence during a session would be worse.
+  if (!isRankerInstalled()) {
+    downloadRanker().catch((e) => console.error('[ranker] background download failed:', e))
+  }
 })
 
 app.on('before-quit', () => {
@@ -657,7 +700,9 @@ handle(INVOKE.modelStatus, () => ({
   onboardingSkipped: store.get('sttOnboardingSkipped', false),
 }))
 
-handle(INVOKE.rankerStatus, () => ({ cached: isRankerCached() }))
+handle(INVOKE.rankerStatus, () => ({ cached: isRankerInstalled(), downloading: rankerDownloading }))
+
+handle(INVOKE.rankerDownload, () => downloadRanker())
 
 handle(INVOKE.rankerDecide, async (_e, prompt: string, candidates: string[]) => {
   return decide(prompt, candidates)

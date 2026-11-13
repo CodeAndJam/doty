@@ -121,6 +121,8 @@ export default function Settings({
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
   const [whisperDownloadError, setWhisperDownloadError] = useState<string | null>(null)
+  const [rankerInstalled, setRankerInstalled] = useState<boolean | null>(null)
+  const [rankerProgress, setRankerProgress] = useState<number | null>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
   const refreshTrackCount = useCallback(async () => {
@@ -142,6 +144,7 @@ export default function Settings({
       if (error) setWhisperDownloadError(error.error)
     })
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
+    window.doty.rankerStatus().then((s) => setRankerInstalled(s.cached))
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
@@ -190,6 +193,11 @@ export default function Settings({
       if (status === 'ready') window.doty.getSttLanguage().then(setSttLanguage)
     })
 
+    const unsubRanker = window.doty.onRankerDownloadProgress((p) => {
+      setRankerProgress(p.status === 'downloading' ? p.percent : null)
+      if (p.status === 'done') setRankerInstalled(true)
+    })
+
     window.doty.micCheckPermission().then((status: string) => {
       setMicPermissionDenied(status === 'denied' || status === 'restricted')
     })
@@ -221,6 +229,7 @@ export default function Settings({
       unsubModelError()
       unsubModelCancelled()
       unsubSttStatus()
+      unsubRanker()
     }
   }, [refreshTrackCount])
 
@@ -902,10 +911,39 @@ export default function Settings({
                 </p>
                 <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{rankerLabel}</p>
               </div>
-              {!rankerIsReady && (
-                <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>1.5 GB</span>
+              {rankerProgress !== null ? (
+                <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                  {rankerProgress}%
+                </span>
+              ) : rankerInstalled === false ? (
+                <button
+                  type="button"
+                  onClick={() => window.doty.rankerDownload()}
+                  title="Downloads once, in the background. Keyword matching covers you until it lands."
+                  style={{
+                    fontSize: '11px',
+                    color: '#c8922a',
+                    fontFamily: 'monospace',
+                    background: 'none',
+                    border: '1px solid rgba(200,146,42,0.3)',
+                    padding: '2px 8px',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  download 1.5 GB
+                </button>
+              ) : (
+                !rankerIsReady && (
+                  <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>1.5 GB</span>
+                )
               )}
             </div>
+            <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '4px' }}>
+              {rankerInstalled === false
+                ? 'Not installed — suggestions fall back to keyword matching'
+                : 'Ranked by the decision model on your machine'}
+            </p>
           </div>
         </div>
 

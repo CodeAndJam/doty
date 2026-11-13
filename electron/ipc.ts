@@ -30,6 +30,7 @@ export const INVOKE = {
   getSttModelList: 'stt:get-model-list',
   rankerStatus: 'ranker:status',
   rankerDecide: 'ranker:decide',
+  rankerDownload: 'ranker:download',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection
@@ -106,6 +107,7 @@ export const EVENTS = {
   // Music
   // Model
   rankerStatus: 'ranker:ipc-status',
+  rankerDownloadProgress: 'ranker:download-progress',
   modelProgress: 'model:progress',
   modelStatus: 'model:status',
   modelDownloadError: 'model:download-error',

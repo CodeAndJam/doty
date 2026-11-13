@@ -168,6 +168,10 @@ export default function MainLayout() {
   // Check if the ranker model is already on disk on mount
   useEffect(() => {
     window.doty.rankerStatus().then(({ cached }) => setRankerCached(cached))
+    const unsubRankerDownload = window.doty.onRankerDownloadProgress((p) => {
+      if (p.status === 'done') setRankerCached(true)
+    })
+    return unsubRankerDownload
   }, [])
 
   // Once model is ready, mark as cached so the banner doesn't reappear
@@ -631,6 +635,7 @@ export default function MainLayout() {
 
           <div className="flex-1 overflow-hidden">
             <Soundboard
+              rankerStatus={modelStatus}
               override={override}
               onManualAction={() => setOverride(true)}
               onResumeAuto={() => {

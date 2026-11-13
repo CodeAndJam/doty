@@ -43,6 +43,9 @@ contextBridge.exposeInMainWorld('doty', {
   getSttModelList: () => invoke(INVOKE.getSttModelList),
   rankerStatus: () => invoke(INVOKE.rankerStatus),
   rankerDecide: (prompt: string, candidates: string[]) => invoke(INVOKE.rankerDecide, prompt, candidates),
+  rankerDownload: () => invoke(INVOKE.rankerDownload) as Promise<{ ok: boolean; reason?: string }>,
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
+    subscribe(EVENTS.rankerDownloadProgress, cb),
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),
   setRecommendationCount: (count: number) => invoke(INVOKE.setRecommendationCount, count),

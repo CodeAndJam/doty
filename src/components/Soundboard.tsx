@@ -48,6 +48,8 @@ interface Props {
   sfxRecommendations: string[]
   lastConfidence: number
   lastRanker: RankerType
+  /** Whether the decision model is loaded, loading, or failed. */
+  rankerStatus: 'loading' | 'ready' | 'error'
   lastTranscriptSnippet: string
   musicFolder: string
   speakerDeviceId?: string
@@ -63,6 +65,7 @@ export default function Soundboard({
   sfxRecommendations,
   lastConfidence,
   lastRanker,
+  rankerStatus,
   lastTranscriptSnippet,
   musicFolder,
   speakerDeviceId,
@@ -673,6 +676,7 @@ export default function Soundboard({
                     {/* Ranker + confidence badge */}
                     {lastRanker && (
                       <span
+                        data-testid="ranker-badge"
                         style={{
                           fontSize: '9px',
                           fontFamily: 'monospace',
@@ -683,8 +687,14 @@ export default function Soundboard({
                         }}
                         title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
                       >
-                        {lastRanker === 'model' ? 'model' : 'heuristic'}
-                        {lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                        {lastRanker === 'model'
+                          ? 'model'
+                          : rankerStatus === 'loading'
+                            ? 'keywords · model loading'
+                            : rankerStatus === 'error'
+                              ? 'keywords · model failed'
+                              : 'keywords'}
+                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
                       </span>
                     )}
                     {override && (
