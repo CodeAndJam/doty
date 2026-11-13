@@ -1,13 +1,12 @@
 /**
  * Ranking for both recommendation paths: the heuristic picks candidates, the
- * cross-encoder orders them when it is loaded. Both adapters live behind this
+ * decision model orders them when it is loaded. Both adapters live behind this
  * one interface so callers never branch on ranker availability.
  */
 import type { TrackMeta } from '../types'
-import { topConfidence } from './autopilot'
 import { heuristicRecommend } from './heuristicRecommend'
 
-export type RankerType = 'reranker' | 'heuristic' | null
+export type RankerType = 'model' | 'heuristic' | null
 
 export interface RankSignals {
   metadata: Record<string, TrackMeta>
@@ -22,28 +21,29 @@ export interface RankResult {
 }
 
 export interface RankDeps {
-  /** False until the reranker model is loaded; the heuristic carries until then. */
+  /** False until the decision model is loaded; the heuristic carries until then. */
   ready: boolean
-  score?: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
+  /** Calibrated probabilities, one per candidate, in the order given. */
+  decide?: (prompt: string, candidates: string[]) => Promise<number[]>
 }
 
-/** Candidates handed to the cross-encoder: enough to rerank, few enough to stay fast. */
+/** Candidates handed to the ranker: enough to choose from, few enough to stay fast. */
 const RERANK_CANDIDATES = 20
 
-/** Text the cross-encoder sees for one track: name, audio features and user tags. */
-function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
-  const key = meta?.key && meta.key !== 'Unknown' ? (meta.scale === 'minor' ? `${meta.key}m` : meta.key) : null
-  const features = [
-    meta?.artist ? `by ${meta.artist}` : null,
-    meta?.genre ? `genre: ${meta.genre}` : null,
-    meta?.bpm ? `${meta.bpm} BPM` : null,
-    meta?.energy ? `energy: ${meta.energy}` : null,
-    key ? `key: ${key}` : null,
-    meta?.danceability ? `danceability: ${meta.danceability}` : null,
-    tags && tags.length > 0 ? `tags: ${tags.join(', ')}` : null,
-  ]
+/** Tags the ranker sees per track. The model gives each option ~24 tokens. */
+const OPTION_TAGS = 2
+
+/** Text the ranker sees for one track: terse, because the option budget is the constraint. */
+export function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
   const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
-  return [name, ...features.filter(Boolean)].join(', ')
+  const facts = [
+    meta?.genre,
+    meta?.bpm ? `${meta.bpm} BPM` : null,
+    meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
+  ].filter(Boolean)
+  const top = tags?.slice(0, OPTION_TAGS)
+  if (top && top.length > 0) facts.push(top.join(', '))
+  return facts.length > 0 ? `${name} — ${facts.join(', ')}` : name
 }
 
 export async function rankTracks(
@@ -62,7 +62,7 @@ export async function rankTracks(
   }
 
   const recentPrompt = prompt.slice(-800).trim()
-  if (!deps.ready || !deps.score || !recentPrompt) return byHeuristic(prompt)
+  if (!deps.ready || !deps.decide || !recentPrompt) return byHeuristic(prompt)
 
   try {
     const candidates = heuristicRecommend(
@@ -73,19 +73,23 @@ export async function rankTracks(
       tagsMap,
       playFrequencies,
     ).files
-    const pairs = candidates.map((file) => ({
-      text: recentPrompt,
-      text_pair: describeTrack(file, metadata[file], tagsMap[file]),
-    }))
+    const probabilities = await deps.decide(
+      recentPrompt,
+      candidates.map((file) => describeTrack(file, metadata[file], tagsMap[file])),
+    )
 
-    const scores = await deps.score(pairs)
-    const { confidence } = topConfidence(scores)
-    const ranked = candidates.map((file, i) => ({ file, score: scores[i] }))
-    ranked.sort((a, b) => b.score - a.score)
+    const ranked = candidates
+      .map((file, i) => ({ file, probability: probabilities[i] ?? 0 }))
+      .sort((a, b) => b.probability - a.probability)
 
-    return { files: ranked.slice(0, count).map((entry) => entry.file), confidence, ranker: 'reranker' }
+    return {
+      files: ranked.slice(0, count).map((entry) => entry.file),
+      // The model's probabilities are already calibrated: no softmax over them.
+      confidence: ranked[0]?.probability ?? 0,
+      ranker: 'model',
+    }
   } catch (e) {
-    console.error('[reranker] rank error:', e)
+    console.error('[ranker] rank error:', e)
     return byHeuristic(prompt)
   }
 }

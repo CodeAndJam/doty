@@ -65,8 +65,12 @@ function ensureWorker(): Worker {
       case 'ready':
         workerReady = true
         restarting = false
-        // Persist the effective language so Settings never claims a focus the model rejected.
-        if (typeof msg.language === 'string') store.set('sttLanguage', msg.language)
+        // Persist the effective language so Settings never claims a focus the model
+        // rejected — but never over a language the DM chose. A mis-detected
+        // language used to stick and outlived the session.
+        if (typeof msg.language === 'string' && store.get('sttLanguage', 'auto') === 'auto') {
+          store.set('sttLanguage', msg.language)
+        }
         if (onAsrStatus) onAsrStatus('ready')
         beginWorkerStream()
         break

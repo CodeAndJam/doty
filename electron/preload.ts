@@ -27,30 +27,12 @@ contextBridge.exposeInMainWorld('doty', {
   onParagraphBreak: (cb: () => void) => subscribe(EVENTS.paragraphBreak, cb),
   onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => subscribe(EVENTS.sttModelSwitched, cb),
 
-  // Scene Interpreter (LLM)
-  getLlmModelList: () => invoke(INVOKE.getLlmModelList),
-  getLlmModel: () => invoke(INVOKE.getLlmModel),
-  setLlmModel: (modelId: string) => invoke(INVOKE.setLlmModel, modelId),
-  downloadLlm: (modelId: string) => invoke(INVOKE.downloadLlm, modelId),
-  downloadEmbeddingModel: () => invoke(INVOKE.downloadEmbeddingModel),
-  getEmbeddingStatus: () => invoke(INVOKE.getEmbeddingStatus),
-  getEmbeddingProgress: () => invoke(INVOKE.getEmbeddingProgress),
-  onSceneUpdate: (cb: (scene: { scene: string; mood: string; intensity: number; keywords: string[] }) => void) =>
-    subscribe(EVENTS.sceneUpdate, cb),
-  onLlmStatus: (cb: (status: string) => void) => subscribe(EVENTS.llmStatus, cb),
-  onLlmDownloadProgress: (cb: (p: { percent: number; downloadedMB: number; totalMB: number }) => void) =>
-    subscribe(EVENTS.llmDownloadProgress, cb),
-  onEmbeddingProgress: (cb: (stats: { embedded: number; total: number; percent: number }) => void) =>
-    subscribe(EVENTS.embeddingProgress, cb),
-
   // Music
   pickMusicFolder: () => invoke(INVOKE.pickMusicFolder),
   getMusicFolder: () => invoke(INVOKE.getMusicFolder),
   setMusicFolder: (path: string) => invoke(INVOKE.setMusicFolder, path),
   listMusic: () => invoke(INVOKE.listMusic),
   getAllMetadata: () => invoke(INVOKE.getAllMetadata),
-  onRecommendations: (cb: (files: string[]) => void) => subscribe(EVENTS.recommendations, cb),
-  onRecommendationConfidence: (cb: (confidence: number) => void) => subscribe(EVENTS.recommendationConfidence, cb),
 
   // Model
   modelStatus: () => invoke(INVOKE.modelStatus),
@@ -59,11 +41,12 @@ contextBridge.exposeInMainWorld('doty', {
   cancelSttDownload: () => invoke(INVOKE.cancelSttDownload),
   skipModelOnboarding: () => invoke(INVOKE.skipModelOnboarding),
   getSttModelList: () => invoke(INVOKE.getSttModelList),
-  rerankerStatus: () => invoke(INVOKE.rerankerStatus),
-  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => invoke(INVOKE.rerankerScore, pairs),
-  onRerankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rerankerStatus, cb),
-  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) =>
-    subscribe(EVENTS.rerankerDownloadProgress, cb),
+  rankerStatus: () => invoke(INVOKE.rankerStatus),
+  rankerDecide: (prompt: string, candidates: string[]) => invoke(INVOKE.rankerDecide, prompt, candidates),
+  rankerDownload: () => invoke(INVOKE.rankerDownload) as Promise<{ ok: boolean; reason?: string }>,
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
+    subscribe(EVENTS.rankerDownloadProgress, cb),
+  onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),
   setRecommendationCount: (count: number) => invoke(INVOKE.setRecommendationCount, count),
   onModelProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVENTS.modelProgress, cb),

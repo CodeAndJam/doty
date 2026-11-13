@@ -46,7 +46,7 @@ interface Props {
   onSpeakerChange: (deviceId: string | null) => void
   micDeviceId?: string
   speakerDeviceId?: string
-  qwenStatus: 'loading' | 'ready' | 'error'
+  rankerStatus: 'loading' | 'ready' | 'error'
   recommendCount: number
   onRecommendCountChange: (count: number) => void
 }
@@ -81,7 +81,7 @@ export default function Settings({
   onSpeakerChange,
   micDeviceId,
   speakerDeviceId,
-  qwenStatus,
+  rankerStatus,
   recommendCount,
   onRecommendCountChange,
 }: Props) {
@@ -100,7 +100,7 @@ export default function Settings({
   const [sfxFolder, setSfxFolder] = useState('')
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const [autopilotEnabled, setAutopilotEnabled] = useState(false)
-  const [autopilotThreshold, setAutopilotThreshold] = useState(0.95)
+  const [autopilotThreshold, setAutopilotThreshold] = useState(0.9)
   const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
   const [autopilotMusic, setAutopilotMusic] = useState(true)
   const [autopilotSfx, setAutopilotSfx] = useState(true)
@@ -121,19 +121,9 @@ export default function Settings({
   const [whisperDownloading, setWhisperDownloading] = useState<string | null>(null)
   const [whisperProgress, setWhisperProgress] = useState(0)
   const [whisperDownloadError, setWhisperDownloadError] = useState<string | null>(null)
-  const [llmModel, setLlmModel] = useState('')
-  const [llmModelList, setLlmModelList] = useState<
-    Array<{ id: string; label: string; description: string; size: string; ready: boolean }>
-  >([])
-  const [llmModelReady, setLlmModelReady] = useState(false)
-  const [llmDownloading, setLlmDownloading] = useState<string | null>(null)
-  const [llmDownloadProgress, setLlmDownloadProgress] = useState(0)
-  const [embeddingStatus, setEmbeddingStatus] = useState<{ ready: boolean; label: string; size: string } | null>(null)
-  const [embeddingProgress, setEmbeddingProgress] = useState<{
-    embedded: number
-    total: number
-    percent: number
-  } | null>(null)
+  const [rankerInstalled, setRankerInstalled] = useState<boolean | null>(null)
+  const [rankerLanguageCovered, setRankerLanguageCovered] = useState(true)
+  const [rankerProgress, setRankerProgress] = useState<number | null>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
   const refreshTrackCount = useCallback(async () => {
@@ -155,19 +145,16 @@ export default function Settings({
       if (error) setWhisperDownloadError(error.error)
     })
     window.doty.getTranscriptFolder().then(setTranscriptFolder)
+    window.doty.rankerStatus().then((s) => {
+      setRankerInstalled(s.cached)
+      setRankerLanguageCovered(s.languageCovered)
+    })
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
     window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
-    window.doty.getLlmModelList().then((list) => {
-      setLlmModelList(list)
-      setLlmModelReady(list.some((m) => m.ready))
-    })
-    window.doty.getLlmModel().then(setLlmModel)
-    window.doty.getEmbeddingStatus().then(setEmbeddingStatus)
-    window.doty.getEmbeddingProgress().then(setEmbeddingProgress)
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
@@ -210,20 +197,9 @@ export default function Settings({
       if (status === 'ready') window.doty.getSttLanguage().then(setSttLanguage)
     })
 
-    const unsubLlmProgress = window.doty.onLlmDownloadProgress((p) => {
-      setLlmDownloadProgress(p.percent)
-      if (p.percent >= 100) {
-        setLlmDownloading(null)
-        setLlmDownloadProgress(0)
-        window.doty.getLlmModelList().then((list) => {
-          setLlmModelList(list)
-          setLlmModelReady(list.some((m) => m.ready))
-        })
-      }
-    })
-
-    const unsubEmbeddingProgress = window.doty.onEmbeddingProgress((stats) => {
-      setEmbeddingProgress(stats)
+    const unsubRanker = window.doty.onRankerDownloadProgress((p) => {
+      setRankerProgress(p.status === 'downloading' ? p.percent : null)
+      if (p.status === 'done') setRankerInstalled(true)
     })
 
     window.doty.micCheckPermission().then((status: string) => {
@@ -257,8 +233,7 @@ export default function Settings({
       unsubModelError()
       unsubModelCancelled()
       unsubSttStatus()
-      unsubLlmProgress()
-      unsubEmbeddingProgress()
+      unsubRanker()
     }
   }, [refreshTrackCount])
 
@@ -309,8 +284,8 @@ export default function Settings({
   const scanPercent =
     scanProgress && scanProgress.total > 0 ? Math.round((scanProgress.done / scanProgress.total) * 100) : 0
 
-  const qwenIsReady = qwenStatus === 'ready'
-  const qwenIsError = qwenStatus === 'error'
+  const rankerIsReady = rankerStatus === 'ready'
+  const rankerIsError = rankerStatus === 'error'
 
   const activeSttLanguages = sttModelList.find((m) => m.id === sttModel)?.languages ?? []
   const sttLanguageOptions =
@@ -318,13 +293,13 @@ export default function Settings({
       ? [sttLanguage, ...activeSttLanguages]
       : activeSttLanguages
 
-  const qwenDotColor = qwenIsReady ? '#4a8a6a' : qwenIsError ? '#ef4444' : '#c8922a'
-  const qwenDotShadow = qwenIsReady
+  const rankerDotColor = rankerIsReady ? '#4a8a6a' : rankerIsError ? '#ef4444' : '#c8922a'
+  const rankerDotShadow = rankerIsReady
     ? '0 0 6px rgba(74,138,106,0.7)'
-    : qwenIsError
+    : rankerIsError
       ? '0 0 6px rgba(239,68,68,0.7)'
       : '0 0 6px rgba(200,146,42,0.7)'
-  const qwenLabel = qwenIsReady ? 'Attuned' : qwenIsError ? 'Failed — using heuristic fallback' : 'Summoning...'
+  const rankerLabel = rankerIsReady ? 'Attuned' : rankerIsError ? 'Failed — using heuristic fallback' : 'Summoning...'
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -862,7 +837,10 @@ export default function Settings({
                 onChange={async (e) => {
                   const language = e.target.value
                   const result = await window.doty.setSttLanguage(language)
-                  if (result.ok) setSttLanguage(language)
+                  if (result.ok) {
+                    setSttLanguage(language)
+                    window.doty.rankerStatus().then((s) => setRankerLanguageCovered(s.languageCovered))
+                  }
                 }}
                 style={{
                   background: '#080705',
@@ -920,7 +898,7 @@ export default function Settings({
             )}
           </div>
 
-          {/* MiniLM reranker recommendation model */}
+          {/* d1-omni decision ranker */}
           <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
             <div className="flex items-center gap-3">
               <div
@@ -929,256 +907,52 @@ export default function Settings({
                   height: '6px',
                   borderRadius: '50%',
                   flexShrink: 0,
-                  background: qwenDotColor,
-                  boxShadow: qwenDotShadow,
-                  animation: !qwenIsReady ? 'pulse 1.5s ease-in-out infinite' : 'none',
+                  background: rankerDotColor,
+                  boxShadow: rankerDotShadow,
+                  animation: !rankerIsReady ? 'pulse 1.5s ease-in-out infinite' : 'none',
                 }}
               />
               <div className="flex-1 min-w-0">
                 <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                  mmarco Multilingual Reranker
+                  d1-omni Decision Ranker
                 </p>
-                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{qwenLabel}</p>
+                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{rankerLabel}</p>
               </div>
-              {!qwenIsReady && (
-                <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>~80 MB</span>
-              )}
-            </div>
-          </div>
-
-          {/* Scene Interpreter (LLM) */}
-          <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
-            <div className="flex items-center gap-3">
-              <div
-                style={{
-                  width: '6px',
-                  height: '6px',
-                  borderRadius: '50%',
-                  flexShrink: 0,
-                  background: llmModelReady ? '#4a8a6a' : '#3a2e1a',
-                  boxShadow: llmModelReady ? '0 0 6px rgba(74,138,106,0.6)' : 'none',
-                }}
-              />
-              <div className="flex-1 min-w-0">
-                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                  Scene Interpreter
-                </p>
-                <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-                  {llmModelReady ? 'Attuned' : 'Not yet summoned'}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-1.5 mt-3">
-              {llmModelList.map((m) => {
-                const isActive = llmModel === m.id
-                const isDownloading = llmDownloading === m.id
-                return (
-                  <div
-                    key={m.id}
-                    className="flex items-center gap-2"
-                    style={{
-                      padding: '6px 8px',
-                      background: isActive ? 'rgba(200,146,42,0.06)' : 'transparent',
-                      border: isActive ? '1px solid rgba(200,146,42,0.2)' : '1px solid transparent',
-                    }}
-                  >
-                    <button
-                      type="button"
-                      disabled={!m.ready || isDownloading}
-                      onClick={async () => {
-                        if (m.ready && !isActive) {
-                          const r = await window.doty.setLlmModel(m.id)
-                          if (r.ok) setLlmModel(m.id)
-                        }
-                      }}
-                      style={{
-                        width: '14px',
-                        height: '14px',
-                        borderRadius: '50%',
-                        border: `1px solid ${isActive ? '#c8922a' : '#3a2e1a'}`,
-                        background: 'transparent',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: m.ready && !isActive ? 'pointer' : 'default',
-                        flexShrink: 0,
-                        padding: 0,
-                      }}
-                    >
-                      {isActive && (
-                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8922a' }} />
-                      )}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                        {m.label}
-                      </span>
-                      <span
-                        className="ml-1.5 px-1 rounded text-[10px]"
-                        style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
-                      >
-                        {m.size}
-                      </span>
-                      <br />
-                      <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
-                        {m.description}
-                      </span>
-                    </div>
-                    {isDownloading ? (
-                      <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
-                        {llmDownloadProgress}%
-                      </span>
-                    ) : m.ready ? (
-                      <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
-                        ready
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          setLlmDownloading(m.id)
-                          setLlmDownloadProgress(0)
-                          await window.doty.downloadLlm(m.id)
-                          setLlmDownloading(null)
-                          window.doty.getLlmModelList().then(setLlmModelList)
-                        }}
-                        style={{
-                          fontSize: '11px',
-                          color: '#c8922a',
-                          fontFamily: 'monospace',
-                          background: 'none',
-                          border: '1px solid rgba(200,146,42,0.3)',
-                          padding: '2px 8px',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}
-                      >
-                        download
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-
-            {/* Embedding model */}
-            <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
-                    Embedding Model
-                  </span>
-                  <span
-                    className="ml-1.5 px-1 rounded text-[10px]"
-                    style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
-                  >
-                    {embeddingStatus?.size ?? '487 MB'}
-                  </span>
-                </div>
-                {embeddingStatus?.ready ? (
-                  <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace' }}>ready</span>
-                ) : llmDownloading === 'embedding' ? (
-                  <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
-                    {llmDownloadProgress}%
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setLlmDownloading('embedding')
-                      setLlmDownloadProgress(0)
-                      await window.doty.downloadEmbeddingModel()
-                      setLlmDownloading(null)
-                      setEmbeddingStatus(await window.doty.getEmbeddingStatus())
-                    }}
-                    style={{
-                      fontSize: '11px',
-                      color: '#c8922a',
-                      fontFamily: 'monospace',
-                      background: 'none',
-                      border: '1px solid rgba(200,146,42,0.3)',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    download
-                  </button>
-                )}
-              </div>
-              <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '2px' }}>
-                nomic-embed-text-v2 (multilingual)
-              </p>
-            </div>
-
-            {/* Embedding progress / status */}
-            <div className="mt-3 pt-3" style={{ borderTop: '1px solid rgba(46,36,22,0.5)' }}>
-              {!embeddingStatus?.ready || !llmModelReady ? (
-                <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', fontStyle: 'italic' }}>
-                  Download scene interpreter + embedding model to enable smart recommendations
-                </p>
-              ) : embeddingProgress &&
-                embeddingProgress.total > 0 &&
-                embeddingProgress.embedded < embeddingProgress.total ? (
-                <>
-                  <div className="flex items-center justify-between">
-                    <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
-                      Indexing: {embeddingProgress.embedded}/{embeddingProgress.total} tracks
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
-                      {embeddingProgress.percent}%
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      height: '3px',
-                      background: '#1a1408',
-                      marginTop: '4px',
-                      borderRadius: '2px',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: '100%',
-                        width: `${embeddingProgress.percent}%`,
-                        background: '#4a8a6a',
-                        transition: 'width 0.5s',
-                      }}
-                    />
-                  </div>
-                </>
-              ) : embeddingProgress &&
-                embeddingProgress.embedded > 0 &&
-                embeddingProgress.embedded >= embeddingProgress.total ? (
-                <div className="flex items-center justify-between">
-                  <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace' }}>
-                    Library indexed ✓ ({embeddingProgress.embedded} tracks)
-                  </span>
-                </div>
+              {rankerProgress !== null ? (
+                <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                  {rankerProgress}%
+                </span>
+              ) : rankerInstalled === false ? (
+                <button
+                  type="button"
+                  onClick={() => window.doty.rankerDownload()}
+                  title="Downloads once, in the background. Keyword matching covers you until it lands."
+                  style={{
+                    fontSize: '11px',
+                    color: '#c8922a',
+                    fontFamily: 'monospace',
+                    background: 'none',
+                    border: '1px solid rgba(200,146,42,0.3)',
+                    padding: '2px 8px',
+                    cursor: 'pointer',
+                    flexShrink: 0,
+                  }}
+                >
+                  download 1.5 GB
+                </button>
               ) : (
-                <div className="flex items-center justify-between">
-                  <span style={{ fontSize: '11px', color: '#5a4a2a', fontFamily: 'monospace' }}>
-                    Library not indexed yet
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => window.doty.getEmbeddingProgress().then(setEmbeddingProgress)}
-                    style={{
-                      fontSize: '11px',
-                      color: '#c8922a',
-                      fontFamily: 'monospace',
-                      background: 'none',
-                      border: '1px solid rgba(200,146,42,0.3)',
-                      padding: '2px 8px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Start indexing
-                  </button>
-                </div>
+                !rankerIsReady && (
+                  <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>1.5 GB</span>
+                )
               )}
             </div>
+            <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '4px' }}>
+              {rankerInstalled === false
+                ? 'Not installed — suggestions fall back to keyword matching'
+                : !rankerLanguageCovered
+                  ? `Does not read ${LANGUAGE_LABELS[sttLanguage] ?? sttLanguage} — it will still rank, but may be weaker`
+                  : 'Ranked by the decision model on your machine'}
+            </p>
           </div>
         </div>
 

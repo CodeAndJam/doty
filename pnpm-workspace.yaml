@@ -34,7 +34,6 @@ onlyBuiltDependencies:
   - esbuild
   - ffmpeg-static
   - koffi
-  - node-llama-cpp
   - onnxruntime-node
   - protobufjs
   - sharp

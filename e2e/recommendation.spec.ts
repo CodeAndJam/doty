@@ -1,35 +1,22 @@
 /**
- * E2E test: launch the app, type "campfire" in the DM input,
- * and assert that the recommendation model returns relevant tracks.
+ * E2E: the whole ranker flow, in the order a DM meets it.
  *
- * The DM input triggers recommendations via a 500ms debounce on change.
+ *   1. the model is already installed, so nothing downloads (the archive is
+ *      fetched once; a missing model skips this test rather than pulling 1.5 GB)
+ *   2. the first prompt is answered by keyword matching, immediately, while the
+ *      graph is still loading in the worker
+ *   3. the UI says which mode answered
+ *   4. once the model is warm, a prompt is answered by the decision model with a
+ *      calibrated confidence, and the ranking changes
  *
- * Prerequisites:
- *   - Run `npm run build` before executing this test.
- *   - The ASR (Parakeet) model must already be downloaded to ~/.doty/models/.
- *     If it is not, the test is skipped automatically.
- *   - The MiniLM reranker recommendation model (~80 MB) is downloaded on first run;
- *     allow up to 2 minutes for that on a cold start.
- *
- * How we verify the model actually ran (not the fallback):
- *   The fallback always returns the first 5 files in filesystem order.
- *   The fixture folder has 42 tracks. For the prompt "campfire" the model
- *   should rank mood-relevant tracks highly (e.g. Campfire.mp3,
- *   Downtime - Bonfire.mp3, Tavern tracks). We assert that the result
- *   contains "Campfire.mp3" — a file that is NOT in the first-5 fallback
- *   (alphabetically: Campfire.mp3 IS first, but Decisive Battle - Rivals.mp3
- *   would NOT be expected in a campfire recommendation).
- *   More robustly: we assert the 5 results are not identical to the
- *   alphabetical first-5, which would only happen if the fallback fired.
+ * Run with `pnpm build && npx playwright test e2e/recommendation.spec.ts`.
  */
-
-import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
-import { join, resolve } from 'path'
-import fs from 'fs'
+import { _electron as electron, expect, test, type ElectronApplication, type Page } from '@playwright/test'
+import fs from 'node:fs'
+import { join, resolve } from 'node:path'
 
 const FIXTURES_DIR = resolve(__dirname, 'fixtures')
 
-/** Gracefully quit Electron so macOS doesn't show "quit unexpectedly" dialog. */
 async function gracefulClose(app: ElectronApplication) {
   await app.evaluate(({ app: electronApp }) => {
     setTimeout(() => electronApp.quit(), 50)
@@ -37,68 +24,82 @@ async function gracefulClose(app: ElectronApplication) {
   await app.close()
 }
 
-// Alphabetical first-5 — what the fallback would return
-const FALLBACK_FIRST_5 = fs.readdirSync(FIXTURES_DIR)
-  .filter(f => f.endsWith('.mp3'))
-  .sort()
-  .slice(0, 5)
+/** Track names as rendered, in order. */
+async function shownTracks(page: Page): Promise<string[]> {
+  return page
+    .getByTestId('track-card')
+    .evaluateAll((els) => els.map((el) => el.querySelector('span.flex-1')?.textContent?.trim() ?? ''))
+}
 
-test('typing "campfire" returns model recommendations, not the fallback', async () => {
-  const app = await electron.launch({
-    args: [join(__dirname, '../out/main/index.js')],
-  })
+/**
+ * The model loads on an idle callback, so a prompt sent too early is answered by
+ * keywords. Re-prompt until the badge switches, which is exactly what a DM
+ * typing at the table does.
+ */
+async function waitForModelRanking(page: Page, input: ReturnType<Page['getByTestId']>) {
+  const badge = page.getByTestId('ranker-badge')
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const text = (await badge.textContent()) ?? ''
+    if (/^model/.test(text.trim())) return text.trim()
+    await input.fill(`campfire${' '.repeat(attempt % 2 === 0 ? 1 : 0)}`)
+    await page.waitForTimeout(1500)
+  }
+  throw new Error(`model never ranked; badge stayed at "${(await badge.textContent()) ?? ''}"`)
+}
+
+test('keyword fallback answers while the model loads, then the model takes over', async () => {
+  const app = await electron.launch({ args: [join(__dirname, '../out/main/index.js')] })
+  let page: Page | undefined
+  let previousFolder: string | null = null
 
   try {
-    const page = await app.firstWindow()
+    page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
+    page.on('pageerror', (err) => console.error('[renderer:error]', err.message))
 
-    // Capture renderer console to see worker errors
-    page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
-    page.on('pageerror', err => console.error('[renderer:error]', err.message))
-
-    // Skip if ASR model not downloaded yet (match the unique heading on the download screen)
-    const onDownloadScreen = await page.getByText('Speech Recognition Model').isVisible().catch(() => false)
-    if (onDownloadScreen) {
+    if (await page.getByText('Speech Recognition Model').isVisible().catch(() => false)) {
       test.skip(true, 'ASR model not present — run the app once to download it first')
       return
     }
 
-    // Point app at fixtures folder
-    await page.evaluate((dir: string) => {
-      return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
-    }, FIXTURES_DIR)
+    // Requirement: the model is installed, so this run downloads nothing.
+    const status = await page.evaluate(() => window.doty.rankerStatus())
+    expect(status.cached, 'ranker model missing — download it once in Settings first').toBe(true)
 
-    // Wait for DM input
+    // The spec runs against the real user data dir, so the folder is restored on exit.
+    previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
+    await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), FIXTURES_DIR)
+
     const input = page.getByTestId('dm-input')
     await expect(input).toBeVisible({ timeout: 15_000 })
 
-    // Type "campfire" — recommendations trigger via 500ms debounce
+    // First prompt: cards must appear without waiting for a 1.5 GB graph.
     await input.fill('campfire')
+    await expect(page.getByTestId('track-card')).toHaveCount(5, { timeout: 30_000 })
+    const early = await shownTracks(page)
+    const earlyBadge = ((await page.getByTestId('ranker-badge').textContent()) ?? '').trim()
+    console.log('[e2e] first answer:', earlyBadge, early)
+    expect(earlyBadge).toMatch(/^keywords/)
 
-    // Wait for debounce (500ms) + reranker model load (up to 5 min on first run) + inference
-    await expect(page.getByTestId('track-card')).toHaveCount(5, { timeout: 300_000 })
+    // The model finishes loading in the background and takes over.
+    const badgeText = await waitForModelRanking(page, input)
+    console.log('[e2e] ranker badge:', badgeText)
+    const confidence = Number(badgeText.replace(/[^0-9.]/g, ''))
+    expect(confidence).toBeGreaterThan(0)
 
-    // Allow extra time for the reranker model to finish loading and re-rank
-    // The initial cards may be heuristic fallback; wait for a reranker-powered update
-    await page.waitForTimeout(5000)
+    const ranked = await shownTracks(page)
+    console.log('[e2e] model ranking:', ranked)
+    expect(ranked).not.toEqual(early)
 
-    // Collect the track names shown in the UI
-    const cards = page.getByTestId('track-card')
-    const names = await cards.evaluateAll((els) =>
-      els.map(el => el.querySelector('span.flex-1')?.textContent?.trim() ?? '')
-    )
-    console.log('[e2e] recommended tracks:', names)
-
-    // Assert the model ran: results must NOT be identical to the alphabetical fallback
-    const fallbackNames = FALLBACK_FIRST_5.map(f => f.replace(/\.[^.]+$/, ''))
-    const isFallback = names.every((n, i) => n === fallbackNames[i])
-    expect(isFallback, `Got fallback results — model did not run. Got: ${names.join(', ')}`).toBe(false)
-
-    // Assert at least one mood-relevant track is present
     const relevant = ['Campfire', 'Bonfire', 'Tavern', 'Downtime', 'Halfling', 'Peaceful', 'Ambience']
-    const hasRelevant = names.some(n => relevant.some(r => n.includes(r)))
-    expect(hasRelevant, `No mood-relevant track found in: ${names.join(', ')}`).toBe(true)
+    expect(ranked.some((n) => relevant.some((r) => n.includes(r))), `no mood-relevant track in ${ranked.join(', ')}`).toBe(
+      true,
+    )
+
   } finally {
+    if (page && previousFolder) {
+      await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), previousFolder).catch(() => {})
+    }
     await gracefulClose(app)
   }
 })

@@ -1,7 +1,7 @@
 /**
  * useAutopilot — state machine for automatic music transitions and SFX triggers.
  *
- * Monitors recommendation confidence and automatically acts when the reranker
+ * Monitors recommendation confidence and automatically acts when the ranker
  * is highly confident, respecting cooldowns, pinned tracks, and manual overrides.
  */
 
@@ -67,8 +67,6 @@ export interface UseAutopilotReturn {
   onRecommendation: (topTrack: string, confidence: number) => void
   /** Notify autopilot of SFX recommendations */
   onSfxRecommendation: (sfxIds: string[]) => void
-  /** Notify autopilot that the DM manually interacted (pauses autopilot briefly) */
-  onManualAction: () => void
   /** Record a track as played so autopilot avoids replaying it */
   notePlayed: (track: string) => void
   /** Update config */
@@ -84,6 +82,8 @@ export function useAutopilot(
   onAutoPlay: (track: string) => void,
   onAutoSfx: (sfxId: string, volume: number) => void,
   isSfxPlaying: boolean,
+  /** The DM has taken playback by hand: autopilot proposes nothing until resumed. */
+  override: boolean,
 ): UseAutopilotReturn {
   const [config, setConfigState] = useState<AutopilotConfig>(DEFAULT_AUTOPILOT_CONFIG)
   const [state, setState] = useState<AutopilotState>('idle')
@@ -95,7 +95,6 @@ export function useAutopilot(
 
   // Cooldown tracking
   const lastMusicTransitionRef = useRef<number>(0)
-  const manualOverrideUntilRef = useRef<number>(0)
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // SFX cooldown tracking
@@ -151,16 +150,21 @@ export function useAutopilot(
     lastMusicTransitionRef.current = Date.now()
   }, [addLogEntry, lastCandidate, lastConfidence])
 
-  const onManualAction = useCallback(() => {
-    // Pause autopilot decisions for 60 seconds after manual interaction
-    manualOverrideUntilRef.current = Date.now() + 60_000
-    cancelTransition()
-    setState('idle')
-  }, [cancelTransition])
-
   const notePlayed = useCallback((track: string) => {
     recentlyPlayedRef.current.set(track, Date.now())
   }, [])
+
+  // Taking the table by hand must kill a countdown already in flight, or it fires
+  // and replaces the track the DM just chose.
+  useEffect(() => {
+    if (!override) return
+    if (countdownTimerRef.current) {
+      clearInterval(countdownTimerRef.current)
+      countdownTimerRef.current = null
+    }
+    setPendingTransition(null)
+    setState('idle')
+  }, [override])
 
   const onRecommendation = useCallback(
     (topTrack: string, confidence: number) => {
@@ -169,6 +173,10 @@ export function useAutopilot(
       setLastCandidate(topTrack)
 
       const cfg = configRef.current
+      if (override) {
+        addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'override active' })
+        return
+      }
       if (!cfg.enabled || !cfg.musicEnabled) {
         addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'autopilot disabled' })
         return
@@ -185,18 +193,6 @@ export function useAutopilot(
       }
 
       const now = Date.now()
-
-      // Respect manual override pause
-      if (now < manualOverrideUntilRef.current) {
-        addLogEntry({
-          channel: 'music',
-          action: 'skip',
-          candidate: topTrack,
-          confidence,
-          reason: 'manual override active',
-        })
-        return
-      }
 
       // Check confidence threshold
       if (confidence < cfg.confidenceThreshold) {
@@ -316,7 +312,7 @@ export function useAutopilot(
         }
       }, 1000)
     },
-    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay, addLogEntry],
+    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay, addLogEntry, override],
   )
 
   // ── SFX auto-trigger ────────────────────────────────────────────────
@@ -324,13 +320,10 @@ export function useAutopilot(
   const onSfxRecommendation = useCallback(
     (sfxIds: string[]) => {
       const cfg = configRef.current
-      if (!cfg.enabled || !cfg.sfxEnabled) return
+      if (override || !cfg.enabled || !cfg.sfxEnabled) return
       if (sfxIds.length === 0) return
 
       const now = Date.now()
-
-      // Respect manual override pause
-      if (now < manualOverrideUntilRef.current) return
 
       // Don't auto-trigger if DM is manually playing an SFX
       if (isSfxPlaying) return
@@ -359,7 +352,7 @@ export function useAutopilot(
         setLastAutoSfx((prev) => (prev?.timestamp === now ? null : prev))
       }, 2000)
     },
-    [isSfxPlaying, onAutoSfx, addLogEntry],
+    [isSfxPlaying, onAutoSfx, addLogEntry, override],
   )
 
   // Cleanup on unmount
@@ -383,7 +376,6 @@ export function useAutopilot(
     cancelTransition,
     onRecommendation,
     onSfxRecommendation,
-    onManualAction,
     notePlayed,
     setConfig,
     reloadConfig,

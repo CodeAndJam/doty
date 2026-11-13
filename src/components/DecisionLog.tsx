@@ -54,7 +54,7 @@ export default function DecisionLog({ entries, onClose }: Props) {
           }}
         >
           <span style={{ color: '#5a4a30' }}>{formatTime(e.timestamp)}</span>{' '}
-          {e.ranker && <span style={{ color: e.ranker === 'reranker' ? '#c8922a' : '#6b4e15' }}>[{e.ranker}]</span>}
+          {e.ranker && <span style={{ color: e.ranker === 'model' ? '#c8922a' : '#6b4e15' }}>[{e.ranker}]</span>}
           {e.action && (
             <span
               style={{

@@ -125,7 +125,7 @@ export interface SfxPlaybackChannel {
 
 export interface DecisionLogEntry {
   timestamp: number
-  ranker: 'reranker' | 'heuristic' | null
+  ranker: 'model' | 'heuristic' | null
   confidence: number
   topTrack: string | null
   transcriptSnippet: string
@@ -179,31 +179,12 @@ export interface DotyAPI {
   onParagraphBreak: (cb: () => void) => () => void
   onSttModelSwitched: (cb: (info: { id: string; label: string }) => void) => () => void
 
-  // Scene Interpreter (LLM)
-  getLlmModelList: () => Promise<
-    Array<{ id: string; label: string; description: string; size: string; ready: boolean }>
-  >
-  getLlmModel: () => Promise<string>
-  setLlmModel: (modelId: string) => Promise<{ ok: boolean }>
-  downloadLlm: (modelId: string) => Promise<{ ok: boolean; reason?: string }>
-  downloadEmbeddingModel: () => Promise<{ ok: boolean; reason?: string }>
-  getEmbeddingStatus: () => Promise<{ ready: boolean; label: string; size: string }>
-  getEmbeddingProgress: () => Promise<{ embedded: number; total: number; percent: number }>
-  onSceneUpdate: (
-    cb: (scene: { scene: string; mood: string; intensity: number; keywords: string[] }) => void,
-  ) => () => void
-  onLlmStatus: (cb: (status: string) => void) => () => void
-  onLlmDownloadProgress: (cb: (p: { percent: number; downloadedMB: number; totalMB: number }) => void) => () => void
-  onEmbeddingProgress: (cb: (stats: { embedded: number; total: number; percent: number }) => void) => () => void
-
   // Music
   pickMusicFolder: () => Promise<string | null>
   getMusicFolder: () => Promise<string>
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
   getAllMetadata: () => Promise<Record<string, TrackMeta>>
-  onRecommendations: (cb: (files: string[]) => void) => () => void
-  onRecommendationConfidence: (cb: (confidence: number) => void) => () => void
 
   // Model
   modelStatus: () => Promise<{ ready: boolean; onboardingSkipped: boolean }>
@@ -223,10 +204,11 @@ export interface DotyAPI {
       ready: boolean
     }>
   >
-  rerankerStatus: () => Promise<{ cached: boolean }>
-  rerankerScore: (pairs: Array<{ text: string; text_pair: string }>) => Promise<number[]>
-  onRerankerStatus: (cb: (status: string) => void) => () => void
-  onRerankerDownloadProgress: (cb: (p: { file: string; progress: number; status: string }) => void) => () => void
+  rankerStatus: () => Promise<{ cached: boolean; downloading: boolean; languageCovered: boolean }>
+  rankerDecide: (prompt: string, candidates: string[]) => Promise<number[]>
+  rankerDownload: () => Promise<{ ok: boolean; reason?: string }>
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => () => void
+  onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void

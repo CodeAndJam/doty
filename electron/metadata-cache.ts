@@ -1,5 +1,6 @@
 import type { TrackMetadata } from './analyzer'
 import { getDb } from './database'
+import { DOTY_HOME } from './profile'
 
 export interface FullTrackMetadata extends TrackMetadata {
   title: string | null
@@ -119,10 +120,9 @@ export function getCache(): Record<string, FullTrackMetadata> {
 
 export function migrateFromJson(): void {
   const { join } = require('node:path')
-  const { app: electronApp } = require('electron')
   const fs = require('node:fs')
 
-  const jsonPath = join(electronApp.getPath('home'), '.doty', 'music-metadata.json')
+  const jsonPath = join(DOTY_HOME, 'music-metadata.json')
   if (!fs.existsSync(jsonPath)) return
 
   try {

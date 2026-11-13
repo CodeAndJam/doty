@@ -1,13 +1,15 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useAutopilot } from '../hooks/useAutopilot'
 import { useQueue } from '../hooks/useQueue'
-import type { RankerType } from '../hooks/useQwen'
+import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
+import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
-import { BrowseIcon, ChevronDown, ChevronUp, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
+import { BrowseIcon, ChevronLeft, ChevronRight, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import QueuePanel from './QueuePanel'
 import SfxBrowsePanel from './SfxBrowsePanel'
@@ -38,11 +40,58 @@ function saveSfxPins(pins: string[]) {
   localStorage.setItem(SFX_PINS_KEY, JSON.stringify(pins))
 }
 
+/** Slim side rail shown in place of a collapsed column; click to expand it again. */
+function CollapsedRail({
+  label,
+  color,
+  borderColor,
+  icon,
+  count,
+  onExpand,
+}: {
+  label: string
+  color: string
+  borderColor: string
+  icon: ReactNode
+  count: number
+  onExpand: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      title={`Expand ${label} column`}
+      className="flex-1 flex flex-col items-center gap-3 py-3 hover:opacity-80 transition-opacity"
+      style={{ border: `1px solid ${borderColor}`, color }}
+    >
+      {icon}
+      <span
+        style={{
+          writingMode: 'vertical-rl',
+          fontFamily: "'Cinzel', serif",
+          fontSize: '11px',
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </span>
+      {count > 0 && <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{count}</span>}
+    </button>
+  )
+}
+
 interface Props {
   recommendations: string[]
+  /** The DM is driving by hand; the ranker stays idle until they resume. */
+  override: boolean
+  onManualAction: () => void
+  onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
   lastRanker: RankerType
+  /** Whether the decision model is loaded, loading, or failed. */
+  rankerStatus: 'loading' | 'ready' | 'error'
   lastTranscriptSnippet: string
   musicFolder: string
   speakerDeviceId?: string
@@ -51,10 +100,14 @@ interface Props {
 }
 
 export default function Soundboard({
+  override,
+  onManualAction,
+  onResumeAuto,
   recommendations,
   sfxRecommendations,
   lastConfidence,
   lastRanker,
+  rankerStatus,
   lastTranscriptSnippet,
   musicFolder,
   speakerDeviceId,
@@ -251,7 +304,7 @@ export default function Soundboard({
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
-    autopilot.onManualAction()
+    onManualAction()
   }
 
   function togglePin(filename: string) {
@@ -300,7 +353,7 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
-    autopilot.onManualAction()
+    onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -356,6 +409,7 @@ export default function Soundboard({
       }
     },
     sfxPlayer.channels.length > 0,
+    override,
   )
 
   // Reload autopilot config when Settings modal closes
@@ -506,9 +560,19 @@ export default function Soundboard({
       {/* Two-column layout */}
       <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
         {/* ── Left column: Music ──────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'shrink-0'}`}>
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'w-9 shrink-0'}`}>
+          {!showMusic && (
+            <CollapsedRail
+              label="Music"
+              color="#c8922a"
+              borderColor="#2e2416"
+              icon={<MusicNoteIcon />}
+              count={pinned.length + suggestions.length}
+              onExpand={() => setShowMusic(true)}
+            />
+          )}
           {/* Music column header */}
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
               <MusicNoteIcon />
               <span
@@ -536,7 +600,9 @@ export default function Soundboard({
                   AUTO
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+                <ChevronLeft />
+              </span>
             </button>
             {showMusic && (
               <div className="flex items-center gap-2">
@@ -657,23 +723,50 @@ export default function Soundboard({
                       }}
                     >
                       Suggestions
+                      {lastRanker === 'model' && lastConfidence >= HIGHLIGHT_CONFIDENCE && (
+                        <span style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}> ▲ strong</span>
+                      )}
                     </span>
                     {/* Ranker + confidence badge */}
                     {lastRanker && (
                       <span
+                        data-testid="ranker-badge"
                         style={{
                           fontSize: '9px',
                           fontFamily: 'monospace',
                           padding: '0 4px',
-                          border: `1px solid ${lastRanker === 'reranker' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
-                          color: lastRanker === 'reranker' ? '#c8922a' : '#6b4e15',
+                          border: `1px solid ${lastRanker === 'model' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
+                          color: lastRanker === 'model' ? '#c8922a' : '#6b4e15',
                           letterSpacing: '0.05em',
                         }}
                         title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` (${(lastConfidence * 100).toFixed(1)}% confidence)` : ''}`}
                       >
-                        {lastRanker === 'reranker' ? 'ML' : 'heuristic'}
-                        {lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
+                        {lastRanker === 'model'
+                          ? 'model'
+                          : rankerStatus === 'loading'
+                            ? 'keywords · model loading'
+                            : rankerStatus === 'error'
+                              ? 'keywords · model failed'
+                              : 'keywords'}
+                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}%`}
                       </span>
+                    )}
+                    {override && (
+                      <button
+                        type="button"
+                        onClick={onResumeAuto}
+                        title="Playback is yours until you resume automatic suggestions"
+                        style={{
+                          fontSize: '9px',
+                          fontFamily: 'monospace',
+                          padding: '0 4px',
+                          border: '1px solid rgba(74,138,106,0.45)',
+                          color: '#4a8a6a',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        RESUME AUTO
+                      </button>
                     )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
                     {/* Decision log toggle */}
@@ -728,9 +821,19 @@ export default function Soundboard({
         </div>
 
         {/* ── Right column: SFX ───────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'shrink-0'}`}>
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'w-9 shrink-0'}`}>
+          {!showSfx && (
+            <CollapsedRail
+              label="SFX"
+              color="#4a8a6a"
+              borderColor="rgba(74,138,106,0.3)"
+              icon={<SfxIcon />}
+              count={sfxPinned.length + sfxSuggestions.length}
+              onExpand={() => setShowSfx(true)}
+            />
+          )}
           {/* SFX column header */}
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className={`${showSfx ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
               <SfxIcon />
               <span
@@ -759,7 +862,9 @@ export default function Soundboard({
                   AUTO
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showSfx ? <ChevronDown /> : <ChevronUp />}</span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+                <ChevronRight />
+              </span>
             </button>
             {showSfx && (
               <div className="flex items-center gap-2">

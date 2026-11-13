@@ -16,6 +16,14 @@ import {
   startStream,
 } from './asr'
 import {
+  coversLanguage,
+  installRankerArchive,
+  isRankerInstalled,
+  RANKER_URL,
+  rankerLanguages,
+  rankerPaths,
+} from './d1-model'
+import {
   closeDb,
   getAllTags,
   getDb,
@@ -51,17 +59,7 @@ import {
   tryAutoConnect,
 } from './discord'
 import { downloadFile } from './download-file'
-import {
-  handleEmbeddingResult,
-  pauseEmbedding,
-  resumeEmbedding,
-  setEmbeddingFiles,
-  setOnEmbeddingProgress,
-  startEmbeddingQueue,
-  stopEmbeddingQueue,
-} from './embedding-queue'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
-import { EMBEDDING_MODEL, getEmbeddingModelPath, getLlmModelPath, LLM_MODELS, type LlmModelType } from './llm-models'
 import { migrateFromJson } from './metadata-cache'
 import { createModelDownloads } from './model-downloads'
 import {
@@ -75,27 +73,12 @@ import {
 } from './model-paths'
 import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
-import { fastPathCheck, slowPathRecommend, startCooldown } from './recommend'
-import { disposeReranker, scorePairs, setOnRerankerStatus } from './reranker'
+import { decide, disposeRanker, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
-import {
-  disposeInterpreter,
-  feedTranscript,
-  isEmbeddingModelReady,
-  loadEmbeddingModel,
-  loadSceneModel,
-  requestEmbedding as requestEmbeddingFromInterpreter,
-  setOnEmbedding,
-  setOnStatus as setOnLlmStatus,
-  setOnSceneUpdate,
-  startInterpreting,
-  stopInterpreting,
-} from './scene-interpreter'
 import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
-import { deleteTrackEmbedding, getEmbeddingStats, initVectorTables, pruneStaleEmbeddings } from './track-vectors'
 import { updateWavHeader } from './wav-header'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
@@ -119,13 +102,51 @@ if (app.isPackaged) {
   process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
 }
 
-/** Check if the reranker model is already cached */
-function isRerankerCached(): boolean {
-  const rerankerDir = join(app.getPath('home'), '.doty', 'hf-cache', 'cross-encoder', 'mmarco-mMiniLMv2-L12-H384-v1')
+let rankerDownloading = false
+
+const rankerDownloads = createModelDownloads({
+  download: downloadFile,
+  onEvent: (event) => {
+    if (event.type === 'progress') {
+      send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
+    } else if (event.type === 'error') {
+      rankerDownloading = false
+      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+      console.error('[ranker] download failed:', event.error)
+    }
+  },
+})
+
+/**
+ * Fetch the ranker once. The graph, manifest and tokenizer arrive as one
+ * archive, so a partial download is never mistaken for an installed model:
+ * nothing lands in the models dir until the checksum passes.
+ */
+async function downloadRanker(): Promise<{ ok: boolean; reason?: string }> {
+  if (isRankerInstalled()) return { ok: true }
+  if (rankerDownloading) return { ok: false, reason: 'already downloading' }
+
+  rankerDownloading = true
+  const { archive } = rankerPaths()
   try {
-    return fs.existsSync(join(rerankerDir, 'onnx', 'model.onnx'))
-  } catch {
-    return false
+    const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive)
+    if (!result.ok) {
+      rankerDownloading = false
+      return result
+    }
+    installRankerArchive(archive)
+    rankerDownloading = false
+    send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
+    // Warm the fresh graph so the first prompt is not the first load.
+    decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
+    return { ok: true }
+  } catch (e) {
+    rankerDownloading = false
+    fs.rmSync(archive, { force: true })
+    const reason = e instanceof Error ? e.message : String(e)
+    console.error('[ranker] install failed:', reason)
+    send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+    return { ok: false, reason }
   }
 }
 
@@ -174,18 +195,6 @@ const sttDownloads = createModelDownloads({
   },
 })
 
-const llmDownloads = createModelDownloads({
-  download: downloadFile,
-  onEvent: (event) => {
-    if (event.type === 'progress') {
-      send(EVENTS.llmDownloadProgress, {
-        percent: event.percent,
-        downloadedMB: event.downloadedMB,
-        totalMB: event.totalMB,
-      })
-    }
-  },
-})
 let sessionStartTime: number | null = null
 /** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
 let recordingActive = false
@@ -274,26 +283,6 @@ function finalizeWavRecording(): void {
   sessionWavBytes = 0
 }
 
-function syncEmbeddingQueue(folder: string): void {
-  if (!folder) return
-  try {
-    // Don't treat an unreadable/unmounted folder as an empty library — that
-    // would prune every embedding.
-    fs.readdirSync(folder)
-  } catch {
-    console.warn('[main] music folder unavailable, keeping existing embeddings')
-    return
-  }
-  const files = getMusicFiles(folder)
-  setEmbeddingFiles(files)
-  try {
-    pruneStaleEmbeddings(new Set(files))
-  } catch (e) {
-    console.error('[main] could not prune stale embeddings:', e)
-  }
-  startEmbeddingQueue()
-}
-
 function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
@@ -302,8 +291,6 @@ function launchScanner(folder: string, force = false) {
     },
     () => {
       send(EVENTS.scanComplete)
-      // Pick up tracks added/removed by the scan
-      syncEmbeddingQueue(folder)
     },
     force,
   )
@@ -315,8 +302,6 @@ setOnLibraryChanged(() => {
   if (librarySyncTimer) clearTimeout(librarySyncTimer)
   librarySyncTimer = setTimeout(() => {
     librarySyncTimer = null
-    const folder = store.get('musicFolder', '') as string
-    syncEmbeddingQueue(folder)
     send(EVENTS.scanComplete)
   }, 500)
 })
@@ -377,29 +362,6 @@ function registerMusicProtocol() {
   })
 }
 
-/** Request embedding for a scene description (id=0 for scene embeddings) */
-function requestSceneEmbedding(sceneText: string) {
-  requestEmbeddingFromInterpreter(0, `search_query: ${sceneText}`)
-}
-
-/**
- * Load the models that support recommendations (reranker, scene interpreter,
- * embeddings) when their files exist. Safe to call after a late STT download:
- * every load is guarded by an existsSync check.
- */
-function initAuxModels(): void {
-  const llmModelId = store.get('llmModel', 'qwen3-0.6b') as LlmModelType
-  const llmPath = getLlmModelPath(llmModelId)
-  if (fs.existsSync(llmPath) && fs.statSync(llmPath).size > 0) {
-    loadSceneModel(llmPath)
-    startInterpreting()
-  }
-  const embPath = getEmbeddingModelPath()
-  if (fs.existsSync(embPath) && fs.statSync(embPath).size > 0) {
-    loadEmbeddingModel(embPath)
-  }
-}
-
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -441,16 +403,7 @@ app.whenReady().then(async () => {
     send(EVENTS.paragraphBreak)
   })
 
-  // ── Scene Interpreter + Recommendation wiring ────────────────────────────
-  // Initialize vector tables for track embeddings. A failure here (e.g. ABI
-  // mismatch) must not abort the rest of the app wiring below.
-  try {
-    initVectorTables()
-  } catch (e) {
-    console.error('[main] vector tables unavailable, recommendations fall back to heuristics:', e)
-  }
-
-  // Feed transcript to scene interpreter on each flush
+  // ── Transcript wiring ────────────────────────────────────────────────────
   setOnFlushText((text, elapsedMs) => {
     const file = getActiveSessionFile()
     let elapsed = elapsedMs
@@ -461,62 +414,13 @@ app.whenReady().then(async () => {
     }
     // Send the same time base used for the saved VTT cues
     send(EVENTS.transcript, { text, elapsedMs: elapsed })
-    // Feed to scene interpreter
-    feedTranscript(text)
-    // Fast-path: a detected mood transition triggers an embedding/search now
-    if (isEmbeddingModelReady()) {
-      const trigger = fastPathCheck(text)
-      if (trigger) {
-        requestSceneEmbedding(trigger.mood)
-        startCooldown()
-      }
-    }
   })
 
-  // Scene interpreter produces results → embed → vector search → recommend
-  setOnSceneUpdate((scene) => {
-    send(EVENTS.sceneUpdate, scene)
-    // Embed the scene description for vector search
-    if (isEmbeddingModelReady()) {
-      requestSceneEmbedding(scene.scene)
-    }
-  })
-
-  // Handle embeddings from the LLM process
-  setOnEmbedding((id, vector) => {
-    // Check if this is a scene embedding (id=0) or a track embedding (id>0)
-    if (id === 0) {
-      // Scene embedding → run slow-path recommendation
-      try {
-        const rec = slowPathRecommend(vector)
-        if (rec.files.length > 0) {
-          send(EVENTS.recommendations, rec.files)
-          send(EVENTS.recommendationConfidence, rec.confidence)
-        }
-      } catch (e) {
-        console.error('[main] slow-path recommendation failed:', e)
-      }
-    } else {
-      // Track embedding → handled by embedding queue
-      handleEmbeddingResult(id, vector)
-    }
-  })
-
-  setOnLlmStatus((status) => {
-    send(EVENTS.llmStatus, status)
-  })
-
-  setOnRerankerStatus((status) => {
-    send(EVENTS.rerankerStatus, status)
-  })
-
-  // Set up embedding progress reporting
-  setOnEmbeddingProgress((stats) => {
-    send(EVENTS.embeddingProgress, stats)
+  setOnRankerStatus((status) => {
+    send(EVENTS.rankerStatus, status)
   })
 
   if (ready) {
-    initAuxModels()
     // Init ASR immediately — transcribe-cpp loads in ~160ms
     try {
       initRecognizer()
@@ -525,22 +429,20 @@ app.whenReady().then(async () => {
     }
   }
 
-  // Start background embedding queue if music folder is set
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) {
-    launchScanner(musicFolder)
-    // Kick off embedding queue after a delay (let scanner populate files first)
-    setTimeout(() => syncEmbeddingQueue(musicFolder), 5000)
+  if (musicFolder) launchScanner(musicFolder)
+
+  // One background download, once per machine. No prompt: the app is useless
+  // without it, and 1.5 GB of silence during a session would be worse.
+  if (!isRankerInstalled()) {
+    downloadRanker().catch((e) => console.error('[ranker] background download failed:', e))
   }
 })
 
 app.on('before-quit', () => {
   finalizeWavRecording()
   freeRecognizer()
-  stopInterpreting()
-  disposeInterpreter()
-  disposeReranker()
-  stopEmbeddingQueue()
+  disposeRanker()
   stopScanner()
   closeDb()
   destroyDiscord()
@@ -581,14 +483,12 @@ handle(INVOKE.sttStart, () => {
   recordingActive = true
   startWavRecording()
   startStream()
-  pauseEmbedding() // STT has priority over background embedding
   return { ok: true }
 })
 handle(INVOKE.sttStop, () => {
   finalizeStream()
   finalizeWavRecording()
   recordingActive = false
-  resumeEmbedding() // resume background work
   return { ok: true }
 })
 
@@ -612,7 +512,6 @@ handle(INVOKE.sttTranscribeChunk, async (_e, buffer: ArrayBuffer) => {
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
-  syncEmbeddingQueue(folderPath)
   send(EVENTS.musicFolderChanged, folderPath)
   return { ok: true }
 })
@@ -627,7 +526,6 @@ handle(INVOKE.pickMusicFolder, async () => {
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
-    syncEmbeddingQueue(result.filePaths[0])
     send(EVENTS.musicFolderChanged, result.filePaths[0])
     return result.filePaths[0]
   }
@@ -657,16 +555,6 @@ handle(INVOKE.getTags, (_e, filename: string) => getTags(filename))
 
 handle(INVOKE.setTags, (_e, filename: string, tags: string[]) => {
   setTags(filename, tags)
-  // Description feeds the embedding — regenerate it with the new tags.
-  const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) {
-    try {
-      deleteTrackEmbedding(filename)
-      syncEmbeddingQueue(musicFolder)
-    } catch (e) {
-      console.error('[main] could not refresh embedding after tag change:', e)
-    }
-  }
   return { ok: true }
 })
 
@@ -819,10 +707,16 @@ handle(INVOKE.modelStatus, () => ({
   onboardingSkipped: store.get('sttOnboardingSkipped', false),
 }))
 
-handle(INVOKE.rerankerStatus, () => ({ cached: isRerankerCached() }))
+handle(INVOKE.rankerStatus, () => ({
+  cached: isRankerInstalled(),
+  downloading: rankerDownloading,
+  languageCovered: coversLanguage(rankerLanguages(), store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string),
+}))
 
-handle(INVOKE.rerankerScore, async (_e, pairs: Array<{ text: string; text_pair: string }>) => {
-  return scorePairs(pairs)
+handle(INVOKE.rankerDownload, () => downloadRanker())
+
+handle(INVOKE.rankerDecide, async (_e, prompt: string, candidates: string[]) => {
+  return decide(prompt, candidates)
 })
 
 handle(INVOKE.getRecommendationCount, () => store.get('recommendationCount', 5))
@@ -832,87 +726,7 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
   return { ok: true }
 })
 
-// ── IPC: Scene Interpreter (LLM) ──────────────────────────────────────────────
-
-handle(INVOKE.getLlmModelList, () => {
-  return LLM_MODELS.map((m) => ({
-    id: m.id,
-    label: m.label,
-    description: m.description,
-    size: m.size,
-    ready: m.isReady(),
-  }))
-})
-
-handle(INVOKE.getLlmModel, () => {
-  return store.get('llmModel', 'qwen3-0.6b') as string
-})
-
-handle(INVOKE.setLlmModel, (_e, modelId: LlmModelType) => {
-  const current = store.get('llmModel', '') as string
-  if (current === modelId) return { ok: true }
-  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
-  if (!modelInfo) return { ok: false, reason: 'unknown model' }
-  if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
-  store.set('llmModel', modelId)
-  // Reload the scene model
-  loadSceneModel(getLlmModelPath(modelId))
-  return { ok: true }
-})
-
-handle(INVOKE.downloadLlm, async (_e, modelId: LlmModelType) => {
-  const modelInfo = LLM_MODELS.find((m) => m.id === modelId)
-  if (!modelInfo) return { ok: false, reason: 'unknown model' }
-  if (modelInfo.isReady()) {
-    store.set('llmModel', modelId)
-    loadSceneModel(getLlmModelPath(modelId))
-    return { ok: true }
-  }
-
-  const result = await llmDownloads.start(
-    { id: modelInfo.id, url: modelInfo.url },
-    join(MODELS_DIR, modelInfo.ggufFile),
-  )
-  if (!result.ok) return result
-
-  store.set('llmModel', modelId)
-  loadSceneModel(getLlmModelPath(modelId))
-  startInterpreting()
-  return { ok: true }
-})
-
-handle(INVOKE.downloadEmbeddingModel, async () => {
-  if (EMBEDDING_MODEL.isReady()) {
-    loadEmbeddingModel(getEmbeddingModelPath())
-    return { ok: true }
-  }
-
-  const result = await llmDownloads.start(
-    { id: EMBEDDING_MODEL.id, url: EMBEDDING_MODEL.url },
-    join(MODELS_DIR, EMBEDDING_MODEL.ggufFile),
-  )
-  if (!result.ok) return result
-
-  loadEmbeddingModel(getEmbeddingModelPath())
-  return { ok: true }
-})
-
-handle(INVOKE.getEmbeddingStatus, () => ({
-  ready: EMBEDDING_MODEL.isReady(),
-  label: EMBEDDING_MODEL.label,
-  size: EMBEDDING_MODEL.size,
-}))
-
-handle(INVOKE.getEmbeddingProgress, () => {
-  const musicFolder = store.get('musicFolder', '') as string
-  const total = musicFolder ? getMusicFiles(musicFolder).length : 0
-  try {
-    return getEmbeddingStats(total)
-  } catch (e) {
-    console.error('[main] embedding stats unavailable:', e)
-    return { embedded: 0, total, percent: 0 }
-  }
-})
+// ── IPC: Model downloads ──────────────────────────────────────────────────────
 
 handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId
@@ -922,7 +736,6 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
     restartRecognizer()
-    initAuxModels()
     send(EVENTS.modelStatus, { ready: true })
     return { ok: true }
   }
@@ -938,7 +751,6 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   // fails to initialise, otherwise the UI claims the download failed.
   try {
     restartRecognizer()
-    initAuxModels()
   } catch (err) {
     console.error('[model] post-download init error:', err)
   }
@@ -1144,7 +956,7 @@ handle(INVOKE.getAutopilotConfig, () => ({
   enabled: store.get('autopilotEnabled', false),
   musicEnabled: store.get('autopilotMusicEnabled', true),
   sfxEnabled: store.get('autopilotSfxEnabled', true),
-  confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.95),
+  confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.9),
   crossfadeDuration: store.get('autopilotCrossfadeDuration', 3),
   musicCooldownSeconds: store.get('autopilotMusicCooldown', 60),
   minPlaySeconds: store.get('autopilotMinPlaySeconds', 30),
