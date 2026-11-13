@@ -21,7 +21,9 @@
     "lint:fix": "biome check --fix .",
     "format": "biome format --write .",
     "prepare": "husky",
-    "verify:dmg": "bash build/verify-dmg.sh"
+    "verify:dmg": "bash build/verify-dmg.sh",
+    "ranker:rows": "RANKER_ROWS=1 vitest run electron/session/harvest.test.ts",
+    "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts"
   },
   "build": {
     "appId": "com.codeandjam.doty",

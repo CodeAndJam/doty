@@ -1,0 +1,260 @@
+[
+ {
+  "id": "calm-cell",
+  "transcript": "Não sei se estamos a falar ainda sobre a batalha, mas parece-me algo importante. Nag agora estamos aí para a prisão, em que vocês estão grande outros e estão. Todos atados, sem saber o que fazer. Será que isto é uma boa maneira para vocês falarem? Está um momento calmo, não vem nenhum guarda, simplesmente. O cair da água da masmorra.",
+  "candidates": [
+   {
+    "path": "Tavern/Music/Downtime - Bonfire.mp3",
+    "description": "Tavern/Music/Downtime Bonfire — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Downtime - Bonfire.mp3",
+    "description": "Downtime Bonfire — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Walking/Night/Weather - Heavy Rain.mp3",
+    "description": "Walking/Night/Weather Heavy Rain — 123 BPM, energy 0.7"
+   },
+   {
+    "path": "Weather - Heavy Rain.mp3",
+    "description": "Weather Heavy Rain — 123 BPM, energy 0.7"
+   },
+   {
+    "path": "City/Plaza/Journey - Unsafe Roads.mp3",
+    "description": "City/Plaza/Journey Unsafe Roads — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Journey - Unsafe Roads.mp3",
+    "description": "Journey Unsafe Roads — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Tavern/People/Fantasy Tavern.mp3",
+    "description": "Tavern/People/Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Fantasy Tavern.mp3",
+    "description": "Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Combat/Boss/The Enemy.mp3",
+    "description": "Combat/Boss/The Enemy — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "The Enemy.mp3",
+    "description": "The Enemy — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Walking/Night/Weather - Light Wind.mp3",
+    "description": "Walking/Night/Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Weather - Light Wind.mp3",
+    "description": "Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Exploration/Campfire Peace/Campfire.mp3",
+    "description": "Exploration/Campfire Peace/Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Campfire.mp3",
+    "description": "Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Exploration/Forest/Corpse Wood.mp3",
+    "description": "Exploration/Forest/Corpse Wood — 129 BPM, energy 0.5"
+   },
+   {
+    "path": "Corpse Wood.mp3",
+    "description": "Corpse Wood — 129 BPM, energy 0.5"
+   },
+   {
+    "path": "The Desert.mp3",
+    "description": "The Desert — 140 BPM, energy 1.0"
+   },
+   {
+    "path": "Combat/Regular Combat/Near End Action.mp3",
+    "description": "Combat/Regular Combat/Near End Action — 145 BPM, energy 1.0"
+   },
+   {
+    "path": "Near End Action.mp3",
+    "description": "Near End Action — 145 BPM, energy 1.0"
+   },
+   {
+    "path": "Investigation/Sneak/Spooky - Dark Wind.mp3",
+    "description": "Investigation/Sneak/Spooky Dark Wind — 143 BPM, energy 1.0"
+   }
+  ]
+ },
+ {
+  "id": "tavern-rest",
+  "transcript": "Vocês chegam à taberna ao fim da tarde. O cheiro a pão quente e a cerveja enche o ar, alguém toca uma melodia alegre no fundo da sala. O estalajadeiro acena-vos e pergunta o que vão querer. Têm tempo para descansar e falar sobre o que descobriram na cripta.",
+  "candidates": [
+   {
+    "path": "Exploration/Campfire Peace/Campfire.mp3",
+    "description": "Exploration/Campfire Peace/Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Campfire.mp3",
+    "description": "Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Tavern/People/Fantasy Tavern.mp3",
+    "description": "Tavern/People/Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Fantasy Tavern.mp3",
+    "description": "Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Exploration/Coast/Travel by Water - Rowboat - Calm Seas.mp3",
+    "description": "Exploration/Coast/Travel by Water Rowboat Calm Seas — 90 BPM, energy 0.4"
+   },
+   {
+    "path": "Travel by Water - Rowboat - Calm Seas.mp3",
+    "description": "Travel by Water Rowboat Calm Seas — 90 BPM, energy 0.4"
+   },
+   {
+    "path": "Investigation/Creepy/Horror Ambience - Halloween Theme 1.mp3",
+    "description": "Investigation/Creepy/Horror Ambience Halloween Theme 1 — 80 BPM, energy 1.0"
+   },
+   {
+    "path": "Horror Ambience - Halloween Theme 1.mp3",
+    "description": "Horror Ambience Halloween Theme 1 — 80 BPM, energy 1.0"
+   },
+   {
+    "path": "City/Plaza/Gold Rush Town.mp3",
+    "description": "City/Plaza/Gold Rush Town — 103 BPM, energy 0.8"
+   },
+   {
+    "path": "Gold Rush Town.mp3",
+    "description": "Gold Rush Town — 103 BPM, energy 0.8"
+   },
+   {
+    "path": "Walking/Night/Weather - Light Wind.mp3",
+    "description": "Walking/Night/Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Weather - Light Wind.mp3",
+    "description": "Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Investigation/Sneak/Horror Ambience - Dark n Deep.mp3",
+    "description": "Investigation/Sneak/Horror Ambience Dark n Deep — 103 BPM, energy 0.8"
+   },
+   {
+    "path": "Horror Ambience - Dark n Deep.mp3",
+    "description": "Horror Ambience Dark n Deep — 103 BPM, energy 0.8"
+   },
+   {
+    "path": "Exploration/Coast/Pirate Shanty - Pirates of the Trackless Sea.mp3",
+    "description": "Exploration/Coast/Pirate Shanty Pirates of the Trackless Sea — 107 BPM, energy 1.0"
+   },
+   {
+    "path": "Pirate Shanty - Pirates of the Trackless Sea.mp3",
+    "description": "Pirate Shanty Pirates of the Trackless Sea — 107 BPM, energy 1.0"
+   },
+   {
+    "path": "Combat/Regular Combat/Massive Creature Roar.mp3",
+    "description": "Combat/Regular Combat/Massive Creature Roar — 104 BPM, energy 1.0"
+   },
+   {
+    "path": "Massive Creature Roar.mp3",
+    "description": "Massive Creature Roar — 104 BPM, energy 1.0"
+   },
+   {
+    "path": "Exploration/Dungeon/Natural World - Landslide Near and Far.mp3",
+    "description": "Exploration/Dungeon/Natural World Landslide Near and Far — 108 BPM, energy 1.0"
+   },
+   {
+    "path": "Natural World - Landslide Near and Far.mp3",
+    "description": "Natural World Landslide Near and Far — 108 BPM, energy 1.0"
+   }
+  ]
+ },
+ {
+  "id": "dragon-fight",
+  "transcript": "O dragão ergue-se das ruínas e ruge, o fogo ilumina a caverna. Rola iniciativa! Os aventureiros preparam as armas enquanto o chão treme e as chamas avançam por vocês. O inimigo lança-se para o ataque.",
+  "candidates": [
+   {
+    "path": "Tavern/Music/Downtime - Bonfire.mp3",
+    "description": "Tavern/Music/Downtime Bonfire — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Downtime - Bonfire.mp3",
+    "description": "Downtime Bonfire — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Walking/Night/Weather - Heavy Rain.mp3",
+    "description": "Walking/Night/Weather Heavy Rain — 123 BPM, energy 0.7"
+   },
+   {
+    "path": "Weather - Heavy Rain.mp3",
+    "description": "Weather Heavy Rain — 123 BPM, energy 0.7"
+   },
+   {
+    "path": "City/Plaza/Journey - Unsafe Roads.mp3",
+    "description": "City/Plaza/Journey Unsafe Roads — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Journey - Unsafe Roads.mp3",
+    "description": "Journey Unsafe Roads — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Tavern/People/Fantasy Tavern.mp3",
+    "description": "Tavern/People/Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Fantasy Tavern.mp3",
+    "description": "Fantasy Tavern — 129 BPM, energy 0.6"
+   },
+   {
+    "path": "Combat/Boss/The Enemy.mp3",
+    "description": "Combat/Boss/The Enemy — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "The Enemy.mp3",
+    "description": "The Enemy — 120 BPM, energy 1.0"
+   },
+   {
+    "path": "Walking/Night/Weather - Light Wind.mp3",
+    "description": "Walking/Night/Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Weather - Light Wind.mp3",
+    "description": "Weather Light Wind — 136 BPM, energy 0.2"
+   },
+   {
+    "path": "Exploration/Campfire Peace/Campfire.mp3",
+    "description": "Exploration/Campfire Peace/Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Campfire.mp3",
+    "description": "Campfire — 80 BPM, energy 0.2"
+   },
+   {
+    "path": "Exploration/Forest/Corpse Wood.mp3",
+    "description": "Exploration/Forest/Corpse Wood — 129 BPM, energy 0.5"
+   },
+   {
+    "path": "Corpse Wood.mp3",
+    "description": "Corpse Wood — 129 BPM, energy 0.5"
+   },
+   {
+    "path": "The Desert.mp3",
+    "description": "The Desert — 140 BPM, energy 1.0"
+   },
+   {
+    "path": "Combat/Regular Combat/Near End Action.mp3",
+    "description": "Combat/Regular Combat/Near End Action — 145 BPM, energy 1.0"
+   },
+   {
+    "path": "Near End Action.mp3",
+    "description": "Near End Action — 145 BPM, energy 1.0"
+   },
+   {
+    "path": "Investigation/Sneak/Spooky - Dark Wind.mp3",
+    "description": "Investigation/Sneak/Spooky Dark Wind — 143 BPM, energy 1.0"
+   }
+  ]
+ }
+]

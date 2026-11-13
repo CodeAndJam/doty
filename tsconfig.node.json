@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "commonjs",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -10,7 +12,9 @@
     "outDir": "out/main",
     "rootDir": "electron"
   },
-  "include": ["electron"],
+  "include": [
+    "electron"
+  ],
   "exclude": [
     "electron/voxtral-streaming.test.ts",
     "electron/voxtral-streaming-realtime.test.ts",
@@ -18,6 +22,7 @@
     "electron/voxtral-latency.test.ts",
     "electron/voxtral-integration.test.ts",
     "electron/reranker-integration.test.ts",
-    "electron/asr-integration.test.ts"
+    "electron/asr-integration.test.ts",
+    "electron/session/harvest.test.ts"
   ]
 }

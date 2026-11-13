@@ -34,7 +34,12 @@
 - [x] Ranker: download-once plumbing. One 1.41 GB archive carries the graph, its
       manifest and the tokenizer; it is fetched in the background when a library
       exists, sha256-verified, unpacked once and skipped on every later launch.
-- [ ] Ranker: label ~50 rows from real play, to set RANK_SWITCH_FLOOR.
+- [x] Ranker eval harness: `pnpm ranker:rows` builds production-shaped rows, the
+      labelling app lives at `tools/ranker-lab/index.html`, and `pnpm ranker:eval`
+      grades top-1/top-3/precision@0.9 against a baseline.
+- [ ] Ranker: label the rows. Add real narration moments to
+      `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
+      browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.
 - [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
       `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
       the sha256 in `electron/d1-model.ts` matches it. Until then the background

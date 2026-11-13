@@ -47,7 +47,13 @@ const OPTION_TAGS = 2
 
 /** Text the ranker sees for one track: terse, because the option budget is the constraint. */
 export function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
-  const name = filename.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+  // Collapse the runs of spaces that replacing separators leaves behind: the text
+  // is tokenised by the model, so "Downtime   Bonfire" wastes option budget.
+  const name = filename
+    .replace(/\.[^.]+$/, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
   const facts = [
     meta?.genre,
     meta?.bpm ? `${meta.bpm} BPM` : null,

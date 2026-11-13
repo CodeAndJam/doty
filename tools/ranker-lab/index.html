@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Doty ranker lab</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root { --bg:#080705; --panel:#0f0d09; --line:#2e2416; --gold:#c8922a; --dim:#6b4e15; --ink:#c8b07a; --good:#4a8a6a; --bad:#b43c28; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 "Crimson Text", Georgia, serif; }
+  header { display:flex; gap:16px; align-items:center; padding:14px 20px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:5; }
+  header h1 { font:600 13px/1 "Cinzel", serif; letter-spacing:.22em; text-transform:uppercase; color:var(--gold); margin:0; }
+  .stat { font:12px monospace; color:var(--dim); }
+  .spacer { flex:1; }
+  button { font:12px monospace; color:var(--gold); background:none; border:1px solid rgba(200,146,42,.35); padding:5px 10px; cursor:pointer; }
+  button:hover { background:rgba(200,146,42,.08); }
+  button:disabled { opacity:.35; cursor:default; }
+  main { display:grid; grid-template-columns:minmax(320px,1fr) minmax(360px,1.1fr); gap:0; height:calc(100vh - 57px); }
+  section { padding:20px; overflow-y:auto; }
+  #scene { border-right:1px solid var(--line); }
+  #scene .label, #cands .label { font:11px "Cinzel", serif; letter-spacing:.2em; text-transform:uppercase; color:var(--dim); margin-bottom:10px; }
+  #text { font-size:17px; line-height:1.65; white-space:pre-wrap; color:#d8c9a4; }
+  #text mark { color:#0a0907; background:var(--gold); }
+  .hint { margin-top:18px; font:11px monospace; color:#3a2e1a; line-height:1.7; }
+  ol { list-style:none; margin:0; padding:0; }
+  li { display:flex; gap:10px; align-items:baseline; padding:9px 10px; border:1px solid transparent; border-bottom-color:#1a1408; cursor:pointer; }
+  li:hover { background:rgba(200,146,42,.05); }
+  li .n { font:11px monospace; color:var(--dim); width:20px; flex:none; }
+  li .name { flex:1; }
+  li.picked { border-color:var(--gold); background:rgba(200,146,42,.1); }
+  li.picked .name { color:#e8d5a3; }
+  li.rejected { opacity:.45; }
+  li.rejected .name { text-decoration:line-through; color:var(--bad); }
+  #none { margin-top:10px; font:12px monospace; color:var(--dim); }
+  #none.on { color:var(--bad); }
+  #done { display:none; padding:40px 20px; }
+  #done.on { display:block; }
+  code { font:12px monospace; color:var(--gold); background:#12100a; padding:1px 5px; border:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Ranker lab</h1>
+  <span class="stat" id="progress">no file</span>
+  <span class="spacer"></span>
+  <input id="file" type="file" accept="application/json" style="display:none" />
+  <button id="open">open rows.json</button>
+  <button id="prev">←</button>
+  <button id="next">→</button>
+  <button id="export" disabled>export labels</button>
+  <button id="reset">reset</button>
+</header>
+
+<main>
+  <section id="scene">
+    <div class="label">What the table said</div>
+    <div id="text">Open the <code>rows.json</code> produced by the harvest step.</div>
+    <div class="hint">
+      1–9 pick a track · click again to clear<br />
+      shift-click a track you would never play<br />
+      ← → move between rows · everything is saved in this browser
+    </div>
+  </section>
+
+  <section id="cands">
+    <div class="label">Candidates the model was offered</div>
+    <ol id="list"></ol>
+    <div id="none">nothing here fits the scene — press <b>0</b></div>
+  </section>
+</main>
+
+<section id="done">
+  <p>All rows labelled. Export the file and save it as
+  <code>test-fixtures/ranker/labels.json</code>.</p>
+</section>
+
+<script>
+const KEY = 'doty-ranker-labels-v1'
+const state = { rows: [], index: 0, labels: {} }
+
+const $ = (id) => document.getElementById(id)
+
+// Stable shuffle so a track's position does not hint at the model's preference.
+function seededOrder(row) {
+  let seed = 0
+  for (const c of row.transcript) seed = (seed * 31 + c.charCodeAt(0)) >>> 0
+  const list = row.candidates.map((c, i) => ({ c, k: (seed ^ (i * 2654435761)) >>> 0 }))
+  return list.sort((a, b) => a.k - b.k).map((x) => x.c)
+}
+
+function persist() {
+  try { localStorage.setItem(KEY, JSON.stringify({ rows: state.rows, labels: state.labels })) } catch {}
+}
+
+function restore() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || 'null')
+    if (saved && Array.isArray(saved.rows) && saved.rows.length) { state.rows = saved.rows; state.labels = saved.labels || {} }
+  } catch {}
+}
+
+function labelFor(id) {
+  return (state.labels[id] ??= { picked: null, rejects: [] })
+}
+
+function render() {
+  const row = state.rows[state.index]
+  const total = state.rows.length
+  const labelled = Object.values(state.labels).filter((l) => l && (l.picked !== null || l.rejects.length)).length
+  $('progress').textContent = total ? `${state.index + 1} / ${total} · ${labelled} labelled` : 'no file'
+  $('export').disabled = total === 0
+  $('prev').disabled = state.index === 0
+  $('next').disabled = state.index >= total - 1
+
+  if (!row) { $('list').innerHTML = ''; $('text').textContent = 'Open the rows.json produced by the harvest step.'; return }
+  $('text').textContent = row.transcript
+
+  const label = labelFor(row.id)
+  const list = $('list')
+  list.innerHTML = ''
+  seededOrder(row).forEach((cand, i) => {
+    const li = document.createElement('li')
+    if (label.picked === cand.path) li.className = 'picked'
+    else if (label.rejects.includes(cand.path)) li.className = 'rejected'
+    li.innerHTML = `<span class="n">${i + 1}</span><span class="name"></span>`
+    li.querySelector('.name').textContent = cand.description || cand.path
+    li.addEventListener('click', (e) => {
+      if (e.shiftKey) {
+        label.rejects = label.rejects.includes(cand.path)
+          ? label.rejects.filter((p) => p !== cand.path)
+          : [...label.rejects, cand.path]
+        if (label.picked === cand.path) label.picked = null
+      } else {
+        label.picked = label.picked === cand.path ? null : cand.path
+        label.rejects = label.rejects.filter((p) => p !== cand.path)
+      }
+      persist(); render()
+    })
+    list.appendChild(li)
+  })
+  $('none').className = label.picked === 'none' ? 'on' : ''
+}
+
+$('open').addEventListener('click', () => $('file').click())
+$('file').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0]
+  if (!file) return
+  const parsed = JSON.parse(await file.text())
+  state.rows = Array.isArray(parsed) ? parsed : parsed.rows
+  state.labels = {}
+  state.index = 0
+  persist(); render()
+})
+$('prev').addEventListener('click', () => { if (state.index > 0) { state.index--; render() } })
+$('next').addEventListener('click', () => { if (state.index < state.rows.length - 1) { state.index++; render() } })
+$('reset').addEventListener('click', () => {
+  if (!confirm('Discard every label in this browser?')) return
+  localStorage.removeItem(KEY); state.rows = []; state.labels = {}; state.index = 0; render()
+})
+$('export').addEventListener('click', () => {
+  const labels = state.rows.map((row) => ({
+    id: row.id,
+    picked: state.labels[row.id]?.picked ?? null,
+    rejects: state.labels[row.id]?.rejects ?? [],
+  }))
+  const blob = new Blob([JSON.stringify(labels, null, 1)], { type: 'application/json' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = 'labels.json'
+  a.click()
+  URL.revokeObjectURL(a.href)
+})
+document.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return
+  const row = state.rows[state.index]
+  if (!row) return
+  const label = labelFor(row.id)
+  if (e.key === 'ArrowRight') { e.preventDefault(); $('next').click(); return }
+  if (e.key === 'ArrowLeft') { e.preventDefault(); $('prev').click(); return }
+  if (e.key === 'Backspace') { label.picked = null; label.rejects = []; persist(); render(); return }
+  if (e.key === '0') { label.picked = label.picked === 'none' ? null : 'none'; persist(); render(); return }
+  const n = Number.parseInt(e.key, 10)
+  if (n >= 1 && n <= 9) {
+    const cand = seededOrder(row)[n - 1]
+    if (!cand) return
+    label.picked = label.picked === cand.path ? null : cand.path
+    label.rejects = label.rejects.filter((p) => p !== cand.path)
+    persist(); render()
+  }
+})
+
+restore(); render()
+</script>
+</body>
+</html>
