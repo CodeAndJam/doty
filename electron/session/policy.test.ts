@@ -54,9 +54,13 @@ describe('decideAction', () => {
     expect(decideAction(idle).kind).toBe('queue-next')
   })
 
-  it('keeps playing when the scene has not changed', () => {
-    const same = { ...base, sameScene: true, msUntilTrackEnd: 15_000 }
-    expect(decideAction(same).kind).toBe('hold')
+  it('still picks the next track at the boundary when the scene has not changed', () => {
+    // Holding here would leave dead air: the track is about to end.
+    expect(decideAction({ ...base, sameScene: true, msUntilTrackEnd: 15_000 }).kind).toBe('queue-next')
+  })
+
+  it('keeps playing mid-track when the scene has not changed', () => {
+    expect(decideAction({ ...base, sameScene: true, msUntilTrackEnd: 200_000 }).kind).toBe('hold')
   })
 
   it('says why, so the decision log is readable', () => {

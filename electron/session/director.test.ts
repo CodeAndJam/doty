@@ -20,14 +20,22 @@ describe('planStep', () => {
     expect(step.action.kind).toBe('queue-next')
   })
 
-  it('holds when the mood is unchanged, however good the alternative', () => {
+  it('picks the next track at the boundary even when the mood holds', () => {
+    // The track is ending: this is the moment to choose, not a moment to stay silent.
+    const scene = foldScene(null, { mood: 'peaceful', intensity: 0.2, probability: 0.9 }, now)
+    const step = planStep({ ...base, previous: scene, observation: { ...peaceful, trackProbability: 0.95 } })
+    expect(step.sameScene).toBe(true)
+    expect(step.action.kind).toBe('queue-next')
+  })
+
+  it('holds mid-track when the mood holds, however good the alternative', () => {
     const scene = foldScene(null, { mood: 'peaceful', intensity: 0.2, probability: 0.9 }, now)
     const step = planStep({
       ...base,
+      msUntilTrackEnd: 200_000,
       previous: scene,
       observation: { ...peaceful, trackProbability: 0.95 },
     })
-    expect(step.sameScene).toBe(true)
     expect(step.action.kind).toBe('hold')
   })
 

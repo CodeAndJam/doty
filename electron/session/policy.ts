@@ -64,13 +64,14 @@ export function decideAction(input: DecisionInput, config: PolicyConfig = DEFAUL
       : { kind: 'hold', reason: 'no track fits well enough to start' }
   }
 
-  if (input.sameScene) return { kind: 'hold', reason: 'the scene has not changed' }
-
   if (input.msUntilTrackEnd <= config.boundaryLeadMs) {
     return input.probability >= config.boundaryMinProbability
       ? { kind: 'queue-next', reason: 'the track is ending, so this is the moment to change' }
       : { kind: 'hold', reason: 'the track is ending but no candidate fits well enough' }
   }
+
+  // Mid-track with the same scene: nothing to do until the boundary arrives.
+  if (input.sameScene) return { kind: 'hold', reason: 'the scene has not changed' }
 
   if (!input.categorical) {
     return { kind: 'hold', reason: 'a new track can wait for the boundary' }
