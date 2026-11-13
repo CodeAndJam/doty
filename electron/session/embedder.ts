@@ -19,19 +19,36 @@ import fs from 'node:fs'
 import { join } from 'node:path'
 import { Tokenizer } from '@huggingface/tokenizers'
 import * as ort from 'onnxruntime-node'
-import { meanPool, normalise } from './embedding'
+import { normalise } from './embedding'
 
 export const EMBEDDING_MODEL = 'embeddinggemma-300m-q4'
-const MAX_TOKENS = 512
+const MAX_TOKENS = 2048
+
+/**
+ * EmbeddingGemma is trained with task prefixes: a query and a document are
+ * embedded differently, and skipping them measurably costs retrieval quality.
+ */
+const QUERY_PREFIX = 'task: search result | query: '
+const DOCUMENT_PREFIX = 'title: none | text: '
 
 export interface Embedder {
-  embed(texts: string[]): Promise<Float32Array[]>
+  /** Documents to be found later. */
+  embedDocuments(texts: string[]): Promise<Float32Array[]>
+  /** A search query: the transcript. */
+  embedQuery(text: string): Promise<Float32Array>
   dim: number
 }
 
+/**
+ * Every file the session needs, checked by presence and plausibility rather than
+ * by hash: the check runs at startup, and hashing 197 MB on a cold launch is a
+ * pause the user would feel. Nothing is ever re-downloaded while these exist.
+ */
 export function embedderAvailable(dir: string): boolean {
   try {
-    return fs.statSync(join(dir, 'model_q4.onnx')).size > 0 && fs.existsSync(join(dir, 'tokenizer.json'))
+    return ['model_q4.onnx', 'model_q4.onnx_data', 'tokenizer.json', 'tokenizer_config.json'].every(
+      (name) => fs.statSync(join(dir, name)).size > 1024,
+    )
   } catch {
     return false
   }
@@ -46,25 +63,24 @@ export async function loadEmbedder(dir: string): Promise<Embedder> {
     executionProviders: ['coreml', 'cpu'],
     graphOptimizationLevel: 'all',
   })
-  const outputName = session.outputNames[0]
+  // The export pools for us and emits the pooled vector directly; mean-pooling
+  // last_hidden_state again would double-pool and blur the result.
+  const outputName = session.outputNames.includes('sentence_embedding') ? 'sentence_embedding' : session.outputNames[0]
+
+  async function embedOne(prefix: string, text: string): Promise<Float32Array> {
+    const encoded = tokenizer.encode(prefix + text, { add_special_tokens: true })
+    const ids = encoded.ids.slice(0, MAX_TOKENS)
+    const feeds = {
+      input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
+      attention_mask: new ort.Tensor('int64', BigInt64Array.from(ids.map(() => 1n)), [1, ids.length]),
+    }
+    const result = await session.run(feeds)
+    return normalise(result[outputName].data as Float32Array)
+  }
 
   return {
     dim: 768,
-    async embed(texts) {
-      const out: Float32Array[] = []
-      for (const text of texts) {
-        const encoded = tokenizer.encode(text, { add_special_tokens: true })
-        const ids = encoded.ids.slice(0, MAX_TOKENS)
-        const mask = ids.map(() => 1)
-        const feeds = {
-          input_ids: new ort.Tensor('int64', BigInt64Array.from(ids.map(BigInt)), [1, ids.length]),
-          attention_mask: new ort.Tensor('int64', BigInt64Array.from(mask.map(BigInt)), [1, ids.length]),
-        }
-        const result = await session.run(feeds)
-        const hidden = result[outputName].data as Float32Array
-        out.push(normalise(meanPool(hidden, mask, 768)))
-      }
-      return out
-    },
+    embedDocuments: (texts) => Promise.all(texts.map((t) => embedOne(DOCUMENT_PREFIX, t))),
+    embedQuery: (text) => embedOne(QUERY_PREFIX, text),
   }
 }

@@ -32,6 +32,7 @@ import {
   getTags,
   getTagsMap,
   getTopPlayed,
+  pruneMissingTracks,
   recordPlay,
   setTags,
 } from './database'
@@ -298,6 +299,13 @@ function launchScanner(folder: string, force = false) {
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
+      // A scan is the only moment the library is known to be complete, so it is
+      // also the moment to forget files that moved away.
+      try {
+        pruneMissingTracks(folder, getMusicFiles(folder))
+      } catch (e) {
+        console.error('[library] prune failed:', e)
+      }
       send(EVENTS.scanComplete)
     },
     force,
@@ -765,7 +773,8 @@ handle(
       })
       // The learned pick changes *which* track, never the probability: rewriting
       // the numbers would fake a confidence the model never had.
-      const pickIndex = learned ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
+      const pickIndex =
+        learned && learned.path ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
       const step = planStep({
         previous: liveScene,
         observation: {
@@ -804,7 +813,7 @@ handle(
           kind: 'music',
           action: step.action.kind,
           reason: step.action.reason,
-          track: best >= 0 ? (request.paths[best] ?? null) : null,
+          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
           probability: best >= 0 ? (tracks[best] ?? 0) : 0,
           mood: step.scene.mood,
           source: 'auto',
@@ -818,7 +827,7 @@ handle(
           scene: step.scene.mood,
           action: step.action.kind,
           reason: step.action.reason,
-          track: tracks.length > 0 ? (request.paths[tracks.indexOf(Math.max(...tracks))] ?? null) : null,
+          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
         },
       }
     })
@@ -853,7 +862,7 @@ async function startIndexing(folder: string): Promise<void> {
     const indexer = createIndexer({
       paths: () => files,
       store: sessionStore,
-      embed: (texts) => embedder!.embed(texts),
+      embed: (texts) => embedder!.embedDocuments(texts),
       model: EMBEDDING_MODEL,
       // The folder path is most of what the model needs to know about a track:
       // "Combat/Boss/The Enemy" says more than any tag we could invent.
@@ -881,7 +890,7 @@ handle(INVOKE.embeddingStatus, () => {
 handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
   if (!embedder || !text.trim()) return []
   try {
-    const [query] = await embedder.embed([text])
+    const query = await embedder.embedQuery(text)
     const vectors = new Map<string, Float32Array>()
     for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
       const vector = sessionStore.getVector(path, EMBEDDING_MODEL)

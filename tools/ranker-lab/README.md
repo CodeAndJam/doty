@@ -29,6 +29,21 @@ the twenty candidates the app would have offered:
 pnpm ranker:rows
 ```
 
+## A ready-made dataset
+
+`test-fixtures/ranker/transcripts.json` ships 50 pt-PT DM narration moments —
+25 from *Call of the Netherdeep*, 25 from *Ryoko's Guide to the Yokai Realms* —
+covering combat, exploration, social, horror, travel and downtime scenes.
+
+`pnpm ranker:headless` runs the model over all of them and writes
+`test-results/ranker-headless.md`: every example with the mood it read, its top
+five picks and their probabilities, and what the policy would have done at a
+boundary and mid-track. `rows.json` also gains a `model` block per row.
+
+Use that report to decide what to label: the examples where the top pick is
+clearly wrong are the ones worth grading first. Then label in this app and run
+`pnpm ranker:eval` for the numbers.
+
 ## 2. Label them
 
 Open `index.html`, choose `rows.json`, and for each moment click the track you

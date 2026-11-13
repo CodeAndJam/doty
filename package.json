@@ -23,7 +23,8 @@
     "prepare": "husky",
     "verify:dmg": "bash build/verify-dmg.sh",
     "ranker:rows": "RANKER_ROWS=1 vitest run electron/session/harvest.test.ts",
-    "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts"
+    "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts",
+    "ranker:headless": "RANKER_HEADLESS=1 vitest run electron/session/headless.test.ts"
   },
   "build": {
     "appId": "com.codeandjam.doty",
