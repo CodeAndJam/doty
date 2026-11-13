@@ -12,7 +12,11 @@ export interface AutopilotConfig {
   musicEnabled: boolean
   /** Whether SFX auto-triggers are enabled (default: true) */
   sfxEnabled: boolean
-  /** Confidence threshold 0.0-1.0 (default: 0.9) */
+  /**
+   * Threshold on the top candidate's probability, not on the derived choice
+   * confidence: that is the number that reads as risk ("under 10% chance of the
+   * wrong track"), which is what an unasked switch needs.
+   */
   confidenceThreshold: number
   /** Crossfade duration in seconds (default: 3) */
   crossfadeDuration: number

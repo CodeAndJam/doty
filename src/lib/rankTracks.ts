@@ -33,7 +33,11 @@ export interface RankDeps {
   decide?: (prompt: string, candidates: string[]) => Promise<number[]>
 }
 
-/** Candidates handed to the ranker: enough to choose from, few enough to stay fast. */
+/**
+ * Candidates handed to the ranker: enough to choose from, few enough to stay fast.
+ * Also the exported graph's marker count — 20 options are baked into its shape, so
+ * raising this needs a re-export, while a smaller library simply passes fewer.
+ */
 const RERANK_CANDIDATES = 20
 
 /** Tags the ranker sees per track. The model gives each option ~24 tokens. */
