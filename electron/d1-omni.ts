@@ -8,7 +8,7 @@
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { AutoTokenizer } from '@huggingface/transformers'
+import { Tokenizer } from '@huggingface/tokenizers'
 import * as ort from 'onnxruntime-node'
 
 /**
@@ -104,9 +104,16 @@ export class D1Omni {
     const manifest = JSON.parse(readFileSync(join(dir, 'd1-omni-text-manifest.json'), 'utf8')) as D1Manifest
     if (!manifest.graphs[graph]) throw new Error(`d1-omni: ${graph} is not in the manifest`)
 
-    const tokenizer = await AutoTokenizer.from_pretrained(join(dir, 'd1-omni-src'), { local_files_only: true })
+    // transformers.js is not imported here on purpose: it pins its own onnxruntime-node,
+    // and two ORT copies in one thread terminates the process with a Napi::Error.
+    // The delimiter ids come from the manifest, so the tokenizer is all we need.
+    const src = join(dir, 'd1-omni-src')
+    const tokenizer = new Tokenizer(
+      JSON.parse(readFileSync(join(src, 'tokenizer.json'), 'utf8')),
+      JSON.parse(readFileSync(join(src, 'tokenizer_config.json'), 'utf8')),
+    )
     const tokenize = (text: string): number[] =>
-      Array.from(tokenizer.encode(escapeDelimiters(text), { add_special_tokens: false }) as ArrayLike<number>)
+      tokenizer.encode(escapeDelimiters(text), { add_special_tokens: false }).ids
 
     // CoreML runs fp16 internally, so it drifts ~3e-3 from the fp32 reference. That is
     // far inside the margin the 0.9 autopilot threshold needs; pass ['cpu'] to compare
