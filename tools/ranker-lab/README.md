@@ -1,7 +1,16 @@
 # Ranker lab
 
-A single page for labelling what the ranker should have picked. No build step, no
-server: open `index.html` in a browser.
+A single page for labelling what the ranker should have picked.
+
+```bash
+pnpm ranker:lab          # serves the page, the 50 examples and ~/Documents/Music
+```
+
+Then open the printed URL. Everything is loaded: 50 pt-PT examples, the library
+with playback, and your progress resumed at the first undecided one.
+
+No build step. Opened as a plain file it still works, minus the preloading —
+you then pick `rows.json` and the music folder by hand.
 
 ```
 tools/ranker-lab/index.html      ← open this
@@ -46,8 +55,9 @@ clearly wrong are the ones worth grading first. Then label in this app and run
 
 ## 2. Label them
 
-Open `index.html`, choose `rows.json`, and for each moment click the track you
-would actually have played. Click again to clear. Hit **open music folder** and
+Click the track you would have played. **Choosing advances to the next undecided
+example by itself**, so one screen is one decision — a per-example clock at the
+top keeps you under 30 s. Hit `0` when nothing in the library fits. Hit **open music folder** and
 pick your music folder once — the page then lists and plays every track, so you
 can label a track the model was never offered (a recall miss, recorded as
 `offered: false`).

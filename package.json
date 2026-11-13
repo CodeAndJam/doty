@@ -24,7 +24,8 @@
     "verify:dmg": "bash build/verify-dmg.sh",
     "ranker:rows": "RANKER_ROWS=1 vitest run electron/session/harvest.test.ts",
     "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts",
-    "ranker:headless": "RANKER_HEADLESS=1 vitest run electron/session/headless.test.ts"
+    "ranker:headless": "RANKER_HEADLESS=1 vitest run electron/session/headless.test.ts",
+    "ranker:lab": "node tools/ranker-lab/serve.mjs"
   },
   "build": {
     "appId": "com.codeandjam.doty",

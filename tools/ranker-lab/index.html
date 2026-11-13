@@ -62,7 +62,8 @@
 <main>
   <section id="scene">
     <div class="label">What the table said</div>
-    <div id="text">Open the <code>rows.json</code> produced by <code>pnpm ranker:rows</code>.</div>
+    <div id="text">Loading…</div>
+    <div id="clock" class="stat" style="margin-top:10px"></div>
     <div class="hint">
       1–9 pick a track · click again to clear · ▶ plays it<br />
       shift-click a track you would never play<br />
@@ -89,7 +90,7 @@
 
 <script>
 const KEY = 'doty-ranker-labels-v1'
-const state = { rows: [], index: 0, labels: {}, audio: new Map(), playing: null, urls: new Map() }
+const state = { rows: [], index: 0, labels: {}, audio: new Map(), playing: null, urls: new Map(), served: false, rowStartedAt: Date.now() }
 const $ = (id) => document.getElementById(id)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 
@@ -119,7 +120,31 @@ function status(text) {
   if (el) el.textContent = text
 }
 
+function servedUrl(path) {
+  return state.served ? `/audio?path=${encodeURIComponent(path)}` : null
+}
+
 function play(path) {
+  // Served mode: the server streams the file, so no folder picker is needed.
+  const direct = servedUrl(path)
+  if (direct) {
+    if (state.playing === path) { stop(); status(''); return }
+    stop()
+    const audio = new Audio(direct)
+    audio.preload = 'auto'
+    state.audioEl = audio
+    state.playing = path
+    audio.addEventListener('ended', () => { state.playing = null; status(''); render() })
+    audio.addEventListener('error', () => {
+      state.playing = null
+      status(`Cannot play ${path.split('/').pop()} — is it in the library folder?`)
+      render()
+    })
+    audio.play().then(() => status(`Playing ${path}`), (e) => { state.playing = null; status(`Playback blocked: ${e?.message ?? e}`); render() })
+    render()
+    return
+  }
+
   const found = resolve(path)
   if (!found) {
     status(state.audio.size === 0
@@ -176,10 +201,30 @@ function labelFor(id) { return (state.labels[id] ??= { picked: null, rejects: []
 
 function pick(id, path, offered) {
   const label = labelFor(id)
-  label.picked = label.picked === path ? null : path
+  const clearing = label.picked === path
+  label.picked = clearing ? null : path
   label.offered = offered
   label.rejects = label.rejects.filter((p) => p !== path)
-  persist(); render()
+  persist()
+  // A decision is the whole screen: move on rather than ask for another click.
+  if (!clearing) advance()
+  else render()
+}
+
+/** Next row still waiting for a decision, else the next row. */
+function advance() {
+  stop()
+  const pending = state.rows.findIndex((row, i) => i > state.index && !isDecided(row.id))
+  if (pending >= 0) { state.index = pending; state.rowStartedAt = Date.now(); render(); return }
+  const anyPending = state.rows.findIndex((row) => !isDecided(row.id))
+  if (anyPending >= 0) { state.index = anyPending; state.rowStartedAt = Date.now(); render(); return }
+  if (state.index < state.rows.length - 1) { state.index += 1; state.rowStartedAt = Date.now(); render(); return }
+  render()
+}
+
+function isDecided(id) {
+  const label = state.labels[id]
+  return Boolean(label && (label.picked !== null || label.rejects.length))
 }
 
 // ---------- rendering ----------
@@ -260,6 +305,8 @@ function render() {
   $('prev').disabled = state.index === 0
   $('next').disabled = state.index >= total - 1
 
+  const elapsed = Math.round((Date.now() - state.rowStartedAt) / 1000)
+  $('clock').textContent = total ? `this example: ${elapsed}s${elapsed > 30 ? ' — over 30s' : ''}` : ''
   if (!row) { $('list').innerHTML = ''; renderAll(null); return }
   $('text').textContent = row.transcript
 
@@ -309,8 +356,12 @@ $('musicDir').addEventListener('change', (e) => {
   render()
 })
 $('search').addEventListener('input', () => renderAll(state.rows[state.index]))
-$('prev').addEventListener('click', () => { if (state.index > 0) { state.index--; stop(); render() } })
-$('next').addEventListener('click', () => { if (state.index < state.rows.length - 1) { state.index++; stop(); render() } })
+$('prev').addEventListener('click', () => {
+  if (state.index > 0) { state.index--; stop(); state.rowStartedAt = Date.now(); render() }
+})
+$('next').addEventListener('click', () => {
+  if (state.index < state.rows.length - 1) { state.index++; stop(); state.rowStartedAt = Date.now(); render() }
+})
 $('reset').addEventListener('click', () => {
   if (!confirm('Discard every label in this browser?')) return
   localStorage.removeItem(KEY); state.rows = []; state.labels = {}; state.index = 0; stop(); render()
@@ -337,7 +388,15 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowRight') { e.preventDefault(); $('next').click(); return }
   if (e.key === 'ArrowLeft') { e.preventDefault(); $('prev').click(); return }
   if (e.key === 'Backspace') { label.picked = null; label.rejects = []; persist(); render(); return }
-  if (e.key === '0') { label.picked = label.picked === 'none' ? null : 'none'; label.offered = true; persist(); render(); return }
+  if (e.key === '0') {
+    const clearing = label.picked === 'none'
+    label.picked = clearing ? null : 'none'
+    label.offered = true
+    persist()
+    if (clearing) render()
+    else advance()
+    return
+  }
   const n = Number.parseInt(e.key, 10)
   if (n >= 1 && n <= 9) {
     const cand = seededOrder(row)[n - 1]
@@ -345,7 +404,35 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
-restore(); render()
+async function boot() {
+  restore()
+  try {
+    const res = await fetch('/rows.json')
+    if (res.ok) {
+      state.rows = await res.json()
+      state.served = true
+      // Resume at the first undecided example, so a session picks up where it stopped.
+      const pending = state.rows.findIndex((row) => !isDecided(row.id))
+      state.index = pending >= 0 ? pending : 0
+      state.rowStartedAt = Date.now()
+      status(`Loaded ${state.rows.length} examples from the server.`)
+      try {
+        const lib = await (await fetch('/library.json')).json()
+        $('count').textContent = `· ${lib.files.length} tracks in ${lib.folder}`
+      } catch {}
+    }
+  } catch {
+    // Opened as a file:// page: fall back to the pickers.
+  }
+  render()
+  setInterval(() => {
+    if (!state.rows.length) return
+    const elapsed = Math.round((Date.now() - state.rowStartedAt) / 1000)
+    const clock = $('clock')
+    if (clock) clock.textContent = `this example: ${elapsed}s${elapsed > 30 ? ' — over 30s' : ''}`
+  }, 1000)
+}
+boot()
 </script>
 </body>
 </html>
