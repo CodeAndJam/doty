@@ -2,7 +2,16 @@
 
 ## Pending
 
-- [ ] STT quality: a real VAD model (transcribe-cpp exposes a `vad` role — Silero
+- [x] STT: retry once on the CPU when the GPU fails to load, instead of ending
+      the session. Ported from Handy's supervisor, which does the same.
+- [x] STT: transcribe.cpp 0.4.2 (parakeet mel-padding fix, mmapped weights).
+      The 10-day release hold is waived for it in `pnpm-workspace.yaml`.
+- [ ] STT: spoken-language detection over the transcript text, the way Handy uses
+      `whatlang`. Rust cannot be copied into an Electron app; the JS equivalents
+      (`tinyld`, `franc`) do the same job on the text we already have, and would
+      replace the script guard with a real decision — plus enable "auto, but only
+      among my preferred languages".
+- [ ] STT: a real VAD model (transcribe-cpp exposes a `vad` role — Silero
       scores frames, `minSpeechMs`/`minSilenceMs`) instead of the RMS gate. The
       RMS gate stops a quiet room being decoded, but it cannot stop Roman-script
       hallucination ("Yeah, it's trying to make things") under a `pt` hint, and

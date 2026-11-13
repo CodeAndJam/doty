@@ -77,8 +77,8 @@ importers:
         specifier: ^5.2.0
         version: 5.2.0(bare-events@2.8.2)
       transcribe-cpp:
-        specifier: ^0.4.1
-        version: 0.4.1
+        specifier: ^0.4.2
+        version: 0.4.2
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.6.4
@@ -1183,30 +1183,30 @@ packages:
   '@tokenizer/token@0.3.0':
     resolution: {integrity: sha512-OvjF+z51L3ov0OyAU0duzsYuvO01PH7x4t6DJx+guahgTnBHkhJdG7soQeTSFLWN3efnHyibZ4Z8l2EuWwJN3A==}
 
-  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
-    resolution: {integrity: sha512-Sg8obJiDeBxSWQvFcHxlVJoY5X+BzMFMNH+5LU5oVfj8iHJ0dj0uVlBUrNIN6D2xCBksoLVOEMCbasqUXv/DLw==}
+  '@transcribe-cpp/darwin-arm64-metal@0.4.2':
+    resolution: {integrity: sha512-ZaIIbvts0VxDYQ+NoV2X5qtZUXzd6Dshh2I+1BGcGuHD9aq0woQzP4wWcfmsCstI+wbfOj9TXiSrELAolneYAQ==}
     cpu: [arm64]
     os: [darwin]
 
-  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
-    resolution: {integrity: sha512-lRP/Mr8msBMUHXkLPtGZoVhNXgxdTV3tzEmpLki0VeBP3LraPC73m9PjfhzoYNEwXEnpqdLwNaTnuCHOwJRugw==}
+  '@transcribe-cpp/darwin-x64-cpu@0.4.2':
+    resolution: {integrity: sha512-8/4eBgtzTMtYjoqtcSbtLUzQQJSjW0w3/N4ZrYPIGACqnfuoRsflClwfnCkCDJkbiegbXNMmwIBtK0VcAx6HTw==}
     cpu: [x64]
     os: [darwin]
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
-    resolution: {integrity: sha512-b010Fhfnqe4jGJLMhvx6LucvysxK638qY2eww1oaaErzkAKutdN0uRx84vsfXVxVr3lKlzdL5vq6Zv/QfAArTA==}
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.2':
+    resolution: {integrity: sha512-Vi+6Qc5CvXV62GyTjJ17xzJxSabU74fiA/za/9QarNWRvVgZf08I5udZCfYbxyjF3UPAaxOtCCQCv+hByd19aA==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
-    resolution: {integrity: sha512-AuiE8PSFbDndLJDpt8lilZIyg2syQSRBmZQWklx0rd9vF1M/Wfn4StKUXTGC4rouQOTJPy3ViioGLpyYr6unaw==}
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.2':
+    resolution: {integrity: sha512-0MXdwu/MwqS5RJWpauVU/VVbhZGVWvmKPP/1l4Xk2nYX8KPrAsGzIcOmc0kLgvYwAN44PweELZMDfX9cwN2GdA==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
-    resolution: {integrity: sha512-0W8yQ6SgmPKgVaLHVGkj5gr2uzMS9mAVHMCJKZCFdhvQxeQlUbrvN/8ooyYD7S5qmLsLNEHt0ecMMVgsoWUu9A==}
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.2':
+    resolution: {integrity: sha512-Eae57TNF7omKxi6raUBf0Cg9wVkc9jG7LKvLqwBhqj1Bdm39NDwezb3GzOpgHJhsw9Pxenqy0zCEeNFpV9q7ig==}
     cpu: [x64]
     os: [win32]
 
@@ -3044,8 +3044,8 @@ packages:
     resolution: {integrity: sha512-BcDSDW+SIGWVOns1Zm6Yg91q9AEj7eaID0QDY9oIqJD1A8dscNwMcl9Sms2DeuWCNov1X0/oXanHGYQBSLwZsg==}
     engines: {node: ^22.14.0 || >=24.0.0}
 
-  transcribe-cpp@0.4.1:
-    resolution: {integrity: sha512-6+cemagaGsOC8X3XWPCn7Ek+jjwyH2/NdTyBcEH7FtFjC3Ciyih2Xx6/GSRirZolxmxENtbvfwu1WV5RzutgCw==}
+  transcribe-cpp@0.4.2:
+    resolution: {integrity: sha512-lLYJB53j2wXIbSBXBlzkX7qaex0jJYWx6eGCZcrSd34KokQPblgNrz+RHTAzKocjWnt72osR7iuasrS7iKVb3A==}
     engines: {node: '>=22'}
 
   truncate-utf8-bytes@1.0.2:
@@ -4258,19 +4258,19 @@ snapshots:
 
   '@tokenizer/token@0.3.0': {}
 
-  '@transcribe-cpp/darwin-arm64-metal@0.4.1':
+  '@transcribe-cpp/darwin-arm64-metal@0.4.2':
     optional: true
 
-  '@transcribe-cpp/darwin-x64-cpu@0.4.1':
+  '@transcribe-cpp/darwin-x64-cpu@0.4.2':
     optional: true
 
-  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.1':
+  '@transcribe-cpp/linux-arm64-cpu-vulkan@0.4.2':
     optional: true
 
-  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.1':
+  '@transcribe-cpp/linux-x64-cpu-vulkan@0.4.2':
     optional: true
 
-  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.1':
+  '@transcribe-cpp/win32-x64-cpu-vulkan@0.4.2':
     optional: true
 
   '@tybys/wasm-util@0.10.1':
@@ -6138,15 +6138,15 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  transcribe-cpp@0.4.1:
+  transcribe-cpp@0.4.2:
     dependencies:
       koffi: 3.1.1
     optionalDependencies:
-      '@transcribe-cpp/darwin-arm64-metal': 0.4.1
-      '@transcribe-cpp/darwin-x64-cpu': 0.4.1
-      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.4.1
-      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.4.1
-      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.4.1
+      '@transcribe-cpp/darwin-arm64-metal': 0.4.2
+      '@transcribe-cpp/darwin-x64-cpu': 0.4.2
+      '@transcribe-cpp/linux-arm64-cpu-vulkan': 0.4.2
+      '@transcribe-cpp/linux-x64-cpu-vulkan': 0.4.2
+      '@transcribe-cpp/win32-x64-cpu-vulkan': 0.4.2
 
   truncate-utf8-bytes@1.0.2:
     dependencies:

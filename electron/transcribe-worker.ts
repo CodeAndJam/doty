@@ -144,12 +144,21 @@ function releaseAll() {
   clearTimers()
 }
 
-async function loadModel(modelPath: string, requestedLanguage?: string) {
+async function loadModel(modelPath: string, requestedLanguage?: string, backend: 'auto' | 'cpu' = 'auto') {
   await loadLib()
   releaseAll()
 
   sendMsg({ type: 'status', status: 'loading' })
-  model = await TranscribeModel.load(modelPath, { backend: 'auto' })
+  try {
+    model = await TranscribeModel.load(modelPath, { backend })
+  } catch (e) {
+    // A dead GPU must degrade the session, not end it: retry once on the CPU,
+    // which is the same recovery Handy's own supervisor performs.
+    if (backend === 'cpu') throw e
+    sendMsg({ type: 'status', status: 'loading' })
+    sendMsg({ type: 'notice', message: 'GPU failed to load; retrying on the CPU' })
+    return loadModel(modelPath, requestedLanguage, 'cpu')
+  }
   session = model.createSession()
   const caps = model.capabilities
   supportsStreaming = Boolean(caps?.supportsStreaming)
