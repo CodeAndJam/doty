@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/CodeAndJam/doty/compare/v4.0.0...v4.0.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* replace deprecated safeStorage calls and silence ORT CoreML warnings ([#120](https://github.com/CodeAndJam/doty/issues/120)) ([2b0d2b7](https://github.com/CodeAndJam/doty/commit/2b0d2b7ad80c9152fce4d6761182a8b81bd39475))
+
 ## [4.0.0](https://github.com/CodeAndJam/doty/compare/v3.2.2...v4.0.0) (2026-11-13)
 
 
