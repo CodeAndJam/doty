@@ -101,6 +101,10 @@ Dependencies are held for **10 days** after publish before adoption
 (`minimumReleaseAge` in `pnpm-workspace.yaml`). Bump a version only when it is
 older than that; security fixes can be exempted with `minimumReleaseAgeExclude`.
 
+`pnpm dev` in a git worktree uses its own profile (`~/.doty/profiles/<name>`),
+so several checkouts can run at once; `DOTY_PROFILE=<name>` overrides it and
+downloaded models stay shared in `~/.doty/models`.
+
 ```bash
 # Install deps and rebuild native addons
 npm install

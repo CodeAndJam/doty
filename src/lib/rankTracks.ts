@@ -46,7 +46,6 @@ const RERANK_CANDIDATES = 20
 /** Tags the ranker sees per track. The model gives each option ~24 tokens. */
 const OPTION_TAGS = 2
 
-/** Text the ranker sees for one track: terse, because the option budget is the constraint. */
 /** Genre values that appear on nearly everything and therefore distinguish nothing. */
 const UNINFORMATIVE_GENRES = new Set(['music', 'unknown', 'games', 'other', ''])
 

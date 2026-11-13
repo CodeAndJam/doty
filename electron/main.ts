@@ -1112,8 +1112,8 @@ handle(INVOKE.discordSetVolume, (_e, volume: number) => {
 
 handle(INVOKE.discordGetVolume, () => getDiscordVolume())
 
-handle(INVOKE.discordHasToken, () => {
-  return loadToken() !== ''
+handle(INVOKE.discordHasToken, async () => {
+  return (await loadToken()) !== ''
 })
 
 handle(INVOKE.discordClearToken, () => {

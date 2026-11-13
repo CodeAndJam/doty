@@ -17,6 +17,10 @@
       hallucination ("Yeah, it's trying to make things") under a `pt` hint, and
       neither can the script guard: both are Latin. A VAD segmenter also gives
       better chunk cuts than the current quietest-frame heuristic.
+- [ ] Profiles: instances share `~/.doty/models`, so two profiles downloading the
+      same model at once write the same `.part` file. Serialize on a lock file or
+      give the `.part` a per-process suffix before this bites a first run.
+
 - [ ] STT quality: record a real conference-mic fixture (laptop mic, far field,
       6 speakers, music playing) and replace the synthetic 12 dB SNR noise gate.
       See `docs/QUALITY.md`.

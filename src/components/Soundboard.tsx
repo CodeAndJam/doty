@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAudioPlayer } from '../hooks/useAudioPlayer'
 import { useAutopilot } from '../hooks/useAutopilot'
@@ -9,7 +10,7 @@ import { describeTrack } from '../lib/rankTracks'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
-import { BrowseIcon, ChevronDown, ChevronUp, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
+import { BrowseIcon, ChevronLeft, ChevronRight, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
 import PlayerBar from './PlayerBar'
 import QueuePanel from './QueuePanel'
 import SfxBrowsePanel from './SfxBrowsePanel'
@@ -38,6 +39,47 @@ function loadSfxPins(): string[] {
 }
 function saveSfxPins(pins: string[]) {
   localStorage.setItem(SFX_PINS_KEY, JSON.stringify(pins))
+}
+
+/** Slim side rail shown in place of a collapsed column; click to expand it again. */
+function CollapsedRail({
+  label,
+  color,
+  borderColor,
+  icon,
+  count,
+  onExpand,
+}: {
+  label: string
+  color: string
+  borderColor: string
+  icon: ReactNode
+  count: number
+  onExpand: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      title={`Expand ${label} column`}
+      className="flex-1 flex flex-col items-center gap-3 py-3 hover:opacity-80 transition-opacity"
+      style={{ border: `1px solid ${borderColor}`, color }}
+    >
+      {icon}
+      <span
+        style={{
+          writingMode: 'vertical-rl',
+          fontFamily: "'Cinzel', serif",
+          fontSize: '11px',
+          letterSpacing: '0.2em',
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </span>
+      {count > 0 && <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{count}</span>}
+    </button>
+  )
 }
 
 interface Props {
@@ -696,8 +738,18 @@ export default function Soundboard({
       {/* Two-column layout */}
       <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
         {/* ── Left column: Music ──────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'shrink-0'}`}>
-          {autopilot.pendingTransition && (
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'w-9 shrink-0'}`}>
+          {!showMusic && (
+            <CollapsedRail
+              label="Music"
+              color="#c8922a"
+              borderColor="#2e2416"
+              icon={<MusicNoteIcon />}
+              count={pinned.length + suggestions.length}
+              onExpand={() => setShowMusic(true)}
+            />
+          )}
+          {showMusic && autopilot.pendingTransition && (
             <div
               className="flex items-center gap-2 shrink-0 mb-2 px-2 py-1"
               data-testid="autopilot-countdown"
@@ -726,7 +778,7 @@ export default function Soundboard({
           )}
 
           {/* Music column header */}
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
               <MusicNoteIcon />
               <span
@@ -758,7 +810,9 @@ export default function Soundboard({
                   AUTO ≥{Math.round(autopilot.config.confidenceThreshold * 100)}%
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+                <ChevronLeft />
+              </span>
             </button>
             {showMusic && (
               <div className="flex items-center gap-2">
@@ -1054,9 +1108,19 @@ export default function Soundboard({
         </div>
 
         {/* ── Right column: SFX ───────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'shrink-0'}`}>
+        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'w-9 shrink-0'}`}>
+          {!showSfx && (
+            <CollapsedRail
+              label="SFX"
+              color="#4a8a6a"
+              borderColor="rgba(74,138,106,0.3)"
+              icon={<SfxIcon />}
+              count={sfxPinned.length + sfxSuggestions.length}
+              onExpand={() => setShowSfx(true)}
+            />
+          )}
           {/* SFX column header */}
-          <div className="flex items-center justify-between mb-2 shrink-0">
+          <div className={`${showSfx ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
               <SfxIcon />
               <span
@@ -1085,7 +1149,9 @@ export default function Soundboard({
                   AUTO
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showSfx ? <ChevronDown /> : <ChevronUp />}</span>
+              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+                <ChevronRight />
+              </span>
             </button>
             {showSfx && (
               <div className="flex items-center gap-2">

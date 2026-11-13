@@ -119,10 +119,10 @@ export function getState(): DiscordState {
 /** A Discord bot token: three dot-separated segments. */
 const BOT_TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
 
-function saveToken(token: string): void {
+async function saveToken(token: string): Promise<void> {
   try {
-    if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = safeStorage.encryptString(token)
+    if (await safeStorage.isAsyncEncryptionAvailable()) {
+      const encrypted = await safeStorage.encryptStringAsync(token)
       store.set('discordToken', encrypted.toString('base64'))
     } else {
       // Fallback: store as-is (less secure, but functional)
@@ -135,13 +135,14 @@ function saveToken(token: string): void {
   }
 }
 
-export function loadToken(): string {
+export async function loadToken(): Promise<string> {
   const raw = store.get('discordToken', '') as string
   if (!raw) return ''
-  if (safeStorage.isEncryptionAvailable()) {
+  if (await safeStorage.isAsyncEncryptionAvailable()) {
     try {
       const buf = Buffer.from(raw, 'base64')
-      return safeStorage.decryptString(buf)
+      // A rotated key is still readable; re-encrypting is not worth the write here.
+      return (await safeStorage.decryptStringAsync(buf)).result
     } catch {
       // Unencrypted token from a previous run, or ciphertext this build can no
       // longer decrypt. Keep the plaintext one, drop the noise.
@@ -188,7 +189,7 @@ export function getAutoConnect(): boolean {
  */
 export async function tryAutoConnect(): Promise<void> {
   if (!getAutoConnect()) return
-  const token = loadToken()
+  const token = await loadToken()
   if (!token) return
 
   const guildId = store.get('discordLastGuildId', '') as string
@@ -215,7 +216,7 @@ export async function connect(token?: string): Promise<void> {
     await disconnect()
   }
 
-  const botToken = token || loadToken()
+  const botToken = token || (await loadToken())
   if (!botToken) {
     setState({ status: 'error', error: 'No bot token configured' })
     throw new Error('No bot token configured')
@@ -255,13 +256,14 @@ export async function connect(token?: string): Promise<void> {
       reject(new Error(msg))
     }
 
-    c.once('ready', () => {
+    c.once('ready', async () => {
       clearTimeout(timeout)
       console.log(`[discord] Bot connected as ${c.user?.tag}`)
       setState({ status: 'ready', error: null })
+      // Persist before resolving — saveToken swallows keychain failures, so this
+      // cannot hang or reject the connect it belongs to.
+      if (token) await saveToken(token)
       resolve()
-      // Persist after resolving — a failing keychain must not block the session
-      if (token) saveToken(token)
     })
 
     c.once('error', (err) => {

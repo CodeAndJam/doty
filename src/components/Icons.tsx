@@ -46,6 +46,22 @@ export function ChevronDown() {
   )
 }
 
+export function ChevronLeft() {
+  return (
+    <svg className="w-4 h-4" fill="#6b4e15" viewBox="0 0 24 24">
+      <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+    </svg>
+  )
+}
+
+export function ChevronRight() {
+  return (
+    <svg className="w-4 h-4" fill="#6b4e15" viewBox="0 0 24 24">
+      <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+    </svg>
+  )
+}
+
 export function BrowseIcon() {
   return (
     <svg className="w-4 h-4" fill="none" stroke="#6b4e15" strokeWidth="2" viewBox="0 0 24 24">

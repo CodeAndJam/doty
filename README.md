@@ -204,6 +204,25 @@ pnpm run build && pnpm run test:e2e
 pnpm run test:coverage
 ```
 
+### Running from a git worktree
+
+Each checkout gets its own database, sessions and Electron settings, so several
+instances can run at once. `pnpm dev` in a worktree picks a profile from the
+worktree directory automatically; the main checkout keeps `~/.doty`.
+
+```bash
+git worktree add ../doty-feature -b feat/feature
+cd ../doty-feature && pnpm install && pnpm dev
+```
+
+Profiles live in `~/.doty/profiles/<name>/`. Downloaded models stay shared in
+`~/.doty/models/`, so a new worktree does not re-download gigabytes. Override
+with `DOTY_PROFILE=my-test pnpm dev`; use the same value to reopen a profile.
+Two instances must not use the same Discord bot token at the same time.
+
+If the launch fails with `Error: Electron uninstall`, the Electron binary in that
+worktree was never downloaded: `node node_modules/electron/install.js` fixes it.
+
 ### Native addons
 
 `better-sqlite3` is a native addon rebuilt against Electron's Node.js version automatically via the `postinstall` script. `transcribe-cpp` ships prebuilt libraries (no compile step). If you see a `NODE_MODULE_VERSION` mismatch error:
