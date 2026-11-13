@@ -73,8 +73,11 @@ import {
 } from './model-paths'
 import { getMusicFiles } from './music-library'
 import { handleMusicRequest } from './music-protocol'
-import { decide, disposeRanker, setOnRankerStatus } from './ranker'
+import { decide, disposeRanker, evaluateSession, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
+import { planStep } from './session/director'
+import type { Scene } from './session/scene'
+import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
 import { store } from './store'
@@ -714,6 +717,69 @@ handle(INVOKE.rankerStatus, () => ({
 }))
 
 handle(INVOKE.rankerDownload, () => downloadRanker())
+
+const sessionStore = createSessionStore(getDb() as never)
+
+let liveScene: Scene | null = null
+let lastChangeAt = 0
+
+handle(
+  INVOKE.sessionEvaluate,
+  async (
+    _e,
+    request: {
+      state: string
+      candidates: string[]
+      msUntilTrackEnd: number | null
+      autopilot: boolean
+      override: boolean
+    },
+  ) => {
+    const { tracks, moods } = await evaluateSession(request.state, request.candidates)
+    if (moods.length === 0) return { tracks, moods, plan: null }
+
+    let best = 0
+    for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
+    const { MOODS } = await import('./d1-omni')
+    const now = Date.now()
+    const step = planStep({
+      previous: liveScene,
+      observation: {
+        mood: MOODS[best] ?? 'exploration',
+        intensity: 0.5,
+        moodProbability: moods[best] ?? 0,
+        trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
+      },
+      now,
+      msUntilTrackEnd: request.msUntilTrackEnd,
+      msSinceLastChange: now - lastChangeAt,
+      autopilot: request.autopilot,
+      override: request.override,
+    })
+
+    if (step.scene !== liveScene && liveScene !== null) {
+      lastChangeAt = now
+      sessionStore.recordScene({
+        session: 'live',
+        mood: step.scene.mood,
+        intensity: step.scene.intensity,
+        startedAt: step.scene.since,
+      })
+    }
+    liveScene = step.scene
+
+    return { tracks, moods, plan: { scene: step.scene.mood, action: step.action.kind, reason: step.action.reason } }
+  },
+)
+handle(INVOKE.sessionDecision, (_e, row: Parameters<typeof sessionStore.recordDecision>[0]) => {
+  sessionStore.recordDecision(row)
+  return { ok: true }
+})
+handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.recordPreference>[0]) => {
+  sessionStore.recordPreference(row)
+  return { ok: true }
+})
+handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
 handle(INVOKE.rankerDecide, async (_e, prompt: string, candidates: string[]) => {
   return decide(prompt, candidates)

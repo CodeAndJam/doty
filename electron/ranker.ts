@@ -4,10 +4,17 @@ import { app } from 'electron'
 
 export type RankerStatus = 'loading' | 'ready' | 'error'
 
-type WorkerMessage = { type: string; id?: number; probabilities?: number[]; error?: string }
+type WorkerMessage = {
+  type: string
+  id?: number
+  probabilities?: number[]
+  tracks?: number[]
+  moods?: number[]
+  error?: string
+}
 
 type Pending = {
-  resolve: (probabilities: number[]) => void
+  resolve: (value: number[] | { tracks: number[]; moods: number[] }) => void
   reject: (err: Error) => void
   timer: ReturnType<typeof setTimeout>
 }
@@ -119,8 +126,25 @@ export async function decide(prompt: string, candidates: string[]): Promise<numb
     const timer = setTimeout(() => {
       if (pending.delete(id)) reject(new Error('Ranker decide timed out'))
     }, DECIDE_TIMEOUT_MS)
-    pending.set(id, { resolve, reject, timer })
+    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
     worker?.postMessage({ type: 'decide', id, prompt, candidates })
+  })
+}
+
+/** Track probabilities and the scene's mood distribution, from one model load. */
+export async function evaluateSession(
+  state: string,
+  candidates: string[],
+): Promise<{ tracks: number[]; moods: number[] }> {
+  await ensureWorker()
+  if (candidates.length === 0) return { tracks: [], moods: [] }
+  const id = nextId++
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pending.delete(id)) reject(new Error('Ranker evaluate timed out'))
+    }, DECIDE_TIMEOUT_MS)
+    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
+    worker?.postMessage({ type: 'evaluate', id, prompt: state, candidates })
   })
 }
 

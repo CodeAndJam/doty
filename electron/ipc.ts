@@ -31,6 +31,10 @@ export const INVOKE = {
   rankerStatus: 'ranker:status',
   rankerDecide: 'ranker:decide',
   rankerDownload: 'ranker:download',
+  sessionEvaluate: 'session:evaluate',
+  sessionDecision: 'session:decision',
+  sessionPreference: 'session:preference',
+  sessionReport: 'session:report',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection
