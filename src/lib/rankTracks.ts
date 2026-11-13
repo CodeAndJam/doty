@@ -46,6 +46,13 @@ const RERANK_CANDIDATES = 20
 const OPTION_TAGS = 2
 
 /** Text the ranker sees for one track: terse, because the option budget is the constraint. */
+/** Genre values that appear on nearly everything and therefore distinguish nothing. */
+const UNINFORMATIVE_GENRES = new Set(['music', 'unknown', 'games', 'other', ''])
+
+function isInformativeGenre(genre: string | null | undefined): genre is string {
+  return !!genre && !UNINFORMATIVE_GENRES.has(genre.trim().toLowerCase())
+}
+
 export function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
   // Collapse the runs of spaces that replacing separators leaves behind: the text
   // is tokenised by the model, so "Downtime   Bonfire" wastes option budget.
@@ -55,7 +62,9 @@ export function describeTrack(filename: string, meta: TrackMeta | undefined, tag
     .replace(/\s+/g, ' ')
     .trim()
   const facts = [
-    meta?.genre,
+    // "Music" is what the tagger writes when it has nothing to say, and it appears
+    // on every music file: a token that never varies carries no signal, only cost.
+    isInformativeGenre(meta?.genre) ? meta?.genre : null,
     meta?.bpm ? `${meta.bpm} BPM` : null,
     meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
   ].filter(Boolean)

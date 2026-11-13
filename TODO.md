@@ -73,7 +73,12 @@
       Verified: one fused ONNX graph, needs empty `[0,512]` media tensors for a
       text row, 768-dim output, and it runs on CPU because CoreML rejects
       zero-element inputs.
-- [ ] Embeddings: **audio** path. `audio_encoder_q4.onnx` takes
+- [x] Retrieval is text-first (ADR 0003). The eval says top-1 0/24 with 92% of picks
+      offered, so a better retriever cannot move the number; the description can.
+- [ ] Ranker: enrich `describeTrack` — loudness and onset rate from essentia, an
+      instrumental flag, and hand tags. The option text is currently a filename,
+      BPM and `"Music"`. This is the measured bottleneck.
+- [ ] Embeddings: **audio** path, triggered by a retrieval miss in the eval — `audio_encoder_q4.onnx` takes
       `input_features` shaped `[1, frames, 128]` plus `input_features_mask`;
       mel parameters must be read from the model config and validated on one real
       track before indexing — a wrong mel yields plausible vectors that mean

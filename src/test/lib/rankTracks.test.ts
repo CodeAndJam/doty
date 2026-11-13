@@ -68,6 +68,12 @@ describe('describeTrack', () => {
     expect(text).not.toContain('epic')
   })
 
+  it('drops a genre that never varies, because it carries no signal', () => {
+    const text = describeTrack('Combat/Boss/The Enemy.mp3', { genre: 'Music', bpm: 120, energy: 1 } as never)
+    expect(text).not.toContain('Music')
+    expect(text).toBe('Combat/Boss/The Enemy — 120 BPM, energy 1.0')
+  })
+
   it('falls back to the name alone when there is no metadata', () => {
     expect(describeTrack('tavern_theme.mp3', undefined)).toBe('tavern theme')
   })
