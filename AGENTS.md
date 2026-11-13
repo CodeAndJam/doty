@@ -68,6 +68,33 @@ Releases are **fully automated**. On every push/merge to `main`:
 
 Maintain a `TODO.md` file at the project root to track pending work, known issues, and planned features. Update it as tasks are completed or new ones are identified. This file serves as a lightweight project board for contributors and AI agents.
 
+## Product Intent
+
+**A DM should never have to touch Doty mid-session.** Music and SFX follow the
+table on their own: the right mood, the right transition moment, no whiplash,
+no vocals over narration, no silence between tracks. Every recommendation and
+autopilot change is judged against that, not against "did the model run".
+
+Concretely, when changing anything in the recommendation or playback path:
+
+- **The DM's attention is the scarce resource.** A suggestion the DM has to act
+  on, a track they have to skip, or a switch they have to time by hand is a
+  defect, even when the model was correct.
+- **Never embarrassing beats clever.** A confident wrong SFX, a vocal track over
+  a monologue, or a mid-scene hard cut costs more than a missed opportunity.
+  When unsure, keep playing.
+- **Prefer changing at boundaries.** The next track is chosen before the current
+  one ends. Mid-track changes are the exception, for categorical scene changes
+  only, and need a higher bar than a boundary change.
+- **Degrade, never block.** Missing model, missing metadata or an unfamiliar
+  language must fall back to keyword/energy matching with the mode visible in
+  the UI. Nothing in this path may stop playback or hide suggestions.
+- **Measure the goal.** Overrides per session and time-to-first-manual-pick are
+  the KPIs. Thresholds and heuristics change only against real session data (see
+  `test-fixtures/` and the eval items in `TODO.md`), never on intuition.
+- **Everything local.** No telemetry, no cloud calls; model downloads are the
+  only network use.
+
 ## Local Development
 
 Dependencies are held for **10 days** after publish before adoption
