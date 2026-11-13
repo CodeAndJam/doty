@@ -56,8 +56,10 @@
       Gemma licence). Retrieval then ranks candidates by cosine over the
       `track_vectors` table instead of keywords; store is already there. Keep the
       keyword/energy prefilter as the fallback and the guarantee of band coverage.
-- [ ] Preferences: `session:preference` is stored but never read. Use it to boost
-      a track the DM chose for a similar past segment before the model is asked.
+- [x] Preferences: read. Where the model's top two are within 0.02, the track the
+      DM chose for this scene before breaks the tie. Probabilities are never
+      rewritten — that would fake confidence the model did not have — and a
+      decisive model is never overruled.
 - [ ] Session report UI: overrides per session and time-to-first-manual-pick, the
       KPI from AGENTS.md.
       narration plus the 20 candidates and the track you would have picked — and

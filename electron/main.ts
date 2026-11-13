@@ -77,6 +77,7 @@ import { handleMusicRequest } from './music-protocol'
 import { decide, disposeRanker, evaluateSession, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { planStep } from './session/director'
+import { learnedPick } from './session/preferences'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
@@ -747,6 +748,17 @@ handle(
       let best = 0
       for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
       const now = Date.now()
+
+      // Where the model cannot decide, prefer what the DM chose for this scene.
+      const learned = learnedPick({
+        probabilities: tracks,
+        paths: request.paths,
+        preferences: sessionStore.recentPreferences(200),
+        scene: liveScene?.mood ?? MOODS[best] ?? null,
+      })
+      // The learned pick changes *which* track, never the probability: rewriting
+      // the numbers would fake a confidence the model never had.
+      const pickIndex = learned ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
       const step = planStep({
         previous: liveScene,
         observation: {
@@ -780,7 +792,6 @@ handle(
       // changes that happened rather than changes that were proposed.
       if (step.action.kind === 'hold' && now - lastLoggedAt > 30_000) {
         lastLoggedAt = now
-        const best = tracks.length > 0 ? tracks.indexOf(Math.max(...tracks)) : -1
         sessionStore.recordDecision({
           at: now,
           kind: 'music',
