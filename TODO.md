@@ -79,6 +79,9 @@
       track before indexing — a wrong mel yields plausible vectors that mean
       nothing. `tagsFromAudio` and the vocabulary are written and tested; they
       need audio vectors to score.
+- [x] Embeddings: retrieval verified on the real library. A calm scene returns
+      dungeon/campfire ambience; a chase query returned caves before the indexed
+      text included BPM/energy, which is what taught us the filename is not enough.
 - [x] Embeddings: model retrieved into `~/.doty/models/embeddinggemma-300m/`
       (197 MB q4 + tokenizer). Verified against the real graph: pooled
       `sentence_embedding` output, 768 dims, and a calm transcript scores 0.241

@@ -857,6 +857,7 @@ async function startIndexing(folder: string): Promise<void> {
   indexing = true
   try {
     embedder ??= await loadEmbedder(EMBEDDER_DIR)
+    const allMetadata = getAllMetadata()
     const files = getMusicFiles(folder)
     embedding = { done: 0, total: files.length }
     const indexer = createIndexer({
@@ -864,9 +865,20 @@ async function startIndexing(folder: string): Promise<void> {
       store: sessionStore,
       embed: (texts) => embedder!.embedDocuments(texts),
       model: EMBEDDING_MODEL,
-      // The folder path is most of what the model needs to know about a track:
-      // "Combat/Boss/The Enemy" says more than any tag we could invent.
-      describe: (path) => path.replace(/\.[^.]+$/, '').replace(/[-_/]/g, ' '),
+      // What gets embedded decides what retrieval can find. The path alone only
+      // carries vocabulary — a chase found caves, not urgency — so the metadata the
+      // ranker sees goes in too.
+      describe: (path) => {
+        const meta = allMetadata[path]
+        const name = path.replace(/\.[^.]+$/, '').replace(/[-_/]/g, ' ')
+        const facts = [
+          meta?.genre,
+          meta?.bpm ? `${meta.bpm} BPM` : null,
+          meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
+          meta?.scale,
+        ].filter(Boolean)
+        return facts.length > 0 ? `${name} — ${facts.join(', ')}` : name
+      },
       batch: 8,
       onProgress: (p) => {
         embedding = p
