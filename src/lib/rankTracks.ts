@@ -5,7 +5,7 @@
  */
 import type { TrackMeta } from '../types'
 import { choiceConfidence } from './confidence'
-import { heuristicRecommend } from './heuristicRecommend'
+import { candidateSet, heuristicRecommend } from './heuristicRecommend'
 
 export type RankerType = 'model' | 'heuristic' | null
 
@@ -87,14 +87,7 @@ export async function rankTracks(
   if (!deps.ready || !deps.decide || !recentPrompt) return byHeuristic(prompt)
 
   try {
-    const candidates = heuristicRecommend(
-      recentPrompt,
-      files,
-      metadata,
-      RERANK_CANDIDATES,
-      tagsMap,
-      playFrequencies,
-    ).files
+    const candidates = candidateSet(recentPrompt, files, metadata, RERANK_CANDIDATES, tagsMap, playFrequencies)
     const probabilities = await deps.decide(
       recentPrompt,
       candidates.map((file) => describeTrack(file, metadata[file], tagsMap[file])),

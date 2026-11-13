@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { heuristicRecommend } from '../../lib/heuristicRecommend'
+import { candidateSet, heuristicRecommend } from '../../lib/heuristicRecommend'
 import type { TrackMeta } from '../../types'
 
 const FILES = [
@@ -283,5 +283,49 @@ describe('heuristicRecommend', () => {
     expect(plain.confidence).toBeGreaterThan(0)
     expect(plain.confidence).toBeCloseTo(accented.confidence)
     expect(plain.files).toEqual(accented.files)
+  })
+})
+
+describe('candidateSet', () => {
+  // The reported case: a calm scene that mentions a battle in passing.
+  const transcript =
+    'Não sei se estamos a falar ainda sobre a batalha, mas parece-me algo importante. ' +
+    'Está um momento calmo, não vem nenhum guarda, simplesmente. O cair da água da masmorra.'
+
+  const loud = ['Decisive Battle - Rivals', 'The Enemy', 'Near End Action', 'The Desert', 'Ignition', 'Massive Roar']
+  const calm = ['Campfire', 'Light Wind', 'Ice Cavern']
+
+  const metadata: Record<string, TrackMeta> = {}
+  const files = [...loud, ...calm].map((n) => `${n}.mp3`)
+  loud.forEach((n, i) => {
+    metadata[`${n}.mp3`] = { bpm: 140 + i, energy: 1, scale: 'minor', danceability: 0.4 } as TrackMeta
+  })
+  calm.forEach((n, i) => {
+    metadata[`${n}.mp3`] = { bpm: 80 + i, energy: 0.2, scale: 'minor', danceability: 0.2 } as TrackMeta
+  })
+
+  it('offers calm tracks even when one word points at combat', () => {
+    const set = candidateSet(transcript, files, metadata, 8)
+    const calmOffered = set.filter((f) => calm.some((n) => f.startsWith(n)))
+    // The guarantee is representation, not every track: the calmest band gets slots
+    // in proportion to the list, however loud the transcript sounds.
+    expect(calmOffered.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('would have missed them if the heuristic judged alone', () => {
+    // The regression this exists to prevent: every offered track was high energy.
+    const alone = heuristicRecommend(transcript, files, metadata, 6).files
+    expect(alone).not.toContain('Campfire.mp3')
+  })
+
+  it('returns at most the limit, without duplicates', () => {
+    const set = candidateSet(transcript, files, metadata, 5)
+    expect(set.length).toBeLessThanOrEqual(5)
+    expect(new Set(set).size).toBe(set.length)
+  })
+
+  it('falls back to history when there is no transcript', () => {
+    const set = candidateSet('   ', files, metadata, 3, {}, { 'Campfire.mp3': 4 })
+    expect(set).toContain('Campfire.mp3')
   })
 })
