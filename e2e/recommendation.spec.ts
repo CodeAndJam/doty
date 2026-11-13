@@ -87,16 +87,22 @@ test('keyword fallback answers while the model loads, then the model takes over'
     const confidence = Number(badgeText.replace(/[^0-9.]/g, ''))
     expect(confidence).toBeGreaterThan(0)
 
-    const ranked = await shownTracks(page)
+    const allRanked = await shownTracks(page)
+    const ranked = allRanked.slice(0, 5)
     console.log('[e2e] model ranking:', ranked)
     expect(ranked).not.toEqual(early)
+
+    // Every option the model ranked is inspectable, not just the five suggested.
+    await expect(page.getByTestId('considered-list')).toBeVisible()
+    console.log('[e2e] options ranked:', allRanked.length)
+    expect(allRanked.length).toBeGreaterThan(5)
 
     // Each suggestion shows its own probability, and the top card holds the most.
     const shown = await page
       .getByTestId('track-probability')
       .evaluateAll((els) => els.map((el) => Number.parseFloat(el.textContent ?? '0')))
     console.log('[e2e] per-option probabilities:', shown)
-    expect(shown).toHaveLength(ranked.length)
+    expect(shown).toHaveLength(allRanked.length)
     expect(shown[0]).toBe(Math.max(...shown))
 
     const relevant = ['Campfire', 'Bonfire', 'Tavern', 'Downtime', 'Halfling', 'Peaceful', 'Ambience']

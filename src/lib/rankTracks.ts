@@ -17,6 +17,8 @@ export interface RankSignals {
 
 export interface RankResult {
   files: string[]
+  /** Every candidate the model ranked, best first: what the UI lists in full. */
+  candidates: string[]
   /** Probability of the first file: what autopilot thresholds. */
   confidence: number
   /** TypeSafe's choice confidence over all candidates: how settled the answer is. */
@@ -64,7 +66,7 @@ export async function rankTracks(
   count = 5,
 ): Promise<RankResult> {
   if (files.length === 0) {
-    return { files: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
+    return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
   }
 
   const { metadata, tagsMap, playFrequencies } = signals
@@ -73,6 +75,7 @@ export async function rankTracks(
     // A keyword score is not a probability, so there is nothing to show per option.
     return {
       files: result.files,
+      candidates: result.files,
       confidence: result.confidence,
       choiceConfidence: 0,
       probabilities: {},
@@ -103,6 +106,7 @@ export async function rankTracks(
 
     return {
       files: ranked.slice(0, count).map((entry) => entry.file),
+      candidates: ranked.map((entry) => entry.file),
       // The model's probabilities are already calibrated: no softmax over them.
       confidence: ranked[0]?.probability ?? 0,
       choiceConfidence: choiceConfidence(probabilities),

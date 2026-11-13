@@ -20,6 +20,7 @@ export default function MainLayout() {
   const [lastConfidence, setLastConfidence] = useState(0)
   const [lastChoiceConfidence, setLastChoiceConfidence] = useState(0)
   const [probabilities, setProbabilities] = useState<Record<string, number>>({})
+  const [candidates, setCandidates] = useState<string[]>([])
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
@@ -205,6 +206,7 @@ export default function MainLayout() {
     setLastConfidence(result.confidence)
     setLastChoiceConfidence(result.choiceConfidence)
     setProbabilities(result.probabilities)
+    setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
   }, [override])
 
@@ -246,6 +248,7 @@ export default function MainLayout() {
       setLastConfidence(result.confidence)
       setLastChoiceConfidence(result.choiceConfidence)
       setProbabilities(result.probabilities)
+      setCandidates(result.candidates)
       setLastTranscriptSnippet(prompt.slice(-120))
       // Also trigger SFX recommendations with the same combined text
       runSfxRecommendation(combined)
@@ -653,6 +656,7 @@ export default function MainLayout() {
               lastConfidence={lastConfidence}
               lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}
+              candidates={candidates}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}

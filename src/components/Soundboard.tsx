@@ -51,6 +51,8 @@ interface Props {
   lastChoiceConfidence: number
   /** Per-file probability, aligned with the suggestions. */
   probabilities: Record<string, number>
+  /** Every candidate the model ranked, best first. */
+  candidates: string[]
   lastRanker: RankerType
   /** Whether the decision model is loaded, loading, or failed. */
   rankerStatus: 'loading' | 'ready' | 'error'
@@ -70,6 +72,7 @@ export default function Soundboard({
   lastConfidence,
   lastChoiceConfidence,
   probabilities,
+  candidates,
   lastRanker,
   rankerStatus,
   lastTranscriptSnippet,
@@ -432,6 +435,9 @@ export default function Soundboard({
 
   // Music: recommendations minus pinned
   const suggestions = recommendations.filter((f) => !pinned.includes(f))
+  // Everything else the model ranked, so all of its options are inspectable.
+  const considered =
+    lastRanker === 'model' ? candidates.filter((f) => !suggestions.includes(f) && !pinned.includes(f)) : []
   const hasTracks = pinned.length > 0 || suggestions.length > 0
 
   // SFX: pinned SFX objects
@@ -525,6 +531,34 @@ export default function Soundboard({
       <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
         {/* ── Left column: Music ──────────────────────────────────────── */}
         <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'shrink-0'}`}>
+          {autopilot.pendingTransition && (
+            <div
+              className="flex items-center gap-2 shrink-0 mb-2 px-2 py-1"
+              data-testid="autopilot-countdown"
+              style={{ border: '1px solid rgba(200,146,42,0.45)', background: 'rgba(200,146,42,0.06)' }}
+            >
+              <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                autopilot switches in {autopilot.pendingTransition.countdown}s
+              </span>
+              <span className="flex-1 min-w-0 truncate" style={{ fontSize: '11px', color: '#8a7050' }}>
+                {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
+              </span>
+              <button
+                type="button"
+                onClick={autopilot.cancelTransition}
+                style={{
+                  fontSize: '10px',
+                  fontFamily: 'monospace',
+                  color: '#6b4e15',
+                  border: '1px solid rgba(107,78,21,0.4)',
+                  padding: '0 4px',
+                }}
+              >
+                KEEP CURRENT
+              </button>
+            </div>
+          )}
+
           {/* Music column header */}
           <div className="flex items-center justify-between mb-2 shrink-0">
             <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
@@ -542,6 +576,10 @@ export default function Soundboard({
               </span>
               {autopilot.enabled && autopilot.config.musicEnabled && (
                 <span
+                  data-testid="autopilot-chip"
+                  title={`Autopilot changes the track by itself when the top suggestion passes ${Math.round(
+                    autopilot.config.confidenceThreshold * 100,
+                  )}%. Below that it only shows the suggestion.`}
                   style={{
                     fontSize: '9px',
                     color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
@@ -551,7 +589,7 @@ export default function Soundboard({
                     letterSpacing: '0.1em',
                   }}
                 >
-                  AUTO
+                  AUTO ≥{Math.round(autopilot.config.confidenceThreshold * 100)}%
                 </span>
               )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>{showMusic ? <ChevronDown /> : <ChevronUp />}</span>
@@ -562,7 +600,11 @@ export default function Soundboard({
                   <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
                     {pinned.length > 0 ? `${pinned.length} pinned` : ''}
                     {pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}
-                    {suggestions.length > 0 ? `${suggestions.length} attuned` : ''}
+                    {suggestions.length > 0
+                      ? lastRanker === 'model' && candidates.length > suggestions.length
+                        ? `${suggestions.length} of ${candidates.length} ranked`
+                        : `${suggestions.length} attuned`
+                      : ''}
                   </span>
                 )}
                 {musicFolder && (
@@ -676,7 +718,13 @@ export default function Soundboard({
                     >
                       Suggestions
                       {lastRanker === 'model' && lastConfidence >= HIGHLIGHT_CONFIDENCE && (
-                        <span style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}> ▲ strong</span>
+                        <span
+                          style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}
+                          title={`Above ${Math.round(HIGHLIGHT_CONFIDENCE * 100)}% the suggestion is called out. Autopilot only acts above its own threshold.`}
+                        >
+                          {' '}
+                          ▲ strong
+                        </span>
                       )}
                     </span>
                     {/* Ranker + confidence badge */}
@@ -764,6 +812,51 @@ export default function Soundboard({
                     onAddToQueue={() => queue.enqueue(f)}
                   />
                 ))}
+
+                {/* Everything else the model ranked: all of its options are inspectable */}
+                {considered.length > 0 && (
+                  <div className="shrink-0 mt-1" data-testid="considered-list">
+                    <div className="flex items-center gap-2" style={{ height: '18px' }}>
+                      <span
+                        style={{
+                          fontFamily: "'Cinzel', serif",
+                          fontSize: '10px',
+                          letterSpacing: '0.2em',
+                          color: '#2e2416',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        also considered · {candidates.length} ranked
+                      </span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.35)' }} />
+                    </div>
+                    <div className="overflow-y-auto" style={{ maxHeight: '168px' }}>
+                      {considered.map((f) => (
+                        <div key={`alt-${f}`} className="mb-1" style={{ opacity: 0.55 }}>
+                          <TrackCard
+                            filename={f}
+                            isPlaying={playing === f}
+                            isPinned={false}
+                            showReorder={false}
+                            canMoveUp={false}
+                            canMoveDown={false}
+                            meta={metaMap[f]}
+                            tags={tagsMap[f] || []}
+                            allTags={allTags}
+                            probability={probabilities[f]}
+                            onPlay={() => handlePlayTrack(f)}
+                            onPin={() => togglePin(f)}
+                            onMoveUp={() => {}}
+                            onMoveDown={() => {}}
+                            onTagsChange={(tags) => handleTagsChange(f, tags)}
+                            onPlayNext={() => queue.playNext(f)}
+                            onAddToQueue={() => queue.enqueue(f)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Decision log panel (beta) */}
                 {showDecisionLog && (

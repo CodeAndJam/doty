@@ -202,9 +202,11 @@ export default function TrackCard({
             title="The model's probability that this is the right track, out of the candidates it ranked"
             style={{
               fontFamily: 'monospace',
-              fontSize: '10px',
-              color: '#6b4e15',
+              fontSize: '11px',
+              color: '#8a7050',
               flexShrink: 0,
+              minWidth: '34px',
+              textAlign: 'right',
             }}
           >
             {formatProbability(probability)}
