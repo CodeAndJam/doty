@@ -179,6 +179,9 @@ Profiles live in `~/.doty/profiles/<name>/`. Downloaded models stay shared in
 with `DOTY_PROFILE=my-test pnpm dev`; use the same value to reopen a profile.
 Two instances must not use the same Discord bot token at the same time.
 
+If the launch fails with `Error: Electron uninstall`, the Electron binary in that
+worktree was never downloaded: `node node_modules/electron/install.js` fixes it.
+
 ### Native addons
 
 `better-sqlite3` is a native addon rebuilt against Electron's Node.js version automatically via the `postinstall` script. `transcribe-cpp` ships prebuilt libraries (no compile step). If you see a `NODE_MODULE_VERSION` mismatch error:
