@@ -182,14 +182,14 @@ vi.mock('electron', () => ({
   safeStorage: {
     // Test knobs: __encAvailable / __encryptThrows / __decryptThrows simulate
     // a keychain the app can't access (e.g. after a reinstall changed its signature).
-    isEncryptionAvailable: () => (globalThis as any).__encAvailable ?? false,
-    encryptString: (s: string) => {
+    isAsyncEncryptionAvailable: async () => (globalThis as any).__encAvailable ?? false,
+    encryptStringAsync: async (s: string) => {
       if ((globalThis as any).__encryptThrows) throw new Error('keychain denied')
       return Buffer.from(s)
     },
-    decryptString: (b: Buffer) => {
+    decryptStringAsync: async (b: Buffer) => {
       if ((globalThis as any).__decryptThrows) throw new Error('Error while decrypting')
-      return b.toString()
+      return { result: b.toString(), shouldReEncrypt: false }
     },
   },
 }))
@@ -397,33 +397,33 @@ describe('Discord lifecycle', () => {
 
       await connect('fake-token')
 
-      expect(loadToken()).toBe('fake-token')
+      expect(await loadToken()).toBe('fake-token')
     })
 
-    it('returns empty for stored ciphertext this build cannot decrypt', () => {
+    it('returns empty for stored ciphertext this build cannot decrypt', async () => {
       ;(globalThis as any).__encAvailable = true
       ;(globalThis as any).__decryptThrows = true
       // Old encrypted value, base64 — not a token (no dots)
       store.set('discordToken', 'ZmFrZS1jaXBoZXJ0ZXh0')
 
-      expect(loadToken()).toBe('')
+      expect(await loadToken()).toBe('')
     })
 
-    it('returns empty when encryption is gone and only ciphertext is stored', () => {
+    it('returns empty when encryption is gone and only ciphertext is stored', async () => {
       ;(globalThis as any).__encAvailable = true
       store.set('discordToken', Buffer.from('ciphertext').toString('base64'))
 
       ;(globalThis as any).__encAvailable = false
 
-      expect(loadToken()).toBe('')
+      expect(await loadToken()).toBe('')
     })
 
-    it('still reads a plaintext token saved by an older build', () => {
+    it('still reads a plaintext token saved by an older build', async () => {
       ;(globalThis as any).__encAvailable = true
       ;(globalThis as any).__decryptThrows = true
       store.set('discordToken', 'MTIz.GAbCdE.abcDEF123')
 
-      expect(loadToken()).toBe('MTIz.GAbCdE.abcDEF123')
+      expect(await loadToken()).toBe('MTIz.GAbCdE.abcDEF123')
     })
   })
 

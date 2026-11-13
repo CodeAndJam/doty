@@ -91,6 +91,15 @@ export function toProbabilities(logits: number[], optionCount: number, temperatu
   return e.map((v) => v / sum)
 }
 
+/**
+ * CoreML is the only accelerated path on macOS; asking for it on another
+ * platform makes ORT throw. Apple Silicon (M1 and later) gets it, everything
+ * else stays on CPU.
+ */
+function defaultProviders(): string[] {
+  return process.platform === 'darwin' && process.arch === 'arm64' ? ['coreml', 'cpu'] : ['cpu']
+}
+
 export class D1Omni {
   private constructor(
     private readonly session: ort.InferenceSession,
@@ -101,7 +110,7 @@ export class D1Omni {
   static async load(
     dir: string,
     graph = 'd1-omni-text.onnx',
-    providers: string[] = ['coreml', 'cpu'],
+    providers: string[] = defaultProviders(),
   ): Promise<D1Omni> {
     const manifest = JSON.parse(readFileSync(join(dir, 'd1-omni-text-manifest.json'), 'utf8')) as D1Manifest
     if (!manifest.graphs[graph]) throw new Error(`d1-omni: ${graph} is not in the manifest`)
@@ -123,6 +132,9 @@ export class D1Omni {
     const session = await ort.InferenceSession.create(join(dir, graph), {
       executionProviders: providers,
       graphOptimizationLevel: 'all',
+      // Warnings only: ORT logs that CoreML leaves some shape ops on the CPU on
+      // every load. That is expected, but the printout reads like a failure.
+      logSeverityLevel: 3,
     })
     return new D1Omni(session, tokenize, manifest)
   }
