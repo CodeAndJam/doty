@@ -33,7 +33,10 @@ fi
 # This is the check that would have caught the 3.2.1 "damaged" build:
 # an unsigned arm64 bundle is rejected by macOS at launch.
 codesign --verify --deep --strict --verbose=2 "$app"
-if ! codesign -dv "$app" 2>&1 | grep -q '^Signature='; then
+# Capture first: `grep -q` exits on the match, which SIGPIPEs codesign and
+# fails the pipeline under `set -o pipefail` even though the bundle is signed.
+signature=$(codesign -dv "$app" 2>&1 || true)
+if ! grep -q '^Signature=' <<<"$signature"; then
   echo "App bundle is not code signed" >&2
   exit 1
 fi
