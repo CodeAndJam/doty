@@ -30,6 +30,8 @@ type TrackRow = {
   scale: string
   danceability: number
   energy: number
+  loudness: number | null
+  analysis_version: number | null
   bitrate: number | null
   sample_rate: number | null
   channels: number | null
@@ -52,6 +54,8 @@ function rowToMeta(row: TrackRow): FullTrackMetadata {
     scale: row.scale,
     danceability: row.danceability,
     energy: row.energy,
+    loudness: row.loudness ?? -60,
+    analysisVersion: row.analysis_version ?? 0,
     bitrate: row.bitrate,
     sampleRate: row.sample_rate,
     channels: row.channels,
@@ -71,10 +75,10 @@ export function setCached(relPath: string, meta: FullTrackMetadata): void {
   db.prepare(`
     INSERT OR REPLACE INTO tracks
       (path, title, artist, album, genre, year, track_no, duration,
-       bpm, bpm_confidence, key, scale, danceability, energy,
+       bpm, bpm_confidence, key, scale, danceability, energy, loudness, analysis_version,
        bitrate, sample_rate, channels, codec, mtime, scanned_at)
     VALUES
-      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+      (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
   `).run(
     relPath,
     meta.title,
@@ -90,6 +94,8 @@ export function setCached(relPath: string, meta: FullTrackMetadata): void {
     meta.scale,
     meta.danceability,
     meta.energy,
+    meta.loudness,
+    meta.analysisVersion,
     meta.bitrate,
     meta.sampleRate,
     meta.channels,

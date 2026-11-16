@@ -33,7 +33,7 @@ export interface PreferenceRow {
   segment: string
   track: string
   scene: string | null
-  source: 'auto' | 'manual'
+  source: 'auto' | 'manual' | 'reject'
 }
 
 export interface SessionReport {
@@ -74,13 +74,41 @@ CREATE TABLE IF NOT EXISTS session_preferences (
 );
 CREATE INDEX IF NOT EXISTS session_preferences_at ON session_preferences (at);
 CREATE TABLE IF NOT EXISTS track_vectors (
-  path TEXT PRIMARY KEY,
+  path TEXT NOT NULL,
   model TEXT NOT NULL,
   dim INTEGER NOT NULL,
   vector BLOB NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (path, model)
 );
 `
+
+/**
+ * A path now holds one vector per model: the text indexer and the audio indexer
+ * both write the same track, and the old `path` primary key made them overwrite
+ * each other on every launch. Rebuild the table once; the rows are recomputable,
+ * but keep them so a migration does not force a full re-index.
+ */
+function migrateVectorKey(db: Database.Database): void {
+  const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'track_vectors'").get() as
+    | { sql?: string }
+    | undefined
+  if (!table?.sql || /primary key\s*\(\s*path\s*,\s*model\s*\)/i.test(table.sql)) return
+  db.exec(`
+    ALTER TABLE track_vectors RENAME TO track_vectors_old;
+    CREATE TABLE track_vectors (
+      path TEXT NOT NULL,
+      model TEXT NOT NULL,
+      dim INTEGER NOT NULL,
+      vector BLOB NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (path, model)
+    );
+    INSERT OR REPLACE INTO track_vectors (path, model, dim, vector, updated_at)
+      SELECT path, model, dim, vector, updated_at FROM track_vectors_old;
+    DROP TABLE track_vectors_old;
+  `)
+}
 
 export interface SessionStore {
   recordScene(row: SceneRow): void
@@ -95,6 +123,7 @@ export interface SessionStore {
 
 export function createSessionStore(db: Database.Database): SessionStore {
   db.exec(SCHEMA)
+  migrateVectorKey(db)
 
   const insertScene = db.prepare(
     'INSERT INTO session_scenes (session, mood, intensity, started_at) VALUES (?, ?, ?, ?)',
@@ -117,7 +146,7 @@ export function createSessionStore(db: Database.Database): SessionStore {
   )
   const upsertVector = db.prepare(
     `INSERT INTO track_vectors (path, model, dim, vector, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(path) DO UPDATE SET model = excluded.model, dim = excluded.dim,
+     ON CONFLICT(path, model) DO UPDATE SET dim = excluded.dim,
        vector = excluded.vector, updated_at = excluded.updated_at`,
   )
   const selectVector = db.prepare('SELECT dim, vector FROM track_vectors WHERE path = ? AND model = ?')

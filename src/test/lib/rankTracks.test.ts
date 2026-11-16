@@ -63,7 +63,7 @@ describe('describeTrack', () => {
       'epic',
       'brass',
     ])
-    expect(text).toBe('battle of the ancients — Orchestral, 132 BPM, energy 0.8, combat, drums')
+    expect(text).toBe('battle of the ancients — Orchestral, driving, loud, combat, drums')
     // Two tags only: the model gives every option about 24 tokens.
     expect(text).not.toContain('epic')
   })
@@ -71,7 +71,7 @@ describe('describeTrack', () => {
   it('drops a genre that never varies, because it carries no signal', () => {
     const text = describeTrack('Combat/Boss/The Enemy.mp3', { genre: 'Music', bpm: 120, energy: 1 } as never)
     expect(text).not.toContain('Music')
-    expect(text).toBe('Combat/Boss/The Enemy — 120 BPM, energy 1.0')
+    expect(text).toBe('Combat, Boss, The Enemy — driving, loud')
   })
 
   it('falls back to the name alone when there is no metadata', () => {

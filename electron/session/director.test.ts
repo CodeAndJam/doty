@@ -11,7 +11,13 @@ const base = {
   override: false,
 }
 
-const peaceful = { mood: 'peaceful', intensity: 0.2, moodProbability: 0.9, trackProbability: 0.6 }
+const peaceful = {
+  mood: 'peaceful',
+  intensity: 0.2,
+  moodProbability: 0.9,
+  trackProbability: 0.6,
+  secondTrackProbability: 0.1,
+}
 
 describe('planStep', () => {
   it('starts with the model’s mood and picks a track at the boundary', () => {
@@ -23,7 +29,11 @@ describe('planStep', () => {
   it('picks the next track at the boundary even when the mood holds', () => {
     // The track is ending: this is the moment to choose, not a moment to stay silent.
     const scene = foldScene(null, { mood: 'peaceful', intensity: 0.2, probability: 0.9 }, now)
-    const step = planStep({ ...base, previous: scene, observation: { ...peaceful, trackProbability: 0.95 } })
+    const step = planStep({
+      ...base,
+      previous: scene,
+      observation: { ...peaceful, trackProbability: 0.95, secondTrackProbability: 0.01 },
+    })
     expect(step.sameScene).toBe(true)
     expect(step.action.kind).toBe('queue-next')
   })
@@ -34,7 +44,7 @@ describe('planStep', () => {
       ...base,
       msUntilTrackEnd: 200_000,
       previous: scene,
-      observation: { ...peaceful, trackProbability: 0.95 },
+      observation: { ...peaceful, trackProbability: 0.95, secondTrackProbability: 0.01 },
     })
     expect(step.action.kind).toBe('hold')
   })
@@ -46,7 +56,13 @@ describe('planStep', () => {
       ...base,
       msUntilTrackEnd: 200_000,
       previous: scene,
-      observation: { mood: 'combat', intensity: 0.9, moodProbability: 0.8, trackProbability: 0.95 },
+      observation: {
+        mood: 'combat',
+        intensity: 0.9,
+        moodProbability: 0.8,
+        trackProbability: 0.95,
+        secondTrackProbability: 0.01,
+      },
     })
     expect(step.scene.mood).toBe('peaceful')
     expect(step.action.kind).toBe('hold')
@@ -60,7 +76,13 @@ describe('planStep', () => {
       now: now + 76_000,
       msUntilTrackEnd: 200_000,
       previous: scene,
-      observation: { mood: 'combat', intensity: 0.9, moodProbability: 0.85, trackProbability: 0.93 },
+      observation: {
+        mood: 'combat',
+        intensity: 0.9,
+        moodProbability: 0.85,
+        trackProbability: 0.93,
+        secondTrackProbability: 0.01,
+      },
     })
     expect(step.scene.mood).toBe('combat')
     expect(step.categorical).toBe(true)

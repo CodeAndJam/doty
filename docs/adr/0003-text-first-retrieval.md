@@ -44,5 +44,21 @@ Status: accepted
 - The next measurable milestone is beating **0/24 top-1** without losing the
   **92% offered**. Anything that does not move one of those two numbers is
   decoration.
-- Audio embeddings remain on the board with their trigger written down: a
-  retrieval miss in the eval, not a hunch.
+- Audio embeddings remain on the board for retrieval with their trigger written
+  down: a retrieval miss in the eval, not a hunch.
+
+## Update (2026-11-15)
+
+The audio encoder was validated and shipped for **classification**, not
+retrieval, so this decision stands unchanged. The mel contract came from the
+export's `preprocessor_config.json` (128 bins, 512-point FFT, 320/160
+window/hop, semicausal padding) and matches `Gemma4AudioFeatureExtractor` frame
+by frame. One track is two passes: `audio_encoder_q4` → `audio_features` → the
+fused graph → 768-d, the same space as text.
+
+It classifies music vs effect only in the 20–45 s band. On the real library it
+is right on every confident decision at or below 45 s (5/5), wrong on eight long
+ambience cues (a campfire sounds like an effect), and audio–audio similarity is
+strong (0.92–0.96) while audio↔text is weak (~0.65 to both queries). That is why
+it does not reorder retrieval: the cross-modal alignment is the fragile part.
+See `test-results/audio-sfx.md`.

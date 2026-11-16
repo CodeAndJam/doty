@@ -6,7 +6,7 @@
 import type { TrackMeta } from '../types'
 import { choiceConfidence } from './confidence'
 import { candidateSet, heuristicRecommend } from './heuristicRecommend'
-import { classifyTrack } from './trackKind'
+import { trackKindOf } from './trackKind'
 
 export type RankerType = 'model' | 'heuristic' | null
 
@@ -43,35 +43,11 @@ export interface RankDeps {
  */
 const RERANK_CANDIDATES = 20
 
-/** Tags the ranker sees per track. The model gives each option ~24 tokens. */
-const OPTION_TAGS = 2
+// One describer for both processes: the main process embeds with it, the renderer
+// ranks with it, and a track means the same thing to both.
+import { describeTrack } from './describeTrack'
 
-/** Genre values that appear on nearly everything and therefore distinguish nothing. */
-const UNINFORMATIVE_GENRES = new Set(['music', 'unknown', 'games', 'other', ''])
-
-function isInformativeGenre(genre: string | null | undefined): genre is string {
-  return !!genre && !UNINFORMATIVE_GENRES.has(genre.trim().toLowerCase())
-}
-
-export function describeTrack(filename: string, meta: TrackMeta | undefined, tags?: string[]): string {
-  // Collapse the runs of spaces that replacing separators leaves behind: the text
-  // is tokenised by the model, so "Downtime   Bonfire" wastes option budget.
-  const name = filename
-    .replace(/\.[^.]+$/, '')
-    .replace(/[-_]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-  const facts = [
-    // "Music" is what the tagger writes when it has nothing to say, and it appears
-    // on every music file: a token that never varies carries no signal, only cost.
-    isInformativeGenre(meta?.genre) ? meta?.genre : null,
-    meta?.bpm ? `${meta.bpm} BPM` : null,
-    meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
-  ].filter(Boolean)
-  const top = tags?.slice(0, OPTION_TAGS)
-  if (top && top.length > 0) facts.push(top.join(', '))
-  return facts.length > 0 ? `${name} — ${facts.join(', ')}` : name
-}
+export { describeTrack }
 
 export async function rankTracks(
   prompt: string,
@@ -100,9 +76,7 @@ export async function rankTracks(
 
   // An effect that ended up in the music folder can never fit a scene: it is
   // seconds long and it is not a bed. Drop it before it costs a candidate slot.
-  const playable = files.filter(
-    (file) => classifyTrack({ path: file, duration: metadata[file]?.duration, genre: metadata[file]?.genre }) !== 'sfx',
-  )
+  const playable = files.filter((file) => trackKindOf(file, metadata[file]) !== 'sfx')
   if (playable.length === 0)
     return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
   files = playable

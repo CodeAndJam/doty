@@ -113,3 +113,32 @@ export function scriptMatchesLanguage(text: string, language: string | undefined
 
   return expected.some((script) => (counts.get(script) ?? 0) > 0)
 }
+
+/**
+ * Languages whose alphabet is Latin-1. A character from Latin Extended-A/B in a
+ * short Portuguese segment is not a name — it is the decoder filling a mumble
+ * ("O presužma", "Stale tętrz"). Longer segments pass: a genuine foreign name in
+ * a full sentence should not lose the sentence.
+ */
+const LATIN1_LANGUAGES = new Set(['pt', 'es', 'fr', 'it', 'en', 'de', 'nl', 'ca', 'gl'])
+
+function hasExtendedLatin(text: string): boolean {
+  for (const char of text) {
+    const code = char.codePointAt(0) ?? 0
+    if ((code >= 0x0100 && code <= 0x024f) || (code >= 0x1e00 && code <= 0x1eff)) return true
+  }
+  return false
+}
+
+/**
+ * Text worth keeping from a recogniser. `scriptMatchesLanguage` rejects the
+ * wrong alphabet; this also rejects the short segment that is mostly invented,
+ * which is the failure mode a VAD-gated mumble produces.
+ */
+export function plausibleText(text: string, language: string | undefined): boolean {
+  if (!scriptMatchesLanguage(text, language)) return false
+  const base = language?.split('-')[0].toLowerCase()
+  if (!base || !LATIN1_LANGUAGES.has(base)) return true
+  const words = text.trim().split(/\s+/).filter(Boolean).length
+  return !(words <= 3 && hasExtendedLatin(text))
+}

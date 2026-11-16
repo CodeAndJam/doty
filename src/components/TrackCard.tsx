@@ -120,6 +120,10 @@ interface TrackCardProps {
   onMoveDown: () => void
   /** Model probability that this is the right track, when the ranker produced one. */
   probability?: number
+  /** Moves this file to the other library; the label says which. */
+  onMoveTo?: (target: 'music' | 'sfx') => void
+  /** Which library the file is in now, when it is known. */
+  kind?: 'music' | 'sfx'
   onTagsChange?: (tags: string[]) => void
   onPlayNext?: () => void
   onAddToQueue?: () => void
@@ -141,6 +145,8 @@ export default function TrackCard({
   onMoveUp,
   onMoveDown,
   onTagsChange,
+  onMoveTo,
+  kind,
   onPlayNext,
   onAddToQueue,
 }: TrackCardProps) {
@@ -213,6 +219,22 @@ export default function TrackCard({
           </span>
         )}
       </div>
+
+      {onMoveTo && (
+        <button
+          type="button"
+          data-testid="move-track"
+          onClick={(e) => {
+            e.stopPropagation()
+            onMoveTo(kind === 'sfx' ? 'music' : 'sfx')
+          }}
+          title={kind === 'sfx' ? 'Move to the music library' : 'Move to the effects library'}
+          className="absolute top-0 right-1 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+          style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15' }}
+        >
+          {kind === 'sfx' ? '→ music' : '→ fx'}
+        </button>
+      )}
 
       {/* Hover overlay toolbar — appears on top of the right side */}
       <div

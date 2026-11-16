@@ -16,6 +16,8 @@ export interface Observation {
   moodProbability: number
   /** Probability of the track the model picked. */
   trackProbability: number
+  /** Probability of the runner-up, for the margin the policy needs. */
+  secondTrackProbability: number
 }
 
 export interface StepInput {
@@ -60,6 +62,10 @@ export function planStep(input: StepInput): StepResult {
   const action = decideAction(
     {
       probability: observation.trackProbability,
+      trackRatio:
+        observation.secondTrackProbability > 0
+          ? observation.trackProbability / observation.secondTrackProbability
+          : Number.POSITIVE_INFINITY,
       sameScene,
       categorical,
       msUntilTrackEnd: input.msUntilTrackEnd,

@@ -23,6 +23,11 @@ export interface TrackMeta {
   scale: string
   danceability: number
   energy: number
+  /** Audio-embedding verdict, filled by the background pass when it has run. */
+  audioKind?: 'music' | 'sfx' | 'uncertain'
+  /** dBFS; optional because payloads written before the energy fix lack it. */
+  loudness?: number
+  analysisVersion?: number
   duration: number
   mtime: number
   title: string | null
@@ -216,6 +221,8 @@ export interface DotyAPI {
     msUntilTrackEnd: number | null
     autopilot: boolean
     override: boolean
+    /** The DM's threshold from Settings; absent keeps the policy default. */
+    confidenceThreshold?: number
   }) => Promise<{
     tracks: number[]
     moods: number[]
@@ -236,13 +243,16 @@ export interface DotyAPI {
     segment: string
     track: string
     scene: string | null
-    source: 'auto' | 'manual'
+    /** `reject` records a skip, so history can tell a choice from a dismissal. */
+    source: 'auto' | 'manual' | 'reject'
   }) => Promise<unknown>
   embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
   /** Vector matches from the whole library, empty when nothing is indexed yet. */
   similarTracks: (text: string, k: number) => Promise<string[]>
   /** Probabilities for each SFX description, in the order given. */
   sfxRank: (state: string, candidates: string[]) => Promise<number[]>
+  /** Move one file between the music and effects libraries, on request. */
+  moveTrack: (path: string, target: 'music' | 'sfx') => Promise<{ ok: boolean; reason?: string; path?: string }>
   onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number

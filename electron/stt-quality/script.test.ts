@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scriptMatchesLanguage } from './script'
+import { plausibleText, scriptMatchesLanguage } from './script'
 
 describe('scriptMatchesLanguage', () => {
   it('accepts Portuguese written in Latin script', () => {
@@ -37,5 +37,30 @@ describe('scriptMatchesLanguage', () => {
     expect(scriptMatchesLanguage('안녕하세요', 'ko')).toBe(true)
     expect(scriptMatchesLanguage('안녕하세요', 'ja')).toBe(false)
     expect(scriptMatchesLanguage('Καλημέρα', 'el')).toBe(true)
+  })
+})
+
+describe('plausibleText', () => {
+  it('drops a short Portuguese segment with letters from another alphabet', () => {
+    // The real session produced both of these from mumbles.
+    expect(plausibleText('O presužma', 'pt')).toBe(false)
+    expect(plausibleText('Stale tętrz', 'pt')).toBe(false)
+  })
+
+  it('keeps ordinary Portuguese, including accents and fillers', () => {
+    expect(plausibleText('Né?', 'pt')).toBe(true)
+    expect(plausibleText('Parece-vos bem ou parece-vos mal?', 'pt')).toBe(true)
+  })
+
+  it('keeps a foreign name inside a full sentence', () => {
+    expect(plausibleText('O Šimek chegou à taberna e sentou-se.', 'pt')).toBe(true)
+  })
+
+  it('does not police alphabets that legitimately use those letters', () => {
+    expect(plausibleText('Zażółć gęślą jaźń', 'pl')).toBe(true)
+  })
+
+  it('still rejects the wrong script', () => {
+    expect(plausibleText('Привет', 'pt')).toBe(false)
   })
 })

@@ -6,17 +6,31 @@
       the session. Ported from Handy's supervisor, which does the same.
 - [x] STT: transcribe.cpp 0.4.2 (parakeet mel-padding fix, mmapped weights).
       The 10-day release hold is waived for it in `pnpm-workspace.yaml`.
-- [ ] STT: spoken-language detection over the transcript text, the way Handy uses
-      `whatlang`. Rust cannot be copied into an Electron app; the JS equivalents
-      (`tinyld`, `franc`) do the same job on the text we already have, and would
-      replace the script guard with a real decision — plus enable "auto, but only
-      among my preferred languages".
-- [ ] STT: a real VAD model (transcribe-cpp exposes a `vad` role — Silero
-      scores frames, `minSpeechMs`/`minSilenceMs`) instead of the RMS gate. The
-      RMS gate stops a quiet room being decoded, but it cannot stop Roman-script
-      hallucination ("Yeah, it's trying to make things") under a `pt` hint, and
-      neither can the script guard: both are Latin. A VAD segmenter also gives
-      better chunk cuts than the current quietest-frame heuristic.
+- [ ] STT: spoken-language detection. transcribe-cpp's `langid` role was measured
+      on real VAD segments: it labels 5 of 25 Portuguese segments as sq/bg/ca/gl,
+      and a 0.75-confidence veto would delete a third of the narration. The ASR
+      also ignores the hint (parakeet-ultra: identical text and WER with and
+      without `language`). `preferredCodes`/`rejectsLanguage`/`hintFromLangId`
+      ship as tested policy only; do not wire a veto until the model improves.
+      Re-open with a real room recording.
+- [x] STT: the invented words came from decoding each VAD phrase **alone**. A
+      real session produced "Resurrê? O presužma", "Gareth", "Punks" and
+      "Stale tętrz" while the same audio decoded as one 15 s window was clean.
+      Batch models now accumulate gated speech in `ChunkBuffer`, wait 3 s of
+      pause before decoding, and a VAD segment closes at 800 ms instead of 300.
+      On that session the invented words and fragments are gone.
+- [x] STT: a short Portuguese segment with Latin Extended letters (`ž`, `ę`) is
+      dropped as invented; a foreign name inside a full sentence still passes.
+- [ ] STT: remaining word-level slips on mumbles ("mas para a cidade" for "vamos
+      para a cidade"). Two-tier re-decode of finalized sentences with a larger
+      context is the next lever.
+- [x] STT: VAD gating. `silero-vad-v6.2-F32.gguf` (1.2 MB) is loaded when present
+      and gates live audio by speech probability; the RMS gate remains the
+      fallback. Measured: 0.00 s emitted for a loud music bed, pink noise and
+      silence; 42.4 s of 47.8 s speech kept; music now transcribes to "". Side
+      models download with the ASR model. Room fixtures (vocal music crossing the
+      gate, overlapping speakers) still need a real recording — see
+      `test-results/stt-room.md` (gitignored) or `electron/stt/room.test.ts`.
 - [ ] Profiles: instances share `~/.doty/models`, so two profiles downloading the
       same model at once write the same `.part` file. Serialize on a lock file or
       give the `.part` a per-process suffix before this bites a first run.
@@ -52,10 +66,13 @@
       grades top-1/top-3/precision@0.9 against a baseline.
 - [x] Ranker: 50 examples labelled (26 decided) and graded. First truth:
       top-1 0/24, top-3 25%, prefilter offered 92% of the DM's picks.
-- [ ] Ranker: the option text is the ceiling. Every description is
-      "name — BPM, energy" plus a constant genre ("Music"), so the model judges
-      filenames. Add real tags, instrumental/vocal and loudness before touching
-      a threshold — the 0/24 comes from what it is shown, not how it is asked.
+- [x] Ranker: the option text was the ceiling. `describeTrack` now names the
+      library's own folder taxonomy and translates tempo/mode/duration/energy
+      into words. The energy metric was also broken: `sqrt(mean(x^2)) * 10`
+      clamped 30 of 43 real tracks to exactly 1.0. It is now RMS dBFS mapped
+      from -40..0, giving 27 distinct values on the same library. Top-1 went
+      from 0/24 to 7/22; the harness also sends the duration and genre it was
+      silently omitting. See `docs/END-GOAL.md`.
 - [ ] Ranker: label the rows. Add real narration moments to
       `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
       browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.
@@ -64,12 +81,23 @@
       the sha256 in `electron/d1-model.ts` matches it. Until then the background
       fetch 404s and the app stays on keyword matching. The LFM licence note
       belongs on that download.
-- [ ] Ranker: wire the session loop. `electron/session/{policy,scene,director,store}.ts`
-      and the two-question `session:evaluate` are in place and tested, but nothing
-      calls them yet: `Soundboard` still drives autopilot from the old threshold.
-      Next change executes `plan.action` (`queue-next` at the boundary, `play-now`
-      only on a confirmed categorical change), records every decision through
-      `session:decision`, and shows `sessionReport().overrideRate` in the UI.
+- [x] Ranker: the session loop is wired. The player repeats the current cue by
+      default (`loopMode` single), so a boundary is a genuine choice rather than a
+      deadline. Autopilot changes cue at 0.40 with a 1.5x margin, or 0.30 on a
+      categorical scene change, and holds otherwise. The legacy threshold-driven
+      autopilot is no longer fed music while the director runs.
+- [x] Learning: skips are stored as rejections, not preferences. Two skips of the
+      same track in the same scene demote it even when the model is confident;
+      tie-breaks use the DM's choices. Previously a skip recorded a *preference*
+      for the track that replaced it, teaching the opposite of the signal.
+- [ ] Ranking recall: 84.6% of the DM's picks are among the twenty offered (was
+      92% before the energy fix). Candidate sets are keyword-first; semantic
+      retrieval is indexed but not merged into the prefilter. This is the next
+      lever — a track that is not offered cannot be chosen.
+- [ ] Ranking: acceptable-set labels. The harness accepts them but every existing
+      label is a single pick, which is why top-1 31.8% understates a model whose
+      alternatives are often defensible. Label a few rows with more than one
+      acceptable track.
 - [x] Embeddings: background indexer (`electron/session/indexer.ts`), cosine
       retrieval over `track_vectors`, and the keyword prefilter kept as the floor.
       Batched, resumable, and a no-op until the model is on disk.
@@ -83,20 +111,29 @@
       (seconds = effect, minutes = cue), then by genre/path, and leaves a middling
       clip `unknown` rather than guessing. Effects are dropped from music
       candidates so they stop costing slots.
-- [ ] SFX routing UI: the classifier does not yet *move* anything — it filters.
-      Moving files on disk is the user's decision, so surface the finding instead
-      (a badge in the browse panel, and a "move to effects" action).
-- [x] Overrides recorded from every manual change: card play, queue pick and skip
-      now all write a preference, so the signal is no longer limited to one button.
-- [ ] Ranker: enrich `describeTrack` — loudness and onset rate from essentia, an
-      instrumental flag, and hand tags. The option text is currently a filename,
-      BPM and `"Music"`. This is the measured bottleneck.
-- [ ] Embeddings: **audio** path, triggered by a retrieval miss in the eval — `audio_encoder_q4.onnx` takes
-      `input_features` shaped `[1, frames, 128]` plus `input_features_mask`;
-      mel parameters must be read from the model config and validated on one real
-      track before indexing — a wrong mel yields plausible vectors that mean
-      nothing. `tagsFromAudio` and the vocabulary are written and tested; they
-      need audio vectors to score.
+- [x] SFX routing: every card carries `→ fx` / `→ music`. Main moves the file
+      between the two configured folders, numbers collisions instead of
+      overwriting, and rewrites the path in `tracks` and `track_tags`. It is a
+      click, never automatic: `decideKind` returns `uncertain` inside 0.03.
+- [x] Overrides recorded from every manual change — and skips are stored as
+      *rejections*, not preferences. Before, skipping wrote a preference for the
+      replacement track, which taught the opposite of the signal.
+- [ ] Ranker: the remaining `describeTrack` facts are onset rate (essentia has
+      `OnsetRate`), an instrumental/vocal flag, and hand tags. The first two need
+      a re-analysis pass and a measured gain; hand tags need the DM.
+- [x] Embeddings: **audio** path. The mel contract came from the export's
+      `preprocessor_config.json` (128 bins, 512-point FFT, 320/160 window/hop,
+      semicausal padding) and matches the `Gemma4AudioFeatureExtractor` output;
+      one clip is two passes (audio encoder → `audio_features` → fused graph).
+      `decideKind` consumes the vectors, `test-results/audio-sfx.md` has the
+      numbers. On the real library it is right on every track ≤45 s and wrong on
+      long ambience (a campfire loop *is* an effect to the model), so it is used
+      as the grey-band tiebreaker, never to demote a long cue.
+- [x] Embeddings: audio path wiring. `startBackgroundPasses` runs the audio pass
+      after the text index, on startup and on every folder change; `getAllMetadata`
+      merges the verdict; `trackKindOf` feeds it to candidate filtering and the
+      move button. Measured in the app: 43 vectors, 14 effects, no decode
+      failures. The renderer refreshes when the pass completes.
 - [x] Embeddings: retrieval verified on the real library. A calm scene returns
       dungeon/campfire ambience; a chase query returned caves before the indexed
       text included BPM/energy, which is what taught us the filename is not enough.

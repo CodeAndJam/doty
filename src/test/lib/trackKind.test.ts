@@ -29,6 +29,27 @@ describe('classifyTrack', () => {
     expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30 })).toBe('unknown')
   })
 
+  it('lets a confident audio verdict fill the band duration cannot decide', () => {
+    expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30, audio: 'sfx' })).toBe('sfx')
+    expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 35, audio: 'music' })).toBe('music')
+    expect(classifyTrack({ path: 'Misc/track 7.mp3', audio: 'sfx' })).toBe('sfx')
+  })
+
+  it('does not let audio demote a long ambience bed to an effect', () => {
+    // The model calls a rain or campfire loop an effect, and it is right about
+    // the sound — but a ten-minute cue is still a cue, and moving it is worse.
+    expect(classifyTrack({ path: 'Campfire.mp3', duration: 600, audio: 'sfx' })).toBe('music')
+  })
+
+  it('does not let audio promote a two-second hit to a cue', () => {
+    expect(classifyTrack({ path: 'hit.wav', duration: 2, audio: 'music' })).toBe('sfx')
+  })
+
+  it('falls through when the audio verdict is uncertain', () => {
+    expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30, audio: 'uncertain' })).toBe('unknown')
+    expect(classifyTrack({ path: 'SFX/roar.wav', audio: 'uncertain' })).toBe('sfx')
+  })
+
   it('treats a missing or zero duration as absent', () => {
     expect(classifyTrack({ path: 'SFX/hit.wav', duration: 0 })).toBe('sfx')
     expect(classifyTrack({ path: 'SFX/hit.wav' })).toBe('sfx')

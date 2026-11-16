@@ -13,9 +13,9 @@ export interface AutopilotConfig {
   /** Whether SFX auto-triggers are enabled (default: true) */
   sfxEnabled: boolean
   /**
-   * Threshold on the top candidate's probability, not on the derived choice
-   * confidence: that is the number that reads as risk ("under 10% chance of the
-   * wrong track"), which is what an unasked switch needs.
+   * How sure the model must be before cutting the current track short. There is no
+   * equivalent bar at a boundary: there, silence is the worse outcome, so the next
+   * track is always chosen before the current one ends.
    */
   confidenceThreshold: number
   /** Crossfade duration in seconds (default: 3) */
@@ -52,15 +52,15 @@ export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
 export type AutopilotState = 'idle' | 'evaluating' | 'pending_transition' | 'transitioning' | 'cooldown'
 
 /**
- * The ranker's probabilities are calibrated, so the number means what it says: above
- * this the suggestion is highlighted, above `confidenceThreshold` autopilot acts on it.
+ * The top suggestion is marked once it passes this share of the twenty. It is not
+ * a gate on acting: that also needs the margin in `DEFAULT_POLICY`.
  */
-export const HIGHLIGHT_CONFIDENCE = 0.7
+export const HIGHLIGHT_CONFIDENCE = 0.35
 
 /** Confidence label for UI display */
 export function confidenceLabel(threshold: number): string {
-  if (threshold >= 0.95) return 'Conservative'
-  if (threshold >= 0.9) return 'Balanced'
+  if (threshold >= 0.7) return 'Conservative'
+  if (threshold >= 0.45) return 'Balanced'
   return 'Adventurous'
 }
 

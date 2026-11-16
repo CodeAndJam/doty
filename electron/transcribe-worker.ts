@@ -5,12 +5,16 @@
  *   stream  — the engine decodes as audio arrives (Nemotron, Voxtral, Parakeet Unified)
  *   chunked — batch-only models (Parakeet Ultra/TDT) decode ~10s chunks as they fill
  *
+ * When a VAD model is available the audio is gated by speech probability instead
+ * of level, so a loud music bed never reaches the decoder. Without it the
+ * level-based path runs unchanged.
+ *
  * Text must reach the transcript while the session is still running: some
  * streaming models freeze `committed` for a whole minute, so finalized text is
  * derived from the full hypothesis up to the last sentence boundary.
  *
  * Messages IN:
- *   { type: 'load', modelPath, language? }    — load/swap GGUF model
+ *   { type: 'load', modelPath, language?, vadPath? } — load/swap GGUF model
  *   { type: 'stream-start' }                  — begin a live session
  *   { type: 'feed', buffer: ArrayBuffer }     — feed PCM chunk
  *   { type: 'finalize' }                      — flush remaining audio and text
@@ -22,13 +26,15 @@
  *   { type: 'text', committed, tentative }    — live hypothesis for the UI
  *   { type: 'flush', text, elapsedMs }        — finalized text to append
  *   { type: 'result', id, text }              — batch transcription result
+ *   { type: 'notice', message }               — degraded feature, session continues
  *   { type: 'error', error }                  — error message
  *   { type: 'status', status }                — loading | streaming | idle | disposed
  */
 import { parentPort } from 'node:worker_threads'
 import { resolveLanguage } from './stt-language'
-import { scriptMatchesLanguage } from './stt-quality/script'
+import { plausibleText } from './stt-quality/script'
 import { ChunkBuffer, hasSpeech, LiveWriter, rms } from './stt-quality/text-flow'
+import { SpeechGate } from './stt-quality/vad-gate'
 
 // ponytail: transcribe-cpp is ESM-only, use dynamic import from CJS worker
 let TranscribeModel: any = null
@@ -40,10 +46,30 @@ let stream: any = null
 let supportsStreaming = false
 let language: string | undefined
 
+/** Optional VAD model (role "vad"); null when not downloaded or not loadable. */
+let vadModel: any = null
+let vadSession: any = null
+/** Speech gating over the live audio; null keeps the level-based fallback. */
+let gate: SpeechGate | null = null
+
 const SILENCE_FLUSH_MS = 1500
 const PARAGRAPH_SILENCE_MS = 5000
 const CHUNK_MAX_MS = 10_000
 const SILENCE_RMS = 0.003
+/** Gated speech is released in 160 ms pieces: small enough to feel live. */
+const LIVE_EMIT_SAMPLES = 16000 * 0.16
+/**
+ * A batch decoder must not see each VAD phrase alone. Short isolated segments
+ * are what turn mumbles into invented words ("Resurrê? O presužma", "Gareth");
+ * accumulating at least this much speech before a decode keeps the context.
+ */
+const BATCH_MIN_SAMPLES = 16000 * 2
+/**
+ * How long a pause must last before a batch model decodes what it has. Shorter
+ * and a phrase is decoded alone, which is where invented words come from;
+ * longer and the transcript lags the table.
+ */
+const BATCH_FLUSH_MS = 3_000
 
 const writer = new LiveWriter()
 const chunks = new ChunkBuffer({
@@ -53,6 +79,8 @@ const chunks = new ChunkBuffer({
   silenceSamples: 16000 * 1.5,
 })
 let silenceTimer: ReturnType<typeof setTimeout> | null = null
+/** Batch-only: decode pending gated speech after the speaker has paused. */
+let gatedFlushTimer: ReturnType<typeof setTimeout> | null = null
 let paragraphTimer: ReturnType<typeof setTimeout> | null = null
 let streamStartTime = 0
 let lastHypothesis = ''
@@ -68,8 +96,21 @@ function sendMsg(msg: Record<string, unknown>) {
 function clearTimers() {
   if (silenceTimer) clearTimeout(silenceTimer)
   if (paragraphTimer) clearTimeout(paragraphTimer)
+  if (gatedFlushTimer) clearTimeout(gatedFlushTimer)
   silenceTimer = null
   paragraphTimer = null
+  gatedFlushTimer = null
+}
+
+/** Batch models: let phrases merge, but do not wait forever for more speech. */
+function scheduleGatedFlush(): void {
+  if (gatedFlushTimer) clearTimeout(gatedFlushTimer)
+  gatedFlushTimer = setTimeout(() => {
+    gatedFlushTimer = null
+    if (!supportsStreaming && chunks.pendingSamples >= BATCH_MIN_SAMPLES) {
+      void decodeChunk().catch(() => {})
+    }
+  }, BATCH_FLUSH_MS)
 }
 
 function elapsedMs(): number {
@@ -80,8 +121,9 @@ function flush(text: string) {
   const delta = text.trim()
   if (!delta) return
   // Noise decodes into fluent text in whatever language fits it. With a language
-  // pinned, text in another script cannot belong to this session.
-  if (!scriptMatchesLanguage(delta, language)) return
+  // pinned, text in another script cannot belong to this session, and a short
+  // segment with letters outside that language's alphabet is a mumble filled in.
+  if (!plausibleText(delta, language)) return
   sendMsg({ type: 'flush', text: delta, elapsedMs: elapsedMs() })
 }
 
@@ -138,13 +180,67 @@ function releaseAll() {
     }
     model = null
   }
+  releaseSupportModels()
   writer.reset(0)
   chunks.reset()
   lastHypothesis = ''
   clearTimers()
 }
 
-async function loadModel(modelPath: string, requestedLanguage?: string, backend: 'auto' | 'cpu' = 'auto') {
+/** Support models are disposable independently of the ASR model. */
+function releaseSupportModels() {
+  try {
+    vadSession?.dispose()
+  } catch {
+    /* ignore */
+  }
+  try {
+    vadModel?.dispose()
+  } catch {
+    /* ignore */
+  }
+  vadSession = null
+  vadModel = null
+  gate = null
+}
+
+/**
+ * Load the VAD model. A missing file, a failed load or a file that does not
+ * serve the role all mean the same thing: keep the fallback path, never block
+ * transcription.
+ */
+async function loadVadModel(path: string | null | undefined): Promise<any> {
+  if (!path) return null
+  try {
+    const m = await TranscribeModel.load(path)
+    if (!m.roles.includes('vad')) {
+      sendMsg({ type: 'notice', message: 'VAD model does not serve the "vad" role; using the fallback' })
+      m.dispose()
+      return null
+    }
+    return m
+  } catch (e: any) {
+    sendMsg({ type: 'notice', message: `VAD model failed to load; using the fallback (${e?.message ?? e})` })
+    return null
+  }
+}
+
+/** Drop VAD mid-session: the audio keeps flowing, only the gating is lost. */
+function giveUpVad(error: any) {
+  sendMsg({ type: 'notice', message: `VAD failed; falling back to level gating (${error?.message ?? error})` })
+  releaseSupportModels()
+}
+
+interface LoadRequest {
+  modelPath: string
+  /** The persisted `sttLanguage` setting: `auto` or a locale. */
+  language?: string
+  vadPath?: string | null
+  backend?: 'auto' | 'cpu'
+}
+
+async function loadModel(req: LoadRequest) {
+  const { modelPath, language: requestedLanguage, vadPath, backend = 'auto' } = req
   await loadLib()
   releaseAll()
 
@@ -157,7 +253,7 @@ async function loadModel(modelPath: string, requestedLanguage?: string, backend:
     if (backend === 'cpu') throw e
     sendMsg({ type: 'status', status: 'loading' })
     sendMsg({ type: 'notice', message: 'GPU failed to load; retrying on the CPU' })
-    return loadModel(modelPath, requestedLanguage, 'cpu')
+    return loadModel({ ...req, backend: 'cpu' })
   }
   session = model.createSession()
   const caps = model.capabilities
@@ -166,6 +262,9 @@ async function loadModel(modelPath: string, requestedLanguage?: string, backend:
   // A wrong code makes the engine throw, so resolve against its own list.
   const supported = (caps?.languages ?? []) as string[]
   language = resolveLanguage(requestedLanguage, supported)
+
+  vadModel = await loadVadModel(vadPath)
+  if (vadModel) vadSession = vadModel.createVadSession()
 
   const backends = getAvailableBackends()
   sendMsg({ type: 'ready', backends, streaming: supportsStreaming, languages: supported, language: language ?? 'auto' })
@@ -179,6 +278,25 @@ async function startSession() {
   writer.reset(0)
   clearTimers()
 
+  // With a VAD model the decoder only ever sees speech, released in 160 ms
+  // pieces. Batch models then accumulate those pieces into a ChunkBuffer: a
+  // phrase decoded alone is where invented words come from.
+  gate = vadSession
+    ? new SpeechGate({
+        emitSamples: LIVE_EMIT_SAMPLES,
+        // Natural sentence pauses in Portuguese run 300-600 ms. Closing at 300
+        // split "parece-vos bem? / parece-vos mal?" into two decodes, each of
+        // which the model completed with invented words.
+        minSilenceMs: 800,
+      })
+    : null
+  if (vadSession) {
+    try {
+      await vadSession.streamReset()
+    } catch {
+      /* a stale stream is replaced by the next feed */
+    }
+  }
   if (supportsStreaming) {
     if (!session) return
     stream = await session.stream({
@@ -214,6 +332,12 @@ async function decodeChunk() {
   const pcm = chunks.take()
   // Nothing above the noise floor: decoding it only invents a sentence.
   if (!hasSpeech(pcm)) return
+  await decodeBatch(pcm)
+}
+
+/** Batch decode one piece of audio. */
+async function decodeBatch(pcm: Float32Array) {
+  if (!session || pcm.length < 1600) return
   const result = await session.run(pcm, language ? { language } : undefined)
   const text: string = (result?.text ?? '').trim()
   if (!text) return
@@ -221,8 +345,37 @@ async function decodeChunk() {
   flush(text)
 }
 
-async function feedChunk(buffer: ArrayBuffer) {
-  const samples = new Float32Array(buffer)
+/** VAD path: only the audio the gate calls speech reaches the decoder. */
+async function decodeGated() {
+  if (!gate) return
+  const { chunks: speech, closed } = gate.drain()
+  for (const pcm of speech) {
+    if (supportsStreaming) {
+      await feedStream(pcm)
+    } else {
+      // Batch: merge gated pieces into a window. Decoding each VAD phrase alone
+      // is what produced "Punks", "Got it" and "Gareth" on a real session.
+      if (gatedFlushTimer) {
+        clearTimeout(gatedFlushTimer)
+        gatedFlushTimer = null
+      }
+      chunks.push(pcm)
+      if (chunks.ready()) await decodeChunk()
+    }
+  }
+  if (!closed) return
+  if (stream) {
+    // The speaker stopped: commit the hypothesis now instead of waiting for the
+    // 1.5 s timer, which may never fire because no more audio is being fed.
+    flush(writer.onSilence(stream.text.full, elapsedMs()))
+  } else {
+    // Do not decode yet: a natural pause is not the end of the thought.
+    scheduleGatedFlush()
+  }
+}
+
+/** No VAD model: the level gate and the chunk buffer, exactly as before. */
+async function feedAll(samples: Float32Array) {
   if (supportsStreaming) {
     await feedStream(samples)
     return
@@ -232,8 +385,46 @@ async function feedChunk(buffer: ArrayBuffer) {
   if (!chunks.ready() && rms(samples) >= SILENCE_RMS) armSilenceTimers()
 }
 
+async function feedChunk(buffer: ArrayBuffer) {
+  const samples = new Float32Array(buffer)
+  if (vadSession && gate) {
+    let probs: number[] = []
+    try {
+      probs = (await vadSession.streamFeed(samples)).probs
+    } catch (e: any) {
+      // Gating is an enhancement, never a requirement: run this chunk through
+      // the fallback path so the session keeps working.
+      giveUpVad(e)
+      await feedAll(samples)
+      return
+    }
+    gate.push(samples, probs)
+    await decodeGated()
+    return
+  }
+  await feedAll(samples)
+}
+
+/** Score the tail the VAD still holds and decode whatever the gate releases. */
+async function flushGate() {
+  if (!gate || !vadSession) return
+  try {
+    const tail = await vadSession.streamFlush()
+    gate.push(new Float32Array(0), tail.probs)
+  } catch {
+    /* the last <32 ms of audio is lost, not the session */
+  }
+  const { chunks: speech } = gate.flush()
+  for (const pcm of speech) {
+    if (supportsStreaming) await feedStream(pcm)
+    else chunks.push(pcm)
+  }
+  if (!supportsStreaming && chunks.pendingSamples > 0) await decodeChunk()
+}
+
 async function finalizeSession() {
   clearTimers()
+  await flushGate()
   if (supportsStreaming && stream) {
     await stream.finalize()
     const full: string = stream.text.full ?? ''
@@ -250,6 +441,7 @@ async function finalizeSession() {
   }
   writer.reset()
   chunks.reset()
+  gate?.reset()
   lastHypothesis = ''
   streamStartTime = 0
   sendMsg({ type: 'status', status: 'idle' })
@@ -270,7 +462,7 @@ parentPort!.on('message', (msg: any) => {
     try {
       switch (msg.type) {
         case 'load':
-          await loadModel(msg.modelPath, msg.language)
+          await loadModel(msg)
           break
         case 'stream-start':
           await startSession()

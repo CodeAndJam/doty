@@ -1,6 +1,5 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import { MODELS_DIR } from './models-dir'
 import { store } from './store'
 
@@ -31,8 +30,6 @@ export interface SttModelInfo {
   default?: boolean
   isReady: () => boolean
 }
-
-const HOME_DIR = app.getPath('home')
 
 /** Doty targets European Portuguese first; override in Settings. */
 export const DEFAULT_STT_MODEL: SttModelType = 'nemotron-3.5-streaming'
@@ -152,6 +149,46 @@ export const STT_MODELS: SttModelInfo[] = [
     isReady: () => isModelFileReady('Voxtral-Mini-4B-Realtime-2602-Q8_0.gguf'),
   },
 ]
+
+// ── Support models (VAD / language ID) ────────────────────────────────────────
+/**
+ * Small GGUF files with a single non-ASR role. The ASR models Doty ships serve
+ * only `asr` (checked: parakeet-ultra-Q8_0 reports roles ["asr"]), so speech
+ * gating needs its own file. Optional: without it the worker keeps the RMS gate.
+ * The language-ID model is deliberately not fetched: measured on real segments
+ * it would delete a third of the narration (see TODO.md), so shipping 27 MB of
+ * unused weights would be a download with no user.
+ */
+export type SttSideModelRole = 'vad' | 'langid'
+
+export interface SttSideModelInfo {
+  id: string
+  /** The GGUF role the worker asks for; a mismatch throws UnsupportedRole. */
+  role: SttSideModelRole
+  label: string
+  ggufFile: string
+  url: string
+  size: string
+  isReady: () => boolean
+}
+
+export const STT_SIDE_MODELS: SttSideModelInfo[] = [
+  {
+    id: 'silero-vad',
+    role: 'vad',
+    label: 'Silero VAD v6.2',
+    ggufFile: 'silero-vad-v6.2-F32.gguf',
+    url: 'https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/resolve/main/silero-vad-v6.2-F32.gguf',
+    size: '1.2 MB',
+    isReady: () => isModelFileReady('silero-vad-v6.2-F32.gguf'),
+  },
+]
+
+/** Path to a support model, or null when it is not downloaded (degrade, never block). */
+export function getSttSideModelPath(role: SttSideModelRole): string | null {
+  const model = STT_SIDE_MODELS.find((m) => m.role === role)
+  return model?.isReady() ? join(MODELS_DIR, model.ggufFile) : null
+}
 
 /** Look up a model by id */
 export function getSttModel(id: SttModelType): SttModelInfo {

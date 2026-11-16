@@ -7,6 +7,7 @@ import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
 import { describeTrack } from '../lib/rankTracks'
+import { trackKindOf } from '../lib/trackKind'
 import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
@@ -149,6 +150,8 @@ export default function Soundboard({
   // ── Decision log (beta) ──────────────────────────────────────────────
   const [showDecisionLog, setShowDecisionLog] = useState(false)
   const [scene, setScene] = useState<string | null>(null)
+  /** Tracks moved to the other library in this session: hide them until the next pass. */
+  const [movedAway, setMovedAway] = useState<string[]>([])
   // Skips read the scene from an event handler, so they need it through a ref.
   const sceneRef = useRef<string | null>(null)
   useEffect(() => {
@@ -295,6 +298,13 @@ export default function Soundboard({
       .catch(() => {})
   }
 
+  /** A skip is a label: the DM moved off this track for this kind of scene. */
+  function recordRejection(track: string) {
+    window.doty
+      .sessionPreference({ at: Date.now(), segment: sessionText, track, scene: sceneRef.current, source: 'reject' })
+      .catch(() => {})
+  }
+
   function recordSkip(track: string) {
     onManualAction()
     window.doty
@@ -314,22 +324,28 @@ export default function Soundboard({
 
   function handleSkipNext() {
     if (queue.tracks.length === 0) return
+    // Record the track being skipped, not the one that replaces it: the DM's
+    // signal is "not this", and labelling the replacement would teach the wrong
+    // thing.
+    const skipped = queue.tracks[queue.currentIndex]
     const track = queue.next(loopMode === 'queue')
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
-      recordSkip(track)
-      recordPreference(track)
+      if (skipped) recordSkip(skipped)
+      if (skipped) recordRejection(skipped)
     }
   }
 
   function handleSkipPrev() {
     if (queue.tracks.length === 0) return
+    const skipped = queue.tracks[queue.currentIndex]
     const track = queue.prev(loopMode === 'queue')
     if (track) {
       playTrack(track, true)
       autopilot.notePlayed(track)
-      recordSkip(track)
+      if (skipped) recordSkip(skipped)
+      if (skipped) recordRejection(skipped)
     }
   }
 
@@ -538,6 +554,7 @@ export default function Soundboard({
         msUntilTrackEnd: remaining,
         autopilot: autopilotRef.current,
         override,
+        confidenceThreshold: autopilot.config.confidenceThreshold,
       })
       .then(({ tracks, plan }) => {
         if (cancelled || !plan) return
@@ -577,6 +594,8 @@ export default function Soundboard({
           // Dedupe on what is actually in the queue, not on the last pick: the top
           // candidate flips between passes and would be queued repeatedly.
           if (queue.tracks.includes(track)) return
+          // The DM may have lined up the next track by hand. Their choice wins.
+          if (queue.currentIndex >= 0 && queue.currentIndex < queue.tracks.length - 1) return
           const already = lastQueued.current
           if (already && already.track === track && Date.now() - already.at < 120_000) return
           lastQueued.current = { track, at: Date.now() }
@@ -594,7 +613,17 @@ export default function Soundboard({
     }
     // handlePlayTrack and queue are stable enough for this one-shot planner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candidates, lastRanker, sessionText, override, nearEnd, refreshReport, metaMap, tagsMap])
+  }, [
+    candidates,
+    lastRanker,
+    sessionText,
+    override,
+    nearEnd,
+    refreshReport,
+    metaMap,
+    tagsMap,
+    autopilot.config.confidenceThreshold,
+  ])
 
   // Feed confidence to autopilot when recommendations change.
   // Keep the callbacks in refs: they are rebuilt every render, so depending on
@@ -605,10 +634,14 @@ export default function Soundboard({
   onSfxRecommendationRef.current = autopilot.onSfxRecommendation
 
   useEffect(() => {
-    if (recommendations.length > 0 && lastConfidence > 0) {
-      onRecommendationRef.current(recommendations[0], lastConfidence)
-    }
-  }, [recommendations, lastConfidence])
+    if (recommendations.length === 0 || lastConfidence <= 0) return
+    // The director owns music when the model is loaded: it changes at boundaries
+    // and cuts in only on a categorical scene change. Feeding the legacy
+    // threshold-driven autopilot as well would give two authorities and let it
+    // replace a track mid-phrase.
+    if (lastRanker === 'model') return
+    onRecommendationRef.current(recommendations[0], lastConfidence)
+  }, [recommendations, lastConfidence, lastRanker])
 
   // Feed SFX recommendations to autopilot
   useEffect(() => {
@@ -642,10 +675,12 @@ export default function Soundboard({
   // ── Derived data ─────────────────────────────────────────────────────
 
   // Music: recommendations minus pinned
-  const suggestions = recommendations.filter((f) => !pinned.includes(f))
+  const suggestions = recommendations.filter((f) => !pinned.includes(f) && !movedAway.includes(f))
   // Everything else the model ranked, so all of its options are inspectable.
   const considered =
-    lastRanker === 'model' ? candidates.filter((f) => !suggestions.includes(f) && !pinned.includes(f)) : []
+    lastRanker === 'model'
+      ? candidates.filter((f) => !suggestions.includes(f) && !pinned.includes(f) && !movedAway.includes(f))
+      : []
   const hasTracks = pinned.length > 0 || suggestions.length > 0
 
   // SFX: pinned SFX objects
@@ -795,9 +830,9 @@ export default function Soundboard({
               {autopilot.enabled && autopilot.config.musicEnabled && (
                 <span
                   data-testid="autopilot-chip"
-                  title={`Autopilot changes the track by itself when the top suggestion passes ${Math.round(
+                  title={`At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(
                     autopilot.config.confidenceThreshold * 100,
-                  )}%. Below that it only shows the suggestion.`}
+                  )}% with a clear margin.`}
                   style={{
                     fontSize: '9px',
                     color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
@@ -807,7 +842,7 @@ export default function Soundboard({
                     letterSpacing: '0.1em',
                   }}
                 >
-                  AUTO ≥{Math.round(autopilot.config.confidenceThreshold * 100)}%
+                  AUTO · when sure
                 </span>
               )}
               <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
@@ -1042,6 +1077,12 @@ export default function Soundboard({
                     tags={tagsMap[f] || []}
                     allTags={allTags}
                     probability={lastRanker === 'model' ? probabilities[f] : undefined}
+                    kind={trackKindOf(f, metaMap[f]) === 'sfx' ? 'sfx' : 'music'}
+                    onMoveTo={(target) => {
+                      window.doty.moveTrack(f, target).then((r) => {
+                        if (r.ok) setMovedAway((prev) => [...prev, f])
+                      })
+                    }}
                     onPlay={() => handlePlayTrack(f)}
                     onPin={() => togglePin(f)}
                     onMoveUp={() => {}}
