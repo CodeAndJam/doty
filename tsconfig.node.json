@@ -8,9 +8,9 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "composite": true,
+    "composite": false,
     "outDir": "out/main",
-    "rootDir": "electron"
+    "rootDir": "."
   },
   "include": [
     "electron"

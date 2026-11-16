@@ -111,4 +111,34 @@ describe('session store', () => {
     s.putVector('a.mp3', 'model-a', Float32Array.from([1, 2]))
     expect(s.getVector('a.mp3', 'model-b')).toBeNull()
   })
+
+  it('keeps a text and an audio vector for the same track', () => {
+    // The two indexers both write the same path. With `path` as the primary key
+    // they overwrote each other on every launch, which made every pass re-embed
+    // the whole library.
+    const s = store()
+    s.putVector('a.mp3', 'text-model', Float32Array.from([1, 2]))
+    s.putVector('a.mp3', 'audio-model', Float32Array.from([3, 4]))
+    expect(Array.from(s.getVector('a.mp3', 'text-model') ?? [])).toEqual([1, 2])
+    expect(Array.from(s.getVector('a.mp3', 'audio-model') ?? [])).toEqual([3, 4])
+  })
+
+  it('migrates the old one-model-per-path table in place', () => {
+    const db = new Database(':memory:')
+    db.exec(`CREATE TABLE track_vectors (
+      path TEXT PRIMARY KEY, model TEXT NOT NULL, dim INTEGER NOT NULL,
+      vector BLOB NOT NULL, updated_at INTEGER NOT NULL
+    )`)
+    db.prepare('INSERT INTO track_vectors VALUES (?, ?, ?, ?, ?)').run(
+      'a.mp3',
+      'text-model',
+      1,
+      Buffer.from(Float32Array.from([7]).buffer),
+      at,
+    )
+    const s = createSessionStore(db)
+    expect(Array.from(s.getVector('a.mp3', 'text-model') ?? [])).toEqual([7])
+    s.putVector('a.mp3', 'audio-model', Float32Array.from([8]))
+    expect(Array.from(s.getVector('a.mp3', 'audio-model') ?? [])).toEqual([8])
+  })
 })

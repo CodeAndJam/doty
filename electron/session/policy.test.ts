@@ -4,6 +4,7 @@ import { decideAction } from './policy'
 const base = {
   now: 1_000_000,
   probability: 0.95,
+  trackRatio: 3,
   sameScene: false,
   categorical: true,
   msUntilTrackEnd: 200_000,
@@ -40,17 +41,30 @@ describe('decideAction', () => {
     expect(decideAction(at).kind).toBe('queue-next')
   })
 
-  it('queues nothing at the boundary when the pick is weak', () => {
-    const at = { ...base, msUntilTrackEnd: 15_000, probability: 0.2, categorical: false }
+  it('holds at a boundary when nothing stands out, so the current cue repeats', () => {
+    // The DM's default is loop-single. Twenty options spread probability thin, so
+    // replacing a fitting cue on a weak read is the defect, not the safe choice.
+    const at = { ...base, msUntilTrackEnd: 15_000, probability: 0.2, trackRatio: 1, categorical: false }
     expect(decideAction(at).kind).toBe('hold')
+  })
+
+  it('changes the cue at a boundary for a categorical scene change, even on a moderate read', () => {
+    const at = { ...base, msUntilTrackEnd: 15_000, probability: 0.32, trackRatio: 1.2, categorical: true }
+    expect(decideAction(at).kind).toBe('queue-next')
+  })
+
+  it('needs a clear margin to cut in mid-track, not just a decent probability', () => {
+    const flat = { ...base, probability: 0.95, trackRatio: 1.1 }
+    expect(decideAction(flat).kind).toBe('hold')
   })
 
   it('respects the minimum dwell between changes', () => {
     expect(decideAction({ ...base, msSinceLastChange: 10_000 }).kind).toBe('hold')
   })
 
-  it('starts something when nothing is playing', () => {
-    const idle = { ...base, msUntilTrackEnd: null, categorical: false, probability: 0.6 }
+  it('starts something when nothing is playing, even without a confident read', () => {
+    // There is no cue to repeat, so a hold would be silence at the start.
+    const idle = { ...base, msUntilTrackEnd: null, categorical: false, probability: 0.1, trackRatio: 1 }
     expect(decideAction(idle).kind).toBe('queue-next')
   })
 

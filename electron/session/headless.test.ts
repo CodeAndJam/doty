@@ -55,6 +55,7 @@ describe.skipIf(!ready)('headless ranker run', () => {
         .map((c, i) => ({ path: c.path, description: c.description, probability: tracks[i] ?? 0 }))
         .sort((a, b) => b.probability - a.probability)
       const top = ranked[0]?.probability ?? 0
+      const trackRatio = ranked[1]?.probability ? top / ranked[1].probability : Number.POSITIVE_INFINITY
 
       let moodIndex = 0
       for (let i = 1; i < moods.length; i++) if (moods[i] > moods[moodIndex]) moodIndex = i
@@ -63,6 +64,7 @@ describe.skipIf(!ready)('headless ranker run', () => {
       // What the policy would do at a boundary, and mid-track, for this top pick.
       const base = {
         probability: top,
+        trackRatio,
         sameScene: false,
         categorical: false,
         msSinceLastChange: 600_000,

@@ -10,7 +10,15 @@
  * path are used when duration is missing or ambiguous, and a file that looks like
  * neither is left `unknown` rather than guessed — misrouting a real cue into the
  * effects shelf is worse than leaving it where it is.
+ *
+ * An audio-embedding verdict, when the library has one, fills exactly that middle
+ * band (20–45 s). It does *not* override a duration that already decides: on the
+ * real library its confident mistakes are all long ambience cues — a campfire or
+ * a rain loop genuinely sounds like a sound effect — and demoting a DM's scene
+ * bed to the effects shelf is the expensive error.
  */
+
+import type { TrackMeta } from '../types'
 
 export type TrackKind = 'music' | 'sfx' | 'unknown'
 
@@ -19,6 +27,8 @@ export interface TrackKindInput {
   /** Seconds, when the scanner has it. */
   duration?: number | null
   genre?: string | null
+  /** Verdict from the track's audio embedding, when one exists. */
+  audio?: 'music' | 'sfx' | 'uncertain'
 }
 
 /** Below this, it cannot be a cue: no scene is scored by six seconds of audio. */
@@ -28,6 +38,11 @@ const MUSIC_MIN_SECONDS = 45
 
 const SFX_WORDS = /\b(sfx|sound ?effects?|foley|stingers?|one ?shots?|ui)\b/i
 const MUSIC_WORDS = /\b(music|soundtrack|score|ost|theme|ambience|ambiance)\b/i
+
+/** The one place that maps stored metadata to the classifier's input. */
+export function trackKindOf(path: string, meta: TrackMeta | undefined): TrackKind {
+  return classifyTrack({ path, duration: meta?.duration, genre: meta?.genre, audio: meta?.audioKind })
+}
 
 export function classifyTrack(input: TrackKindInput): TrackKind {
   const genre = (input.genre ?? '').trim()
@@ -45,7 +60,11 @@ export function classifyTrack(input: TrackKindInput): TrackKind {
     if (seconds >= MUSIC_MIN_SECONDS) return 'music'
   }
 
-  // No duration, or a middling one (a loop, a stinger bed): fall back to names.
+  // The only band duration cannot answer: a loop or a sting bed. The sound itself
+  // is better evidence than a folder name, when the model has an opinion.
+  if (input.audio === 'music' || input.audio === 'sfx') return input.audio
+
+  // No duration, or an undecided audio verdict: fall back to names.
   if (namedSfx) return 'sfx'
   if (namedMusic) return 'music'
   return 'unknown'

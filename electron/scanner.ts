@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { watch as chokidarWatch, type FSWatcher } from 'chokidar'
-import { analyzeFile } from './analyzer'
+import { ANALYSIS_VERSION, analyzeFile } from './analyzer'
 import type { FullTrackMetadata } from './metadata-cache'
 import { clearCache, getCache, getCached, removeCached, setCached } from './metadata-cache'
 import { invalidateMusicLibrary } from './music-library'
@@ -106,7 +106,9 @@ export function startScanner(
   for (const absPath of allFiles) {
     const rel = relPath(absPath)
     const cached = cache[rel]
-    if (!cached) {
+    if (!cached || cached.analysisVersion !== ANALYSIS_VERSION) {
+      // A missing row, or one written by an older analysis: the stored numbers no
+      // longer mean what the current code means, so they cannot be trusted.
       enqueue(absPath)
     } else {
       try {

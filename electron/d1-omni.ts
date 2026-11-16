@@ -191,6 +191,43 @@ export class D1Omni {
 
   /** Probabilities over `options`, ordered as given. */
   async rank(state: string, instructions: string, options: string[]): Promise<number[]> {
+    return this.ask(state, instructions, options, 'choice')
+  }
+
+  /**
+   * How well one track fits, as an expected level on a short scale. A 20-way
+   * softmax spreads probability across every candidate, so its top value says
+   * more about how many options were offered than about fit. Scoring one track at
+   * a time is order-independent and answers the question autopilot actually asks:
+   * is this good, not is this the least bad of twenty.
+   */
+  async score(state: string, instructions: string, levels: string[]): Promise<number> {
+    const options = levels.map((level, i) => `level ${i}: ${level}`)
+    const probabilities = await this.ask(state, instructions, options, 'score')
+    return probabilities.reduce((sum, p, i) => sum + p * i, 0)
+  }
+
+  /**
+   * P(yes) for one statement about the state. The model reads a noul in its own
+   * order, so this returns the `true` option's probability rather than assuming
+   * which index the head put first.
+   */
+  async fit(state: string, instructions: string): Promise<number> {
+    const probabilities = await this.ask(
+      state,
+      instructions,
+      ['false: no, the statement does not hold', 'true: yes, the statement holds'],
+      'noul',
+    )
+    return probabilities[1] ?? 0
+  }
+
+  private async ask(
+    state: string,
+    instructions: string,
+    options: string[],
+    type: 'choice' | 'score' | 'noul',
+  ): Promise<number[]> {
     const { seq, options: maxOptions } = this.manifest.shape
     if (options.length === 0) return []
     if (options.length > maxOptions)
@@ -221,11 +258,11 @@ export class D1Omni {
         [...row.markers.map(() => true), ...new Array(maxOptions - k).fill(false)],
         [1, maxOptions],
       ),
-      qtype: new ort.Tensor('int64', BigInt64Array.from([0n]), [1]),
+      qtype: new ort.Tensor('int64', BigInt64Array.from([BigInt({ choice: 0, score: 1, noul: 2 }[type])]), [1]),
     }
 
     const out = await this.session.run(feeds)
     const logits = Array.from((out.logits.data as Float32Array).slice(0, k))
-    return toProbabilities(logits, k, temperatureFor(this.manifest.temperatures, k))
+    return toProbabilities(logits, k, temperatureFor(this.manifest.temperatures, k, type))
   }
 }

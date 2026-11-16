@@ -3,6 +3,7 @@ import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { describeTrack } from '../src/lib/describeTrack'
 import {
   feedChunk,
   finalizeStream,
@@ -70,17 +71,22 @@ import {
   isAnySttModelReady,
   MODELS_DIR,
   STT_MODELS,
+  STT_SIDE_MODELS,
   type SttModelInfo,
   type SttModelType,
 } from './model-paths'
-import { getMusicFiles } from './music-library'
+import { getMusicFiles, invalidateMusicLibrary } from './music-library'
 import { handleMusicRequest } from './music-protocol'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
+import { createAudioIndexer } from './session/audio/indexer'
+import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
 import { planStep } from './session/director'
-import { EMBEDDING_MODEL, embedderAvailable, loadEmbedder } from './session/embedder'
+import { audioAvailable, embedderAvailable, loadEmbedder, RETRIEVAL_KEY } from './session/embedder'
 import { topK } from './session/embedding'
 import { createIndexer } from './session/indexer'
+import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
+import { DEFAULT_POLICY } from './session/policy'
 import { learnedPick } from './session/preferences'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
@@ -443,13 +449,16 @@ app.whenReady().then(async () => {
     } catch (e) {
       console.error('ASR init error:', e)
     }
+    // The VAD model is small and transcription degrades without it. Fetch it in
+    // the background when the ASR model is already present, not only when the DM
+    // re-downloads a model they already have.
+    void ensureSideModels().catch((e) => console.warn('[model] optional VAD not installed:', e))
   }
 
   const musicFolder = store.get('musicFolder', '') as string
   if (musicFolder) {
     launchScanner(musicFolder)
-    // Minutes of work, so it runs in the background and resumes next launch.
-    setTimeout(() => startIndexing(musicFolder).catch(() => {}), 3_000)
+    startBackgroundPasses(musicFolder)
   }
 
   // One background download, once per machine. No prompt: the app is useless
@@ -529,9 +538,53 @@ handle(INVOKE.sttTranscribeChunk, async (_e, buffer: ArrayBuffer) => {
 
 // ── IPC: Music ────────────────────────────────────────────────────────────────
 
+/**
+ * Move one file between the music library and the effects library, at the DM's
+ * request. Effects mixed into a music folder are common, and no classifier is
+ * trustworthy enough to reorganise someone's disk on its own — this only ever
+ * runs from a click.
+ */
+handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') => {
+  const musicFolder = store.get('musicFolder', '') as string
+  const sfxFolder = store.get('sfxFolder', '') as string
+  const source = target === 'music' ? sfxFolder : musicFolder
+  const destination = moveDestination(trackPath.split('/').pop() ?? trackPath, target, {
+    music: musicFolder,
+    sfx: sfxFolder,
+  })
+  if (!source || !destination) return { ok: false, reason: 'both folders must be set' }
+
+  const from = join(source, trackPath)
+  if (!fs.existsSync(from)) return { ok: false, reason: 'file not found' }
+
+  const dir = join(destination, '..')
+  fs.mkdirSync(dir, { recursive: true })
+  const name = disambiguate(destination.split('/').pop() ?? '', (candidate) => fs.existsSync(join(dir, candidate)))
+  const to = join(dir, name)
+  try {
+    fs.renameSync(from, to)
+  } catch (e) {
+    return { ok: false, reason: e instanceof Error ? e.message : String(e) }
+  }
+
+  // Keep metadata and tags with the track rather than losing them on a move.
+  try {
+    const db = getDb()
+    db.prepare('update tracks set path = ? where path = ?').run(to.replace(`${dir}/`, ''), trackPath)
+    db.prepare('update track_tags set filename = ? where filename = ?').run(to.replace(`${dir}/`, ''), trackPath)
+  } catch (e) {
+    console.error('[library] could not update the moved track:', e)
+  }
+
+  invalidateMusicLibrary()
+  if (musicFolder) launchScanner(musicFolder)
+  return { ok: true, path: to }
+})
+
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
+  startBackgroundPasses(folderPath)
   send(EVENTS.musicFolderChanged, folderPath)
   return { ok: true }
 })
@@ -546,6 +599,7 @@ handle(INVOKE.pickMusicFolder, async () => {
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
+    startBackgroundPasses(result.filePaths[0])
     send(EVENTS.musicFolderChanged, result.filePaths[0])
     return result.filePaths[0]
   }
@@ -566,7 +620,12 @@ handle(INVOKE.triggerScan, () => {
 })
 
 handle(INVOKE.getAllMetadata, () => {
-  return getAllMetadata()
+  const all = getAllMetadata()
+  const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind }> = {}
+  for (const [path, meta] of Object.entries(all)) {
+    withKind[path] = audioKinds[path] ? { ...meta, audioKind: audioKinds[path] } : meta
+  }
+  return withKind
 })
 
 // ── IPC: Tags ─────────────────────────────────────────────────────────────────
@@ -754,6 +813,8 @@ handle(
       msUntilTrackEnd: number | null
       autopilot: boolean
       override: boolean
+      /** The DM's threshold from Settings; absent keeps the policy default. */
+      confidenceThreshold?: number
     },
   ) => {
     const run = sessionPipeline.then(async () => {
@@ -763,6 +824,18 @@ handle(
       let best = 0
       for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
       const now = Date.now()
+
+      // The margin the policy gates on: the runner-up is the strongest competitor.
+      let top = tracks.length > 0 ? tracks[0] : 0
+      let second = 0
+      for (let i = 1; i < tracks.length; i++) {
+        if (tracks[i] > top) {
+          second = top
+          top = tracks[i]
+        } else if (tracks[i] > second) {
+          second = tracks[i]
+        }
+      }
 
       // Where the model cannot decide, prefer what the DM chose for this scene.
       const learned = learnedPick({
@@ -782,12 +855,19 @@ handle(
           intensity: 0.5,
           moodProbability: moods[best] ?? 0,
           trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
+          secondTrackProbability: second,
         },
         now,
         msUntilTrackEnd: request.msUntilTrackEnd,
         msSinceLastChange: now - lastChangeAt,
         autopilot: request.autopilot,
         override: request.override,
+        // Settings must move the real gate, not just the label under it. The
+        // threshold is the cut-in bar; boundaries always pick the next track.
+        policy: {
+          ...DEFAULT_POLICY,
+          interruptMinProbability: request.confidenceThreshold ?? DEFAULT_POLICY.interruptMinProbability,
+        },
       })
 
       const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
@@ -858,27 +938,18 @@ async function startIndexing(folder: string): Promise<void> {
   try {
     embedder ??= await loadEmbedder(EMBEDDER_DIR)
     const allMetadata = getAllMetadata()
+    const allTags = getTagsMap()
     const files = getMusicFiles(folder)
     embedding = { done: 0, total: files.length }
     const indexer = createIndexer({
       paths: () => files,
       store: sessionStore,
       embed: (texts) => embedder!.embedDocuments(texts),
-      model: EMBEDDING_MODEL,
-      // What gets embedded decides what retrieval can find. The path alone only
-      // carries vocabulary — a chase found caves, not urgency — so the metadata the
-      // ranker sees goes in too.
-      describe: (path) => {
-        const meta = allMetadata[path]
-        const name = path.replace(/\.[^.]+$/, '').replace(/[-_/]/g, ' ')
-        const facts = [
-          meta?.genre,
-          meta?.bpm ? `${meta.bpm} BPM` : null,
-          meta?.energy !== undefined ? `energy ${meta.energy.toFixed(1)}` : null,
-          meta?.scale,
-        ].filter(Boolean)
-        return facts.length > 0 ? `${name} — ${facts.join(', ')}` : name
-      },
+      model: RETRIEVAL_KEY,
+      // Exactly the text the ranker judges, so a retrieved track is one the model
+      // was also shown. Two describers would drift and retrieve names the ranker
+      // has never heard of.
+      describe: (path) => describeTrack(path, allMetadata[path], allTags[path] ?? []),
       batch: 8,
       onProgress: (p) => {
         embedding = p
@@ -890,6 +961,64 @@ async function startIndexing(folder: string): Promise<void> {
     console.error('[embedding] indexing failed:', e)
   } finally {
     indexing = false
+  }
+}
+
+/** Audio verdicts from the background pass; absent means "use duration". */
+let audioKinds: Record<string, AudioKind> = {}
+let audioIndexing = false
+
+/**
+ * Minutes of work, so it runs in the background and resumes next launch. Audio
+ * classification waits for the text pass: both need the embedder, and the audio
+ * encoder is another ~190 MB resident. Called at startup and on a folder change,
+ * which used to leave a newly selected library unindexed until the next launch.
+ */
+function startBackgroundPasses(folder: string): void {
+  setTimeout(() => {
+    startIndexing(folder)
+      .catch((e) => console.error('[embedding] pass failed:', e))
+      .finally(() => startAudioKinds(folder).catch((e) => console.error('[audio-kind] pass failed:', e)))
+  }, 3_000)
+}
+
+/**
+ * One audio embedding per track, classified as music or effect. Duration decides
+ * the clear cases; this fills the 20–45 s grey band where the folder name is the
+ * only other evidence. Runs after the text pass, never on the playback path.
+ */
+async function startAudioKinds(folder: string): Promise<void> {
+  if (audioIndexing || !audioAvailable(EMBEDDER_DIR)) return
+  audioIndexing = true
+  try {
+    embedder ??= await loadEmbedder(EMBEDDER_DIR)
+    const anchors = await loadKindAnchors(embedder)
+    if (!anchors) return
+    const metadata = getAllMetadata()
+    const files = getMusicFiles(folder)
+    const indexer = createAudioIndexer({
+      paths: () => files,
+      store: sessionStore,
+      // `getMusicFiles` is relative to the library root; the decoder needs the
+      // real path. Passing the relative one makes ffmpeg fail for every track,
+      // silently, because the indexer treats an embed failure as "unclassified".
+      embed: (path) => embedTrackAudio(embedder!, join(folder, path), clipWindow(metadata[path]?.duration)),
+      classify: (vector) => decideKindFor(vector, anchors).kind,
+    })
+    await indexer.run()
+    audioKinds = indexer.kinds
+    if (files.length > 0 && Object.keys(audioKinds).length === 0) {
+      console.warn('[audio-kind] no track could be decoded or embedded; using duration only')
+    }
+    console.log(
+      `[audio-kind] classified ${Object.keys(audioKinds).length} tracks (${
+        Object.entries(audioKinds).filter(([, kind]) => kind === 'sfx').length
+      } effects)`,
+    )
+    // Badges read `metaMap`, which the renderer refreshes on this event.
+    send(EVENTS.scanComplete)
+  } finally {
+    audioIndexing = false
   }
 }
 
@@ -915,7 +1044,7 @@ handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
     const query = await embedder.embedQuery(text)
     const vectors = new Map<string, Float32Array>()
     for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
-      const vector = sessionStore.getVector(path, EMBEDDING_MODEL)
+      const vector = sessionStore.getVector(path, RETRIEVAL_KEY)
       if (vector) vectors.set(path, vector)
     }
     return topK(query, vectors, Math.max(1, Math.min(k, 50)))
@@ -938,6 +1067,15 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
 
 // ── IPC: Model downloads ──────────────────────────────────────────────────────
 
+/** Small optional GGUFs (VAD, language ID). A failure degrades, it does not block. */
+async function ensureSideModels(): Promise<void> {
+  for (const side of STT_SIDE_MODELS) {
+    if (side.isReady()) continue
+    const result = await sttDownloads.start({ id: side.id, url: side.url }, join(MODELS_DIR, side.ggufFile))
+    if (!result.ok) console.warn(`[model] optional ${side.id} not installed:`, result)
+  }
+}
+
 handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   const modelInfo = modelId
     ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
@@ -945,6 +1083,7 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
+    await ensureSideModels()
     restartRecognizer()
     send(EVENTS.modelStatus, { ready: true })
     return { ok: true }
@@ -957,6 +1096,7 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   if (!result.ok) return result
 
   store.set('sttModel', modelInfo.id)
+  await ensureSideModels()
   // The file is complete and selected: report success even if a local model
   // fails to initialise, otherwise the UI claims the download failed.
   try {

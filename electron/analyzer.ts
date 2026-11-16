@@ -1,13 +1,25 @@
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
 
+/**
+ * Bump when the analysis itself changes meaning — not when it is merely re-run.
+ * Cached rows carry the version that produced them, so a formula fix (the energy
+ * clamp was one) re-analyses the library instead of trusting stale numbers.
+ */
+export const ANALYSIS_VERSION = 2
+
 export interface TrackMetadata {
   bpm: number
   bpmConfidence: number
   key: string
   scale: string
   danceability: number
+  /** 0..1, derived from RMS loudness: 0 is near silence, 1 is full scale. */
   energy: number
+  /** RMS loudness in dBFS, the raw number `energy` is derived from. */
+  loudness: number
+  /** Which analysis produced this row. */
+  analysisVersion: number
   duration: number
   mtime: number
   // ID3 / file tags

@@ -4,7 +4,14 @@
  */
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { DEFAULT_STT_LANGUAGE, DEFAULT_STT_MODEL, getModelPath, STT_MODELS, type SttModelType } from './model-paths'
+import {
+  DEFAULT_STT_LANGUAGE,
+  DEFAULT_STT_MODEL,
+  getModelPath,
+  getSttSideModelPath,
+  STT_MODELS,
+  type SttModelType,
+} from './model-paths'
 import { store } from './store'
 import { AudioQueue } from './stt-quality/audio-queue'
 
@@ -141,7 +148,13 @@ export function initRecognizer(): boolean {
   }
   const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
   const w = ensureWorker()
-  w.postMessage({ type: 'load', modelPath: getModelPath(model.id), language })
+  // The VAD model is optional: without it the worker keeps the level gate.
+  w.postMessage({
+    type: 'load',
+    modelPath: getModelPath(model.id),
+    language,
+    vadPath: getSttSideModelPath('vad'),
+  })
   return true
 }
 

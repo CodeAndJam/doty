@@ -34,17 +34,30 @@ describe.skipIf(process.env.RANKER_ROWS !== '1')('harvest ranker rows', () => {
     const transcripts = JSON.parse(fs.readFileSync(TRANSCRIPTS, 'utf8')) as Transcript[]
 
     const db = new Database(DB, { readonly: true })
-    const tracks = db.prepare('select path, bpm, energy, scale, danceability from tracks').all() as Array<{
+    const tracks = db
+      .prepare('select path, bpm, energy, scale, danceability, duration, genre from tracks')
+      .all() as Array<{
       path: string
       bpm: number
       energy: number
       scale: string
       danceability: number
+      duration: number
+      genre: string | null
     }>
     const files = tracks.map((t) => t.path)
     const metadata: Record<string, never> = {}
     for (const t of tracks) {
-      metadata[t.path] = { bpm: t.bpm, energy: t.energy, scale: t.scale, danceability: t.danceability } as never
+      // Every fact production sends, so the eval measures the text the ranker
+      // actually sees rather than a thinner version of it.
+      metadata[t.path] = {
+        bpm: t.bpm,
+        energy: t.energy,
+        scale: t.scale,
+        danceability: t.danceability,
+        duration: t.duration,
+        genre: t.genre,
+      } as never
     }
     const tags = db.prepare('select filename, tag from track_tags').all() as Array<{ filename: string; tag: string }>
     const tagsMap: Record<string, string[]> = {}

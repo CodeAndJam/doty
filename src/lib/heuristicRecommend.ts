@@ -402,6 +402,10 @@ export function candidateSet(
     picked.push(file)
   }
 
+  // Half the list is the heuristic's best guess; the rest is the best of each
+  // energy band, so a quiet scene always has quiet tracks to pick from. A folder
+  // stratum was tried and measured worse: it displaced the heuristic head and cost
+  // more recall than it recovered, so it is deliberately absent.
   const perBand = Math.max(1, Math.ceil((limit - head) / ENERGY_BANDS.length))
   for (const inBand of ENERGY_BANDS) {
     overall
@@ -410,10 +414,14 @@ export function candidateSet(
         return energy !== undefined && inBand(energy)
       })
       .slice(0, perBand)
-      .forEach((entry) => add(entry.file))
+      .forEach((entry) => {
+        add(entry.file)
+      })
   }
   // Fill anything left from the heuristic's own order.
-  overall.forEach((entry) => add(entry.file))
+  overall.forEach((entry) => {
+    add(entry.file)
+  })
 
   return picked.slice(0, limit)
 }

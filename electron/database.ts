@@ -32,6 +32,8 @@ export function getDb(): Database.Database {
       scale       TEXT,
       danceability REAL,
       energy      REAL,
+      loudness    REAL,
+      analysis_version INTEGER DEFAULT 0,
       bitrate     INTEGER,
       sample_rate INTEGER,
       channels    INTEGER,
@@ -40,6 +42,14 @@ export function getDb(): Database.Database {
       scanned_at  TEXT DEFAULT (datetime('now'))
     )
   `)
+
+  // Columns added after the first release: CREATE TABLE IF NOT EXISTS will not
+  // touch an existing database, so add them here. Default 0 makes the scanner
+  // re-analyse rows written by an older analysis.
+  const columns = db.prepare('PRAGMA table_info(tracks)').all() as Array<{ name: string }>
+  const has = (name: string) => columns.some((column) => column.name === name)
+  if (!has('loudness')) db.exec('ALTER TABLE tracks ADD COLUMN loudness REAL')
+  if (!has('analysis_version')) db.exec('ALTER TABLE tracks ADD COLUMN analysis_version INTEGER DEFAULT 0')
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS track_tags (

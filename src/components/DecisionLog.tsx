@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { DecisionLogEntry } from '../types'
 
 interface Props {
@@ -16,7 +17,36 @@ function shortFilename(path: string | null): string {
   return name.length > 30 ? `${name.slice(0, 27)}...` : name
 }
 
+/** Tab-separated so it pastes into a spreadsheet or a chat without cleanup. */
+export function exportText(entries: DecisionLogEntry[]): string {
+  const head = 'time\tranker\taction\ttrack\tconfidence\treason\ttranscript'
+  const rows = entries.map((e) =>
+    [
+      new Date(e.timestamp).toISOString(),
+      e.ranker ?? '-',
+      e.action ?? '-',
+      e.topTrack ?? '-',
+      e.confidence > 0 ? `${(e.confidence * 100).toFixed(0)}%` : '-',
+      (e.reason ?? '').replace(/\t/g, ' '),
+      (e.transcriptSnippet ?? '').replace(/\t/g, ' '),
+    ].join('\t'),
+  )
+  return [head, ...rows].join('\n')
+}
+
 export default function DecisionLog({ entries, onClose }: Props) {
+  const [copied, setCopied] = useState(false)
+
+  function copy() {
+    navigator.clipboard
+      .writeText(exportText(entries))
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
+  }
+
   return (
     <div
       style={{
@@ -34,14 +64,24 @@ export default function DecisionLog({ entries, onClose }: Props) {
     >
       <div className="flex items-center justify-between mb-1">
         <span style={{ color: '#c8922a', fontSize: '9px', letterSpacing: '0.05em' }}>DECISION LOG (beta)</span>
-        <button
-          type="button"
-          onClick={onClose}
-          style={{ color: '#6b4e15', fontSize: '10px', padding: '0 2px' }}
-          title="Close decision log"
-        >
-          x
-        </button>
+        <span className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={copy}
+            style={{ color: copied ? '#4a9' : '#6b4e15', fontSize: '9px' }}
+            title="Copy the log as tab-separated text, for feedback"
+          >
+            {copied ? 'copied' : 'copy'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            style={{ color: '#6b4e15', fontSize: '10px', padding: '0 2px' }}
+            title="Close decision log"
+          >
+            x
+          </button>
+        </span>
       </div>
       {entries.length === 0 && <div style={{ color: '#5a4a30', fontStyle: 'italic' }}>No decisions yet</div>}
       {entries.map((e, i) => (

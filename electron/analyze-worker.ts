@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { parentPort, workerData } from 'node:worker_threads'
+import { ANALYSIS_VERSION } from './analyzer'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 let ffmpegPath: string = require('ffmpeg-static')
@@ -123,12 +124,20 @@ async function run() {
     /* leave 0 */
   }
 
+  // Loudness in dBFS, from the RMS of the decoded signal. The previous score,
+  // sqrt(mean(x^2)) * 10 clamped to 1.0, put 70% of a real library at exactly 1.0
+  // and made the field useless as a discriminator. -40 dBFS is near silence and 0
+  // is full scale, which is the range cue libraries actually occupy.
   let energy = 0
+  let loudness = -60
   try {
-    const e = essentia.Energy(signal).energy
-    energy = parseFloat(Math.min(1, Math.sqrt(e / samples.length) * 10).toFixed(2))
+    let sum = 0
+    for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i]
+    const rms = Math.sqrt(sum / Math.max(1, samples.length))
+    loudness = parseFloat((20 * Math.log10(Math.max(rms, 1e-6))).toFixed(1))
+    energy = parseFloat(Math.max(0, Math.min(1, (loudness + 40) / 40)).toFixed(2))
   } catch {
-    /* leave 0 */
+    /* leave the silence defaults */
   }
 
   parentPort!.postMessage({
@@ -138,6 +147,8 @@ async function run() {
     scale,
     danceability,
     energy,
+    loudness,
+    analysisVersion: ANALYSIS_VERSION,
     mtime,
     ...tags,
     // Analysis uses a 10-minute prefix; report the real file duration from tags

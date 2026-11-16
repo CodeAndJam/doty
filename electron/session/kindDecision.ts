@@ -15,12 +15,20 @@
  * effects shelf is worse than leaving it where they put it.
  */
 
+import { cosine } from './embedding'
+
 export type AudioKind = 'music' | 'sfx' | 'uncertain'
 
 /** The two descriptions an audio vector is compared against, in one shared space. */
 export const KIND_QUERIES: Record<Exclude<AudioKind, 'uncertain'>, string> = {
   music: 'a background music track for a roleplaying scene',
   sfx: 'a short sound effect: a door, a sword hit, a monster roar',
+}
+
+/** The two text vectors the queries above produce. */
+export interface KindAnchors {
+  music: Float32Array
+  sfx: Float32Array
 }
 
 /** How far apart the two scores must be before a move is justified. */
@@ -31,6 +39,24 @@ export interface KindDecision {
   /** Absolute gap between the two scores, for logging and for a UI hint. */
   margin: number
   reason: string
+}
+
+/** Cosine of a track against the two descriptions. */
+export function kindScores(track: Float32Array, anchors: KindAnchors): { music: number; sfx: number } {
+  return { music: cosine(track, anchors.music), sfx: cosine(track, anchors.sfx) }
+}
+
+/**
+ * The decision for a real track vector. A vector from another model or another
+ * dimension is refused outright: comparing it would produce a confident score
+ * that means nothing.
+ */
+export function decideKindFor(track: Float32Array, anchors: KindAnchors, margin = KIND_MARGIN): KindDecision {
+  if (track.length !== anchors.music.length || track.length !== anchors.sfx.length) {
+    return { kind: 'uncertain', margin: 0, reason: 'the audio vector and the queries are not comparable' }
+  }
+  const { music, sfx } = kindScores(track, anchors)
+  return decideKind(music, sfx, margin)
 }
 
 export function decideKind(musicScore: number, sfxScore: number, margin = KIND_MARGIN): KindDecision {
