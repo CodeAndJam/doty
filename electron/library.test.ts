@@ -147,6 +147,7 @@ describe('library', () => {
     // The lane only says where a sound belongs; the DM searched the folder they
     // have open, and that is the only place this file exists until it is moved.
     const { library } = harness({
+      folders: () => ({ music: '/music', sfx: '' }),
       musicFiles: () => ['Tavern/tavern.mp3', 'Walking/Night/Weather - Light Wind.mp3'],
       facts: () => ({
         'Tavern/tavern.mp3': { duration: 200, genre: 'Music' } as never,
@@ -154,8 +155,29 @@ describe('library', () => {
       }),
     })
     expect(library.items('music').map((item) => item.key)).toEqual(['Tavern/tavern.mp3'])
+    // No effects folder: the effect stays on the music shelf, so the music box
+    // must find it, and the effects box must too.
     const result = await library.search('wind', 'music', 5)
     expect(result.items.map((item) => item.key)).toContain('Walking/Night/Weather - Light Wind.mp3')
+    const asEffect = await library.search('wind', 'sfx', 5)
+    expect(asEffect.items.map((item) => item.key)).toContain('Walking/Night/Weather - Light Wind.mp3')
+  })
+
+  it('hides an effect from the music box once an effects folder can hold it', async () => {
+    const { library } = harness({
+      musicFiles: () => ['Tavern/tavern.mp3', 'Walking/Night/Weather - Light Wind.mp3'],
+      facts: () => ({
+        'Tavern/tavern.mp3': { duration: 200, genre: 'Music' } as never,
+        'Walking/Night/Weather - Light Wind.mp3': { duration: 76, genre: 'Sound Effects' } as never,
+      }),
+    })
+    // The music shelf is lane music here, so the box answers with lane music.
+    expect((await library.search('wind', 'music', 5)).items.map((item) => item.key)).not.toContain(
+      'Walking/Night/Weather - Light Wind.mp3',
+    )
+    expect((await library.search('wind', 'sfx', 5)).items.map((item) => item.key)).toContain(
+      'Walking/Night/Weather - Light Wind.mp3',
+    )
   })
 
   it('answers semantically once the lane is fully embedded', async () => {

@@ -12,7 +12,7 @@
  * can be driven by a fake embedder in tests, without Electron.
  */
 import { describeTrack } from '../src/lib/describeTrack'
-import { type Lane, type LaneSource, resolveLane } from '../src/lib/lane'
+import { type Lane, type LaneSource, resolveLane, showInMusicPanel } from '../src/lib/lane'
 import type { TrackMeta } from '../src/types'
 import { createAudioIndexer } from './session/audio/indexer'
 import type { Embedder } from './session/embedder'
@@ -84,8 +84,8 @@ export interface LibraryDeps {
 
 export interface Library {
   items(lane?: Lane): LibraryItem[]
-  /** Search the items that live in `origin`, whatever lane they are labelled. */
-  search(text: string, origin: Lane, k: number): Promise<SearchResult>
+  /** Search the shelf the pane on that side lists: the music folder, or every file labelled an effect. */
+  search(text: string, shelf: Lane, k: number): Promise<SearchResult>
   status(): IndexStatus
   ensureIndexed(): Promise<void>
   pause(): void
@@ -292,11 +292,14 @@ export function createLibrary(deps: LibraryDeps): Library {
     }
   }
 
-  async function search(text: string, origin: Lane, k: number): Promise<SearchResult> {
-    // The DM is looking at a folder, and the lane is only a label on each file:
-    // an effect that lives in the music folder has to be found there, because
-    // until it is moved that folder is the only place it exists.
-    const pool = items().filter((item) => item.origin === origin)
+  async function search(text: string, shelf: Lane, k: number): Promise<SearchResult> {
+    // Search what the pane on that side lists: the effects shelf is the lane, and
+    // the music shelf hides an effect only when an effects folder can hold it —
+    // the same rule `listMusic` uses, so the box can never hide a row on screen.
+    const hasSfxShelf = Boolean(deps.folders().sfx)
+    const pool = items().filter((item) =>
+      shelf === 'sfx' ? item.lane === 'sfx' : showInMusicPanel(item.lane, hasSfxShelf),
+    )
     const query = text.trim()
     if (!query) return { items: [], mode: 'text' }
 

@@ -210,6 +210,12 @@ flowchart LR
   N -->|no| F[folder it came from]
 ```
 
+Each pane searches what it lists, and both use the same retrieval index: the music
+pane offers the tracks the music list shows (an effect only when no effects folder
+is configured to hold it), the effects pane offers everything labelled an effect.
+A search box that answers about a different set than the list under it is a bug,
+which is what made "air" miss a wind effect the model ranked first.
+
 ## Data
 
 ```mermaid
@@ -289,7 +295,7 @@ Nothing here may stop playback or hide the suggestions.
 |---|---|---|
 | Decision model | recommendations are heuristic | ranker status, per-option probabilities absent |
 | Embedding model | search by name/tag; recommendations by keywords | `ready: false`, search `mode: 'text'` |
-| Index incomplete | text search over the folder | `text search — index 12/43` |
+| Index incomplete | text search over the pane's shelf | `text search — index 12/43` |
 | Audio verdict | duration, genre and the name decide | badge falls back to that guess |
 | VAD model | RMS gate in the STT worker | none; transcript still arrives |
 | STT model | no transcript; DM can type a prompt | onboarding / model status |
