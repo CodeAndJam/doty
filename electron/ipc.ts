@@ -37,6 +37,7 @@ export const INVOKE = {
   sessionReport: 'session:report',
   embeddingStatus: 'embedding:status',
   librarySearch: 'library:search',
+  libraryLanes: 'library:lanes',
   sfxRank: 'session:sfx-rank',
   moveTrack: 'library:move-track',
   setLane: 'library:set-lane',

@@ -203,6 +203,10 @@ export function getLaneOverrides(): Record<string, 'music' | 'sfx'> {
   return out
 }
 
+export function clearLaneOverride(path: string): void {
+  getDb().prepare('DELETE FROM lane_overrides WHERE path = ?').run(path)
+}
+
 export function setLaneOverride(path: string, lane: 'music' | 'sfx'): void {
   getDb()
     .prepare(

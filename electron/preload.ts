@@ -55,6 +55,10 @@ contextBridge.exposeInMainWorld('doty', {
   sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
+  libraryLanes: () =>
+    invoke(INVOKE.libraryLanes) as Promise<
+      Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>
+    >,
   librarySearch: (text: string, lane: 'music' | 'sfx', k: number) =>
     invoke(INVOKE.librarySearch, text, lane, k) as Promise<{
       mode: 'semantic' | 'text'

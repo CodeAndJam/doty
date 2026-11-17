@@ -48,6 +48,7 @@ function harness(overrides: Partial<LibraryDeps> = {}) {
     tags: () => ({}),
     overrides: () => ({}),
     setOverride: (key, lane) => written.push(`${key}:${lane}`),
+    clearOverride: (key) => written.push(`${key}:clear`),
     embedder: async () => fakeEmbedder(),
     embedderAvailable: () => true,
     audioAvailable: () => false,
@@ -69,6 +70,33 @@ describe('library', () => {
     const items = library.items()
     expect(items.map((item) => item.key)).toEqual(['Tavern/tavern.mp3', 'Combat/drums.mp3', 'sfx:Door/door slam.wav'])
     expect(items[2].lane).toBe('sfx')
+  })
+
+  it('keeps an effect on the effects shelf on the folder alone', () => {
+    // The category folder is the DM's taxonomy, not a music cue: "Ambience" here
+    // names a shelf of effects, and the name-only classifier used to outvote it.
+    const { library } = harness({
+      sfxItems: () => [
+        {
+          id: 'Ambience/rain loop.wav',
+          filename: '/sfx/Ambience/rain loop.wav',
+          category: 'Ambience',
+          label: 'rain loop',
+          description: '',
+          duration: 0,
+          source: 'custom',
+        },
+      ],
+      folders: () => ({ music: '/music', sfx: '/sfx' }),
+    })
+    const item = library.items().find((i) => i.origin === 'sfx')
+    expect(item?.lane).toBe('sfx')
+  })
+
+  it('reports where each item came from as well as what it is filed as', () => {
+    const { library } = harness({ overrides: () => ({ 'sfx:Door/door slam.wav': 'music' }) })
+    const item = library.items().find((i) => i.key === 'sfx:Door/door slam.wav')
+    expect(item).toMatchObject({ origin: 'sfx', lane: 'music', laneSource: 'override' })
   })
 
   it('does not list a one-folder library twice', () => {

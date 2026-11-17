@@ -21,18 +21,36 @@ export default function SfxBrowsePanel({
   onClose,
 }: SfxBrowsePanelProps) {
   const [allSfx, setAllSfx] = useState<SfxMeta[]>([])
+  const [lanes, setLanes] = useState<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>(
+    {},
+  )
   const [selectedCategory, setSelectedCategory] = useState<SfxCategory | 'all' | 'recommended'>('all')
   const [search, setSearch] = useState('')
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
 
+  const refresh = async () => {
+    // Settled independently: a failed lane lookup must not empty the shelf.
+    const [list, next] = await Promise.all([
+      window.doty.getSfxList().catch(() => null),
+      window.doty.libraryLanes().catch(() => null),
+    ])
+    if (list) setAllSfx(list)
+    if (next) setLanes(next)
+  }
+
   // Load SFX list on mount
   useEffect(() => {
-    window.doty
-      .getSfxList()
-      .then(setAllSfx)
-      .catch(() => setAllSfx([]))
+    void refresh()
   }, [])
+
+  /** Label, never a disk move. */
+  async function switchLane(filename: string) {
+    const info = lanes[filename]
+    if (!info) return
+    await window.doty.setLane(info.key, info.lane === 'music' ? 'sfx' : 'music')
+    await refresh()
+  }
 
   // Load tags on mount
   useEffect(() => {
@@ -118,9 +136,38 @@ export default function SfxBrowsePanel({
 
   function renderSfxCard(sfx: SfxMeta) {
     const ch = activeChannelMap.get(sfx.id)
+    const lane = lanes[sfx.filename]
     return (
       <SfxCard
         key={sfx.id}
+        badge={
+          <button
+            type="button"
+            data-testid="lane-badge"
+            onClick={(e) => {
+              e.stopPropagation()
+              void switchLane(sfx.filename)
+            }}
+            disabled={!lane}
+            aria-label={
+              lane
+                ? `Filed as ${lane.lane === 'music' ? 'music' : 'an effect'}; switch to the other shelf`
+                : 'Lane unknown'
+            }
+            title={
+              lane ? `Filed as ${lane.lane === 'music' ? 'music' : 'an effect'} — click to change` : 'Lane unknown'
+            }
+            style={{
+              fontFamily: 'monospace',
+              fontSize: '9px',
+              padding: '0 4px',
+              color: lane?.lane === 'music' ? '#4a8a6a' : '#b06a2a',
+              border: `1px solid ${lane && lane.lane !== lane.origin ? 'rgba(200,146,42,0.6)' : 'transparent'}`,
+            }}
+          >
+            {lane?.lane === 'music' ? '♪' : 'FX'}
+          </button>
+        }
         sfx={sfx}
         channelId={ch?.id ?? null}
         isPlaying={!!ch?.playing}

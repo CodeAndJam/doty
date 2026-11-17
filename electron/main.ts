@@ -26,6 +26,7 @@ import {
 } from './d1-model'
 import { MOODS } from './d1-omni'
 import {
+  clearLaneOverride,
   closeDb,
   getAllTags,
   getDb,
@@ -585,7 +586,14 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
 // DM put it. Moving files is the action above, and it stays a separate one.
 handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
   if (lane !== 'music' && lane !== 'sfx') return { ok: false }
-  library.setLane(key, lane)
+  const item = library.items().find((candidate) => candidate.key === key)
+  // Choosing the folder's own lane is not an override; writing one would pin the
+  // file forever and the classifier could never be improved.
+  if (item && item.origin === lane) library.clearLane(key)
+  else library.setLane(key, lane)
+  // Every panel and the director read the same label, so they all have to hear it.
+  send(EVENTS.sfxChanged)
+  send(EVENTS.scanComplete)
   return { ok: true }
 })
 
@@ -615,9 +623,9 @@ handle(INVOKE.pickMusicFolder, async () => {
 })
 
 handle(INVOKE.listMusic, () => {
-  const musicFolder = store.get('musicFolder', '') as string
-  if (!musicFolder) return []
-  return getMusicFiles(musicFolder)
+  // The lane decides what is offered, not the folder: a file the DM filed as an
+  // effect is not a scene cue even if it lives in the music folder.
+  return library.items('music').map((item) => (item.origin === 'music' ? item.path : item.absolute))
 })
 
 handle(INVOKE.triggerScan, () => {
@@ -852,6 +860,7 @@ const library = createLibrary({
   tags: () => getTagsMap(),
   overrides: () => getLaneOverrides(),
   setOverride: (key, lane) => setLaneOverride(key, lane),
+  clearOverride: (key) => clearLaneOverride(key),
   embedder: () => loadEmbedderOnce(),
   embedderAvailable: () => embedderAvailable(EMBEDDER_DIR),
   audioAvailable: () => audioAvailable(EMBEDDER_DIR),
@@ -1127,13 +1136,39 @@ handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
 handle(INVOKE.getSfxList, () => {
-  // Walks the effects folder twice (once here, once inside `lanes`). Fine for a
-  // table's effects shelf; batch them if a library ever holds thousands.
-  const lanes = library.lanes()
-  return listSfx(store.get('sfxFolder', '') as string).map((item) => ({
-    ...item,
-    lane: lanes.get(`sfx:${item.id}`) ?? 'sfx',
-  }))
+  const known = new Map(listSfx(store.get('sfxFolder', '') as string).map((item) => [`sfx:${item.id}`, item]))
+  return library.items('sfx').map((item) => {
+    const found = known.get(item.key)
+    if (found) return { ...found, lane: 'sfx' as const }
+    // A file the DM filed as an effect but which lives in the music folder: show
+    // it in the effects shelf, addressed by its absolute path.
+    return {
+      // Its own id space: the effects panel is keyed by id, and a music-folder
+      // path could collide with an effect of the same name.
+      id: `music:${item.path}`,
+      filename: item.absolute,
+      category: 'from the music folder',
+      label: (item.path.split('/').pop() ?? item.path).replace(/\.[^.]+$/, ''),
+      description: '',
+      duration: 0,
+      source: 'custom' as const,
+      lane: 'sfx' as const,
+    }
+  })
+})
+
+handle(INVOKE.libraryLanes, () => {
+  const out: Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }> = {}
+  for (const item of library.items()) {
+    const entry = { key: item.key, lane: item.lane, origin: item.origin }
+    // Keyed by what each panel renders. A music-folder file is shown by relative
+    // path in the music panel and by absolute path if it appears in the effects
+    // shelf; an effects-folder file is always addressed absolutely. Never key by
+    // the relative id of an effect: the two folders share that name space.
+    if (item.origin === 'music') out[item.path] = entry
+    out[item.absolute] = entry
+  }
+  return out
 })
 
 handle(INVOKE.getSfxFolder, () => store.get('sfxFolder', ''))

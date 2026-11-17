@@ -108,6 +108,8 @@ function SfxMetadataTooltip({
 }
 
 interface SfxCardProps {
+  /** Rendered where the category label sits; used by the browser for the lane switch. */
+  badge?: React.ReactNode
   sfx: SfxMeta
   /** Channel id if currently playing, null otherwise */
   channelId: string | null
@@ -126,6 +128,7 @@ interface SfxCardProps {
 }
 
 export default function SfxCard({
+  badge,
   sfx,
   channelId: _channelId,
   isPlaying,
@@ -281,20 +284,22 @@ export default function SfxCard({
         </div>
       </div>
 
-      {/* Category badge — only visible when not hovered */}
-      <span
-        className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
-        style={{
-          fontFamily: 'monospace',
-          fontSize: '9px',
-          color: isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416',
-          pointerEvents: 'none',
-          textTransform: 'uppercase',
-          letterSpacing: '0.05em',
-        }}
-      >
-        {sfx.category}
-      </span>
+      {/* Category badge, or the lane badge the browser passes in its place */}
+      {badge ?? (
+        <span
+          className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
+          style={{
+            fontFamily: 'monospace',
+            fontSize: '9px',
+            color: isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416',
+            pointerEvents: 'none',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {sfx.category}
+        </span>
+      )}
 
       {/* Inline tag editor */}
       {editingTags && (

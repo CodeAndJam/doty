@@ -263,6 +263,11 @@ export interface DotyAPI {
   }) => Promise<unknown>
   embeddingStatus: () => Promise<IndexProgress>
   /**
+   * The lane of every item, keyed by the path each panel renders (relative for a
+   * music-folder file, absolute for an effects-folder file).
+   */
+  libraryLanes: () => Promise<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>
+  /**
    * Search one lane. Semantic when every track on that lane is embedded; `mode`
    * says which matcher answered, so the panel can show the fallback.
    */

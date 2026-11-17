@@ -5,7 +5,7 @@
 
 import { exec } from 'node:child_process'
 import fs from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import { type AudioResource, createAudioResource, StreamType } from '@discordjs/voice'
 import prism from 'prism-media'
 
@@ -29,7 +29,9 @@ export function createMusicResource(
   volume = 1.0,
   seekSeconds = 0,
 ): AudioResource {
-  const filePath = join(musicFolder, filename)
+  // A track labelled as music may live in the effects folder; the renderer plays
+  // it by absolute path, so the remote stream has to resolve it the same way.
+  const filePath = isAbsolute(filename) ? filename : join(musicFolder, filename)
 
   if (!fs.existsSync(filePath)) {
     throw new Error(`[discord-audio] File not found: ${filePath}`)

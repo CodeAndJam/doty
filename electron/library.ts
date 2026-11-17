@@ -29,6 +29,8 @@ export interface LibraryItem {
   path: string
   /** Where the decoder finds it. */
   absolute: string
+  /** The folder it was found in, which the lane may differ from. */
+  origin: Lane
   lane: Lane
   /** Why it is on that lane: the DM said so, the classifier decided, or the folder. */
   laneSource: LaneSource
@@ -63,6 +65,8 @@ export interface LibraryDeps {
   tags(): Record<string, string[]>
   overrides(): Record<string, Lane>
   setOverride(key: string, lane: Lane): void
+  /** Drop the DM's label, so the classifier decides again. */
+  clearOverride(key: string): void
   /** Loads the model on first use; null when it is not installed. */
   embedder(): Promise<Embedder | null>
   embedderAvailable(): boolean
@@ -88,6 +92,7 @@ export interface Library {
   /** The effective lane of every item, by library key. */
   lanes(): Map<string, Lane>
   setLane(key: string, lane: Lane): void
+  clearLane(key: string): void
 }
 
 export function createLibrary(deps: LibraryDeps): Library {
@@ -107,7 +112,7 @@ export function createLibrary(deps: LibraryDeps): Library {
     const out: LibraryItem[] = []
 
     const pick = (key: string, path: string, absolute: string, folderLane: Lane, meta?: TrackMeta, extra = '') => {
-      const description = extra || describeTrack(path, meta, tags[path] ?? [])
+      const description = extra || describeTrack(path, meta, tags[path] ?? tags[absolute] ?? [])
       const decision = resolveLane({
         path,
         folderLane,
@@ -116,7 +121,21 @@ export function createLibrary(deps: LibraryDeps): Library {
         genre: meta?.genre,
         audio: meta?.audioKind,
       })
-      out.push({ key, path, absolute, lane: decision.lane, laneSource: decision.source, description })
+      // shortcut: effects have no measured duration yet (B2), so a name-only
+      // verdict must not move them off the shelf they were put on. Remove this
+      // once the scanner measures effect durations.
+      const nameOnly = folderLane === 'sfx' && !meta?.duration && !meta?.audioKind
+      const lane = nameOnly && decision.source === 'classifier' ? 'sfx' : decision.lane
+      const source = lane === decision.lane ? decision.source : 'folder'
+      out.push({
+        key,
+        path,
+        absolute,
+        origin: folderLane,
+        lane,
+        laneSource: source,
+        description,
+      })
     }
 
     for (const path of music ? deps.musicFiles(music) : []) {
@@ -275,6 +294,10 @@ export function createLibrary(deps: LibraryDeps): Library {
     lanes: () => new Map(items().map((item) => [item.key, item.lane])),
     setLane(key, lane) {
       deps.setOverride(key, lane)
+      emit()
+    },
+    clearLane(key) {
+      deps.clearOverride(key)
       emit()
     },
   }

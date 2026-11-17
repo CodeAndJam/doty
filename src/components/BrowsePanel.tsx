@@ -14,12 +14,33 @@ interface BrowsePanelProps {
 
 export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay, onPin, onClose }: BrowsePanelProps) {
   const [allFiles, setAllFiles] = useState<string[]>([])
+  const [lanes, setLanes] = useState<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>(
+    {},
+  )
   const [search, setSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([])
 
+  const refresh = async () => {
+    // Settled independently: a failed lane lookup must not empty the list.
+    const [files, next] = await Promise.all([
+      window.doty.listMusic().catch(() => null),
+      window.doty.libraryLanes().catch(() => null),
+    ])
+    if (files) setAllFiles(files)
+    if (next) setLanes(next)
+  }
+
   useEffect(() => {
-    window.doty.listMusic().then(setAllFiles)
+    void refresh()
   }, [])
+
+  /** Label, never a disk move: the file stays where the DM put it. */
+  async function switchLane(file: string) {
+    const info = lanes[file]
+    if (!info) return
+    await window.doty.setLane(info.key, info.lane === 'music' ? 'sfx' : 'music')
+    await refresh()
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -154,6 +175,36 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 }}
               >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button
+                type="button"
+                data-testid="lane-badge"
+                onClick={() => void switchLane(f)}
+                disabled={!lanes[f]}
+                aria-label={
+                  lanes[f]
+                    ? `Filed as ${lanes[f].lane === 'music' ? 'music' : 'an effect'}; switch to the other shelf`
+                    : 'Lane unknown'
+                }
+                title={
+                  lanes[f]
+                    ? `Filed as ${lanes[f].lane === 'music' ? 'music' : 'an effect'} — click to change`
+                    : 'Lane unknown'
+                }
+                className="shrink-0"
+                style={{
+                  width: '24px',
+                  height: '20px',
+                  fontFamily: 'monospace',
+                  fontSize: '10px',
+                  lineHeight: '18px',
+                  color: lanes[f]?.lane === 'sfx' ? '#b06a2a' : '#4a8a6a',
+                  border: `1px solid ${
+                    lanes[f] && lanes[f].lane !== lanes[f].origin ? 'rgba(200,146,42,0.6)' : 'transparent'
+                  }`,
+                }}
+              >
+                {lanes[f]?.lane === 'sfx' ? 'FX' : '♪'}
               </button>
               <span
                 className="flex-1 min-w-0 truncate"
