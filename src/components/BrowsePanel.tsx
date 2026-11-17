@@ -85,11 +85,11 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
       className="absolute inset-0 z-10 flex flex-col"
       style={{
         background: '#080705',
-        border: '1px solid #2e2416',
+        border: '1px solid #3d2f1c',
       }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #2e2416' }}>
+      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #3d2f1c' }}>
         <SearchIcon />
         <input
           type="text"
@@ -100,7 +100,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
           style={{
             fontFamily: "'Crimson Text', serif",
             fontSize: '14px',
-            color: '#c8922a',
+            color: '#d9a441',
           }}
         />
         {search.trim() && found && (
@@ -109,16 +109,18 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             role="status"
             aria-live="polite"
             style={{
-              fontSize: '9px',
-              color: found.mode === 'semantic' ? '#4a8a6a' : '#b06a2a',
-              fontFamily: 'monospace',
+              fontSize: '11px',
+              color: found.mode === 'semantic' ? '#6dbf95' : '#b06a2a',
+              fontFamily: "'IBM Plex Mono', monospace",
             }}
             title="How this answer was found"
           >
             {searchModeLabel(found.mode, found.index)}
           </span>
         )}
-        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filtered.length}</span>
+        <span style={{ fontSize: '12px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+          {filtered.length}
+        </span>
         <button
           type="button"
           onClick={(e) => {
@@ -151,8 +153,8 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                   background: active ? 'rgba(200,146,42,0.25)' : 'rgba(200,146,42,0.08)',
                   border: `1px solid ${active ? 'rgba(200,146,42,0.5)' : 'rgba(200,146,42,0.2)'}`,
                   fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: active ? '#e8d5a3' : '#8a7050',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: active ? '#f2e6c9' : '#b9a683',
                   lineHeight: '18px',
                   cursor: 'pointer',
                 }}
@@ -166,7 +168,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
               type="button"
               onClick={() => setActiveTagFilters([])}
               className="px-1 opacity-50 hover:opacity-100"
-              style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b4e15' }}
+              style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}
             >
               clear
             </button>
@@ -194,7 +196,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 onClick={() => onPlay(f)}
                 className="w-5 h-5 flex items-center justify-center shrink-0"
                 style={{
-                  border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416'}`,
+                  border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#3d2f1c'}`,
                 }}
               >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -218,10 +220,10 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 style={{
                   width: '24px',
                   height: '20px',
-                  fontFamily: 'monospace',
-                  fontSize: '10px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: '11px',
                   lineHeight: '18px',
-                  color: lanes[f]?.lane === 'sfx' ? '#b06a2a' : '#4a8a6a',
+                  color: lanes[f]?.lane === 'sfx' ? '#b06a2a' : '#6dbf95',
                   border: `1px solid ${
                     lanes[f] && lanes[f].lane !== lanes[f].origin ? 'rgba(200,146,42,0.6)' : 'transparent'
                   }`,
@@ -234,7 +236,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 style={{
                   fontFamily: "'Crimson Text', serif",
                   fontSize: '14px',
-                  color: isPlaying ? '#e8d5a3' : '#8a7050',
+                  color: isPlaying ? '#f2e6c9' : '#b9a683',
                 }}
               >
                 {trackName(f)}
@@ -249,9 +251,9 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                       style={{
                         background: 'rgba(200,146,42,0.1)',
                         border: '1px solid rgba(200,146,42,0.2)',
-                        fontSize: '9px',
-                        fontFamily: 'monospace',
-                        color: '#c8922a',
+                        fontSize: '11px',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: '#d9a441',
                         lineHeight: '14px',
                         maxWidth: '60px',
                       }}
@@ -260,7 +262,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                     </span>
                   ))}
                   {fileTags.length > 2 && (
-                    <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15' }}>
+                    <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}>
                       +{fileTags.length - 2}
                     </span>
                   )}

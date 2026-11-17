@@ -91,7 +91,7 @@ export default function PlayerBar({
 
   const VolumeIcon = muted || volume === 0 ? VolumeMutedIcon : volume < 0.5 ? VolumeLowIcon : VolumeHighIcon
 
-  const loopColor = loopMode === 'off' ? '#3a2e1a' : '#c8922a'
+  const loopColor = loopMode === 'off' ? '#9d8b66' : '#d9a441'
   const loopTitle =
     loopMode === 'off'
       ? 'Loop off — playback stops at end'
@@ -133,26 +133,26 @@ export default function PlayerBar({
           draggingRef.current = false
           onSeekEnd()
         }}
-        className="h-3 cursor-pointer flex items-center mb-1.5"
+        className="h-5 cursor-pointer flex items-center mb-1"
         style={{ touchAction: 'none' }}
       >
-        <div className="w-full h-1 relative rounded-full" style={{ background: 'rgba(200,146,42,0.15)' }}>
+        <div className="w-full relative rounded-full" style={{ height: '3px', background: 'rgba(217,164,65,0.2)' }}>
           {/* Progress fill */}
           <div
             className="h-full rounded-full"
             style={{
               width: `${progress * 100}%`,
-              background: 'linear-gradient(to right, #6b4e15, #c8922a)',
+              background: 'linear-gradient(to right, #a5813f, #d9a441)',
             }}
           />
           {/* Seek thumb */}
           <div
-            className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full"
+            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full"
             style={{
               left: `${progress * 100}%`,
               transform: `translate(-50%, -50%)`,
-              background: '#c8922a',
-              boxShadow: '0 0 4px rgba(200,146,42,0.5)',
+              background: '#d9a441',
+              boxShadow: '0 0 4px rgba(217,164,65,0.5)',
             }}
           />
         </div>
@@ -166,8 +166,9 @@ export default function PlayerBar({
             type="button"
             onClick={onSkipPrev}
             title="Previous track (P)"
-            className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
-            style={{ color: '#6b4e15' }}
+            aria-label="Previous track"
+            className="w-8 h-8 flex items-center justify-center shrink-0 hover:opacity-100 opacity-90"
+            style={{ color: '#a5813f' }}
           >
             <SkipPrevIcon />
           </button>
@@ -177,7 +178,9 @@ export default function PlayerBar({
         <button
           type="button"
           onClick={onToggle}
-          className="w-7 h-7 flex items-center justify-center shrink-0"
+          title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? 'Pause' : 'Play'}
+          className="w-8 h-8 flex items-center justify-center shrink-0"
           style={{
             border: '1px solid rgba(200,146,42,0.4)',
             background: 'rgba(200,146,42,0.08)',
@@ -192,24 +195,27 @@ export default function PlayerBar({
             type="button"
             onClick={onSkipNext}
             title="Next track (N)"
-            className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
-            style={{ color: '#6b4e15' }}
+            aria-label="Next track"
+            className="w-8 h-8 flex items-center justify-center shrink-0 hover:opacity-100 opacity-90"
+            style={{ color: '#a5813f' }}
           >
             <SkipNextIcon />
           </button>
         )}
 
-        {/* Track info tooltip */}
-        <div className="flex-1 min-w-0 flex items-center">
+        {/* Track info tooltip, with the same facts readable without hovering */}
+        <div className="flex-1 min-w-0 flex items-center gap-2">
           <div
             className="relative flex items-center"
             onMouseEnter={() => setShowTrackInfo(true)}
             onMouseLeave={() => setShowTrackInfo(false)}
+            onFocus={() => setShowTrackInfo(true)}
+            onBlur={() => setShowTrackInfo(false)}
           >
             <button
               type="button"
-              className="w-6 h-6 flex items-center justify-center hover:opacity-80"
-              style={{ color: '#c8922a' }}
+              className="w-8 h-8 flex items-center justify-center hover:opacity-100 opacity-90"
+              style={{ color: '#d9a441' }}
               aria-label="Track info"
             >
               <MusicNoteIcon />
@@ -229,7 +235,7 @@ export default function PlayerBar({
                     style={{
                       fontFamily: "'Crimson Text', serif",
                       fontSize: '13px',
-                      color: '#e8d5a3',
+                      color: '#f2e6c9',
                       lineHeight: '1.4',
                       marginBottom: '2px',
                     }}
@@ -238,15 +244,15 @@ export default function PlayerBar({
                   </div>
                   <div
                     style={{
-                      fontFamily: 'monospace',
+                      fontFamily: "'IBM Plex Mono', monospace",
                       fontSize: '11px',
-                      color: '#6b4e15',
+                      color: '#a5813f',
                     }}
                   >
                     {formatTime(currentTime)}
                     {duration > 0 ? ` / ${formatTime(duration)}` : ''}
                     {queuePosition && queuePosition[1] > 0 && (
-                      <span style={{ marginLeft: '8px', color: '#3a2e1a' }}>
+                      <span style={{ marginLeft: '8px', color: '#9d8b66' }}>
                         {queuePosition[0] + 1}/{queuePosition[1]}
                       </span>
                     )}
@@ -255,6 +261,17 @@ export default function PlayerBar({
               </div>
             )}
           </div>
+          <span
+            className="min-w-0 truncate"
+            style={{ fontFamily: "'Crimson Text', serif", fontSize: '15px', color: '#e4d6b4' }}
+            title={trackName(filename)}
+          >
+            {trackName(filename)}
+          </span>
+          <span className="data-label tabular-nums shrink-0" style={{ color: '#9d8b66' }}>
+            {formatTime(currentTime)}
+            {duration > 0 ? ` / ${formatTime(duration)}` : ''}
+          </span>
         </div>
 
         {/* Loop toggle */}
@@ -262,7 +279,8 @@ export default function PlayerBar({
           type="button"
           onClick={onCycleLoop}
           title={loopTitle}
-          className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
+          aria-label={loopTitle}
+          className="w-8 h-8 flex items-center justify-center shrink-0 hover:opacity-100 opacity-90"
           style={{ color: loopColor }}
         >
           {loopMode === 'single' ? <LoopOneIcon /> : <LoopIcon />}
@@ -274,8 +292,9 @@ export default function PlayerBar({
             type="button"
             onClick={onToggleQueue}
             title="Queue"
-            className="w-6 h-6 flex items-center justify-center shrink-0 hover:opacity-80"
-            style={{ color: queuePosition && queuePosition[1] > 0 ? '#c8922a' : '#3a2e1a' }}
+            aria-label="Queue"
+            className="w-8 h-8 flex items-center justify-center shrink-0 hover:opacity-100 opacity-90"
+            style={{ color: queuePosition && queuePosition[1] > 0 ? '#d9a441' : '#9d8b66' }}
           >
             <QueueIcon />
           </button>
@@ -299,7 +318,7 @@ export default function PlayerBar({
                 className="w-px rounded-full animate-bounce"
                 style={{
                   height: `${h * 100}%`,
-                  background: '#c8922a',
+                  background: '#d9a441',
                   opacity: 0.7,
                   animationDelay: `${i * 0.08}s`,
                   animationDuration: '0.6s',

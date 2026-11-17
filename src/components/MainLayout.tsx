@@ -494,7 +494,8 @@ export default function MainLayout() {
           <button
             type="button"
             onClick={toggleRecording}
-            className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+            aria-pressed={recording}
+            className="flex items-center gap-2 px-2.5 py-1.5 transition-all hover:opacity-90"
             style={{
               border: `1px solid ${recording ? 'rgba(239,68,68,0.3)' : sttReady === false ? 'rgba(200,146,42,0.3)' : 'rgba(74,138,106,0.3)'}`,
               background: recording ? 'rgba(239,68,68,0.06)' : 'transparent',
@@ -510,7 +511,7 @@ export default function MainLayout() {
             <div
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: recording ? '#ef4444' : sttReady === false ? '#c8922a' : '#4a8a6a',
+                background: recording ? '#ef4444' : sttReady === false ? '#d9a441' : '#6dbf95',
                 boxShadow: recording
                   ? '0 0 6px rgba(239,68,68,0.8)'
                   : sttReady === false
@@ -525,12 +526,12 @@ export default function MainLayout() {
                   asrStatus === 'crashed'
                     ? '#f59e0b'
                     : sttReady === false
-                      ? '#c8922a'
+                      ? '#d9a441'
                       : recording
                         ? asrStatus === 'loading'
-                          ? '#c8922a'
+                          ? '#d9a441'
                           : '#ef4444'
-                        : '#4a8a6a',
+                        : '#6dbf95',
                 fontSize: '11px',
               }}
             >
@@ -560,7 +561,7 @@ export default function MainLayout() {
                   : 'Downloading speech model — the rest of Doty stays usable'
               }
             >
-              <span style={{ color: '#c8922a', fontSize: '11px', fontFamily: 'monospace' }}>
+              <span style={{ color: '#d9a441', fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace" }}>
                 {sttDownloadError ? 'Model failed — retry in Settings' : `Model ${sttDownload?.percent ?? 0}%`}
               </span>
             </button>
@@ -570,9 +571,9 @@ export default function MainLayout() {
               className="px-2 py-1"
               style={{
                 border: '1px solid rgba(200,146,42,0.3)',
-                color: '#c8922a',
+                color: '#d9a441',
                 fontSize: '11px',
-                fontFamily: 'monospace',
+                fontFamily: "'IBM Plex Mono', monospace",
               }}
               title="The ranker model is not installed. Recommendations use heuristics until it is."
             >
@@ -590,12 +591,12 @@ export default function MainLayout() {
               setAutopilotEnabled(next)
               window.doty.setAutopilotConfig({ enabled: next }).catch(() => {})
             }}
-            className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+            className="flex items-center gap-2 px-2.5 py-1.5 transition-all hover:opacity-90"
             style={{
-              border: `1px solid ${autopilotEnabled ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
-              color: autopilotEnabled ? '#c8922a' : '#3a2e1a',
+              border: `1px solid ${autopilotEnabled ? 'rgba(217,164,65,0.5)' : '#7a6138'}`,
+              color: autopilotEnabled ? '#d9a441' : '#9d8b66',
               fontSize: '11px',
-              fontFamily: 'monospace',
+              fontFamily: "'IBM Plex Mono', monospace",
               letterSpacing: '0.1em',
             }}
             title={
@@ -607,7 +608,7 @@ export default function MainLayout() {
             <span
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: autopilotEnabled ? '#c8922a' : '#3a2e1a',
+                background: autopilotEnabled ? '#d9a441' : '#9d8b66',
                 boxShadow: autopilotEnabled ? '0 0 6px rgba(200,146,42,0.8)' : 'none',
               }}
             />
@@ -616,9 +617,10 @@ export default function MainLayout() {
           <button
             type="button"
             onClick={() => setShowTranscript((v) => !v)}
-            className="p-1 opacity-40 hover:opacity-100 transition-opacity"
+            className="p-1.5 opacity-70 hover:opacity-100 transition-opacity"
             title={showTranscript ? 'Hide transcript' : 'Show transcript'}
-            style={{ color: '#6b4e15' }}
+            aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
+            style={{ color: '#a5813f' }}
           >
             {showTranscript ? <EyeOffIcon /> : <EyeIcon />}
           </button>
@@ -627,7 +629,7 @@ export default function MainLayout() {
         {/* Title */}
         <h1
           className="text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2"
-          style={{ fontFamily: "'Cinzel', serif", color: '#c8922a', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
+          style={{ fontFamily: "'Cinzel', serif", color: '#d9a441', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
         >
           Doty
         </h1>
@@ -639,8 +641,9 @@ export default function MainLayout() {
             setSettingsSection('library')
             setShowSettings(true)
           }}
-          className="relative p-1.5 transition-all group"
-          style={{ color: '#6b4e15' }}
+          className="relative p-2 transition-all group"
+          aria-label="Open settings"
+          style={{ color: '#a5813f' }}
         >
           <GearIcon
             className="w-4 h-4 transition-all group-hover:rotate-45 group-hover:text-accent"
@@ -653,7 +656,7 @@ export default function MainLayout() {
       <div className="flex flex-1 gap-4 px-6 pb-6 overflow-hidden">
         {/* Left: Transcript (hidden entirely when collapsed) */}
         {showTranscript && (
-          <div className="flex flex-col shrink-0 gap-2 w-72">
+          <div className="flex flex-col shrink-0 gap-2 w-[22rem]">
             <Transcript
               segments={transcripts}
               recording={recording}
@@ -739,13 +742,16 @@ export default function MainLayout() {
               value={dmPrompt}
               onChange={(e) => handleDmChange(e.target.value)}
               placeholder="Describe the mood or scene…"
-              className="flex-1 bg-transparent outline-none text-sm w-full"
+              aria-label="Describe the mood or scene"
+              className="flex-1 bg-transparent outline-none w-full"
               style={{
                 fontFamily: "'Crimson Text', serif",
-                fontSize: '15px',
-                color: '#c8922a',
-                border: '1px solid #2e2416',
-                padding: '8px 12px',
+                fontSize: '16px',
+                color: '#e4d6b4',
+                background: '#100e0a',
+                border: '1px solid #3d2f1c',
+                borderRadius: '3px',
+                padding: '10px 14px',
               }}
             />
           </div>

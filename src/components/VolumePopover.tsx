@@ -39,17 +39,23 @@ export default function VolumePopover({
   }, [show])
 
   return (
+    // Keyboard users get the same slider the pointer users see.
     <div
       className="relative flex items-center shrink-0"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
+      onFocus={() => setShow(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShow(false)
+      }}
     >
       <button
         ref={btnRef}
         type="button"
         onClick={onToggleMute}
         title={onToggleMute ? (muted ? 'Unmute' : 'Mute') : 'Volume'}
-        className="w-6 h-6 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+        aria-label={onToggleMute ? (muted ? 'Unmute' : 'Mute') : 'Volume'}
+        className="w-8 h-8 flex items-center justify-center opacity-90 hover:opacity-100 transition-opacity"
       >
         <VolumeIcon />
       </button>

@@ -66,7 +66,7 @@ function Label({ children }: { children: React.ReactNode }) {
         fontFamily: "'Cinzel', serif",
         fontSize: '15px',
         letterSpacing: '0.25em',
-        color: '#6b4e15',
+        color: '#a5813f',
         textTransform: 'uppercase' as const,
         display: 'block',
         marginBottom: '8px',
@@ -152,7 +152,7 @@ export default function Settings({
       aria-label="Settings sections"
       aria-orientation="vertical"
       className="flex md:flex-col flex-wrap gap-1 shrink-0 p-4 md:w-44 md:border-r"
-      style={{ borderColor: '#2e2416' }}
+      style={{ borderColor: '#3d2f1c' }}
       onKeyDown={(e) => {
         const at = SECTIONS.findIndex((item) => item.id === section)
         const step =
@@ -188,7 +188,7 @@ export default function Settings({
             fontSize: '12px',
             letterSpacing: '0.12em',
             textTransform: 'uppercase',
-            color: section === item.id ? '#c8922a' : '#6b4e15',
+            color: section === item.id ? '#d9a441' : '#a5813f',
             background: section === item.id ? 'rgba(200,146,42,0.08)' : 'transparent',
             border: 'none',
             cursor: 'pointer',
@@ -409,7 +409,7 @@ export default function Settings({
       ? [sttLanguage, ...activeSttLanguages]
       : activeSttLanguages
 
-  const rankerDotColor = rankerIsReady ? '#4a8a6a' : rankerIsError ? '#ef4444' : '#c8922a'
+  const rankerDotColor = rankerIsReady ? '#6dbf95' : rankerIsError ? '#ef4444' : '#d9a441'
   const rankerDotShadow = rankerIsReady
     ? '0 0 6px rgba(74,138,106,0.7)'
     : rankerIsError
@@ -420,10 +420,10 @@ export default function Settings({
   const inputStyle: React.CSSProperties = {
     width: '100%',
     background: '#080705',
-    border: '1px solid #2e2416',
+    border: '1px solid #3d2f1c',
     padding: '8px 12px',
     fontSize: '15px',
-    color: '#c8b07a',
+    color: '#e4d6b4',
     fontFamily: "'Crimson Text', serif",
     outline: 'none',
   }
@@ -432,7 +432,7 @@ export default function Settings({
     padding: '8px 14px',
     background: 'rgba(200,146,42,0.08)',
     border: '1px solid rgba(200,146,42,0.3)',
-    color: '#c8922a',
+    color: '#d9a441',
     fontSize: '16px',
     fontFamily: "'Cinzel', serif",
     letterSpacing: '0.1em',
@@ -467,8 +467,8 @@ export default function Settings({
         aria-label="Settings"
         ref={dialogRef}
         style={{
-          background: 'linear-gradient(160deg, #0f0d09, #080705)',
-          border: '1px solid #2e2416',
+          background: 'linear-gradient(160deg, #100e0a, #080705)',
+          border: '1px solid #3d2f1c',
           boxShadow: '0 0 40px rgba(0,0,0,0.8), 0 0 80px rgba(200,146,42,0.05)',
         }}
       >
@@ -499,7 +499,7 @@ export default function Settings({
                 fontFamily: "'Cinzel', serif",
                 fontSize: '16px',
                 letterSpacing: '0.2em',
-                color: '#c8922a',
+                color: '#d9a441',
                 textShadow: '0 0 12px rgba(200,146,42,0.4)',
               }}
             >
@@ -509,14 +509,14 @@ export default function Settings({
               type="button"
               onClick={onClose}
               style={{
-                color: '#3a2e1a',
+                color: '#9d8b66',
                 transition: 'color 0.2s',
                 cursor: 'pointer',
                 background: 'none',
                 border: 'none',
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
-              onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
+              onMouseEnter={(e) => (e.currentTarget.style.color = '#d9a441')}
+              onMouseLeave={(e) => (e.currentTarget.style.color = '#9d8b66')}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 18L18 6M6 6l12 12" />
@@ -527,7 +527,7 @@ export default function Settings({
           {/* Divider */}
           <div
             className="mb-5"
-            style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+            style={{ height: '1px', background: 'linear-gradient(to right, transparent, #3d2f1c, transparent)' }}
           />
 
           <div
@@ -540,7 +540,7 @@ export default function Settings({
             <div className="mb-5">
               <Label>Listening Device</Label>
               {audioDevices.length === 0 ? (
-                <div style={{ ...inputStyle, color: '#3a2e1a', fontStyle: 'italic' }}>No devices found</div>
+                <div style={{ ...inputStyle, color: '#9d8b66', fontStyle: 'italic' }}>No devices found</div>
               ) : (
                 <select value={selectedMic} onChange={(e) => handleMicChange(e.target.value)} style={inputStyle}>
                   <option value="">System default</option>
@@ -558,7 +558,7 @@ export default function Settings({
                     type="button"
                     onClick={() => window.doty.micOpenSettings()}
                     className="underline"
-                    style={{ color: '#c8922a' }}
+                    style={{ color: '#d9a441' }}
                   >
                     Open System Settings
                   </button>
@@ -569,7 +569,7 @@ export default function Settings({
             <div className="mb-5">
               <Label>Sound Conduit</Label>
               {outputDevices.length === 0 ? (
-                <div style={{ ...inputStyle, color: '#3a2e1a', fontStyle: 'italic' }}>No devices found</div>
+                <div style={{ ...inputStyle, color: '#9d8b66', fontStyle: 'italic' }}>No devices found</div>
               ) : (
                 <select
                   value={selectedSpeaker}
@@ -596,13 +596,13 @@ export default function Settings({
                   step={100}
                   value={crossfadeMs}
                   onChange={(e) => setCrossfadeMs(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#c8922a' }}
+                  style={{ flex: 1, accentColor: '#d9a441' }}
                 />
                 <span
                   style={{
                     fontSize: '15px',
-                    color: '#c8b07a',
-                    fontFamily: 'monospace',
+                    color: '#e4d6b4',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     minWidth: '36px',
                     textAlign: 'right',
                   }}
@@ -610,7 +610,7 @@ export default function Settings({
                   {(crossfadeMs / 1000).toFixed(1)}s
                 </span>
               </div>
-              <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+              <p style={{ fontSize: '14px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
                 {crossfadeMs === 0 ? 'Instant transition between tracks' : 'Smooth fade between tracks'}
               </p>
             </div>
@@ -634,7 +634,7 @@ export default function Settings({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {folder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No archive selected</span>}
+                  {folder || <span style={{ color: '#9d8b66', fontStyle: 'italic' }}>No archive selected</span>}
                 </div>
                 <button
                   type="button"
@@ -650,7 +650,7 @@ export default function Settings({
                 <p
                   style={{
                     fontSize: '14px',
-                    color: '#3a2e1a',
+                    color: '#9d8b66',
                     marginTop: '6px',
                     fontFamily: "'Crimson Text', serif",
                   }}
@@ -670,7 +670,7 @@ export default function Settings({
                     disabled={!!scanProgress}
                     style={{
                       fontSize: '16px',
-                      color: scanProgress ? '#3a2e1a' : '#c8922a',
+                      color: scanProgress ? '#9d8b66' : '#d9a441',
                       fontFamily: "'Cinzel', serif",
                       letterSpacing: '0.1em',
                       background: 'none',
@@ -683,12 +683,12 @@ export default function Settings({
                 </div>
                 {scanProgress ? (
                   <div>
-                    <div style={{ width: '100%', height: '2px', background: '#2e2416', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '2px', background: '#3d2f1c', overflow: 'hidden' }}>
                       <div
                         style={{
                           height: '100%',
                           width: `${scanPercent}%`,
-                          background: '#c8922a',
+                          background: '#d9a441',
                           boxShadow: '0 0 6px rgba(200,146,42,0.6)',
                           transition: 'width 0.2s',
                         }}
@@ -696,7 +696,7 @@ export default function Settings({
                     </div>
                     <div
                       className="flex justify-between mt-1.5"
-                      style={{ fontSize: '16px', color: '#3a2e1a', fontFamily: 'monospace' }}
+                      style={{ fontSize: '16px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}
                     >
                       <span className="truncate max-w-[70%]">{scanProgress.current}</span>
                       <span>
@@ -707,14 +707,14 @@ export default function Settings({
                 ) : (
                   <div
                     className="flex items-center gap-2"
-                    style={{ fontSize: '14px', color: '#3a2e1a', fontFamily: "'Crimson Text', serif" }}
+                    style={{ fontSize: '14px', color: '#9d8b66', fontFamily: "'Crimson Text', serif" }}
                   >
                     <div
                       style={{
                         width: '6px',
                         height: '6px',
                         borderRadius: '50%',
-                        background: scanDone ? '#4a8a6a' : '#2e2416',
+                        background: scanDone ? '#6dbf95' : '#3d2f1c',
                         boxShadow: scanDone ? '0 0 6px rgba(74,138,106,0.7)' : 'none',
                       }}
                     />
@@ -730,8 +730,8 @@ export default function Settings({
               data-testid="index-summary"
               style={{
                 fontSize: '13px',
-                color: '#3a2e1a',
-                fontFamily: 'monospace',
+                color: '#9d8b66',
+                fontFamily: "'IBM Plex Mono', monospace",
                 marginTop: '-8px',
                 marginBottom: '16px',
               }}
@@ -751,7 +751,7 @@ export default function Settings({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {sfxFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No SFX archive selected</span>}
+                  {sfxFolder || <span style={{ color: '#9d8b66', fontStyle: 'italic' }}>No SFX archive selected</span>}
                 </div>
                 <button
                   type="button"
@@ -770,7 +770,7 @@ export default function Settings({
                 <p
                   style={{
                     fontSize: '14px',
-                    color: '#3a2e1a',
+                    color: '#9d8b66',
                     marginTop: '6px',
                     fontFamily: "'Crimson Text', serif",
                   }}
@@ -793,13 +793,13 @@ export default function Settings({
                     setSfxRecommendCount(v)
                     window.doty.setSfxRecommendationCount(v)
                   }}
-                  style={{ flex: 1, accentColor: '#4a8a6a' }}
+                  style={{ flex: 1, accentColor: '#6dbf95' }}
                 />
                 <span
                   style={{
                     fontSize: '15px',
-                    color: '#c8b07a',
-                    fontFamily: 'monospace',
+                    color: '#e4d6b4',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     minWidth: '24px',
                     textAlign: 'right',
                   }}
@@ -807,7 +807,7 @@ export default function Settings({
                   {sfxRecommendCount}
                 </span>
               </div>
-              <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+              <p style={{ fontSize: '14px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
                 Number of effects to suggest per scene
               </p>
             </div>
@@ -831,7 +831,7 @@ export default function Settings({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {transcriptFolder || <span style={{ color: '#3a2e1a', fontStyle: 'italic' }}>No vault selected</span>}
+                  {transcriptFolder || <span style={{ color: '#9d8b66', fontStyle: 'italic' }}>No vault selected</span>}
                 </div>
                 <button
                   type="button"
@@ -847,7 +847,7 @@ export default function Settings({
                 <p
                   style={{
                     fontSize: '14px',
-                    color: '#3a2e1a',
+                    color: '#9d8b66',
                     marginTop: '6px',
                     fontFamily: "'Crimson Text', serif",
                   }}
@@ -863,7 +863,7 @@ export default function Settings({
               {/* STT model selector */}
               <div
                 className="mb-2"
-                style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+                style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}
               >
                 <div className="flex items-center gap-3 mb-2">
                   <div
@@ -872,15 +872,15 @@ export default function Settings({
                       height: '6px',
                       borderRadius: '50%',
                       flexShrink: 0,
-                      background: sttReady ? '#4a8a6a' : '#c8922a',
+                      background: sttReady ? '#6dbf95' : '#d9a441',
                       boxShadow: sttReady ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.7)',
                     }}
                   />
                   <div className="flex-1 min-w-0">
-                    <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                    <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                       Speech Recognition
                     </p>
-                    <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                    <p style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
                       {sttReady ? 'Attuned' : 'Not yet summoned'}
                     </p>
                   </div>
@@ -921,7 +921,7 @@ export default function Settings({
                             width: '14px',
                             height: '14px',
                             borderRadius: '50%',
-                            border: `1px solid ${isActive ? '#c8922a' : '#3a2e1a'}`,
+                            border: `1px solid ${isActive ? '#d9a441' : '#9d8b66'}`,
                             background: 'transparent',
                             display: 'flex',
                             alignItems: 'center',
@@ -932,34 +932,50 @@ export default function Settings({
                           }}
                         >
                           {isActive && (
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#c8922a' }} />
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#d9a441' }} />
                           )}
                         </button>
 
                         {/* Label */}
                         <div className="flex-1 min-w-0">
-                          <span style={{ fontSize: '13px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                          <span style={{ fontSize: '13px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                             {m.label}
                           </span>
                           <span
                             className="ml-1.5 px-1 rounded text-[10px]"
-                            style={{ background: 'rgba(200,146,42,0.1)', color: '#6b4e15' }}
+                            style={{ background: 'rgba(200,146,42,0.1)', color: '#a5813f' }}
                           >
                             {m.size}
                           </span>
                           <br />
-                          <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                          <span
+                            style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}
+                          >
                             {m.description}
                           </span>
                         </div>
 
                         {/* Status / Download button */}
                         {isDownloading ? (
-                          <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              color: '#d9a441',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              flexShrink: 0,
+                            }}
+                          >
                             {whisperProgress}%
                           </span>
                         ) : isDownloaded ? (
-                          <span style={{ fontSize: '11px', color: '#4a8a6a', fontFamily: 'monospace', flexShrink: 0 }}>
+                          <span
+                            style={{
+                              fontSize: '11px',
+                              color: '#6dbf95',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              flexShrink: 0,
+                            }}
+                          >
                             ready
                           </span>
                         ) : (
@@ -985,8 +1001,8 @@ export default function Settings({
                             }}
                             style={{
                               fontSize: '11px',
-                              color: '#c8922a',
-                              fontFamily: 'monospace',
+                              color: '#d9a441',
+                              fontFamily: "'IBM Plex Mono', monospace",
                               background: 'none',
                               border: '1px solid rgba(200,146,42,0.3)',
                               padding: '2px 8px',
@@ -1006,8 +1022,11 @@ export default function Settings({
                 </div>
 
                 {/* Focused language — avoids per-utterance language detection */}
-                <div className="flex items-center gap-2 mt-3" style={{ fontSize: '12px', fontFamily: 'monospace' }}>
-                  <span style={{ color: '#6b4e15' }}>Language</span>
+                <div
+                  className="flex items-center gap-2 mt-3"
+                  style={{ fontSize: '12px', fontFamily: "'IBM Plex Mono', monospace" }}
+                >
+                  <span style={{ color: '#a5813f' }}>Language</span>
                   <select
                     value={sttLanguage}
                     onChange={async (e) => {
@@ -1020,8 +1039,8 @@ export default function Settings({
                     }}
                     style={{
                       background: '#080705',
-                      color: '#c8b07a',
-                      border: '1px solid #2e2416',
+                      color: '#e4d6b4',
+                      border: '1px solid #3d2f1c',
                       fontSize: '12px',
                       padding: '2px 4px',
                     }}
@@ -1033,18 +1052,18 @@ export default function Settings({
                       </option>
                     ))}
                   </select>
-                  {sttLanguage !== 'auto' && <span style={{ color: '#3a2e1a' }}>focused — faster, more accurate</span>}
+                  {sttLanguage !== 'auto' && <span style={{ color: '#9d8b66' }}>focused — faster, more accurate</span>}
                 </div>
 
                 {/* Download progress bar */}
                 {whisperDownloading && (
                   <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ flex: 1, height: '2px', background: '#2e2416', overflow: 'hidden' }}>
+                    <div style={{ flex: 1, height: '2px', background: '#3d2f1c', overflow: 'hidden' }}>
                       <div
                         style={{
                           height: '100%',
                           width: `${whisperProgress}%`,
-                          background: '#c8922a',
+                          background: '#d9a441',
                           boxShadow: '0 0 6px rgba(200,146,42,0.6)',
                           transition: 'width 0.3s',
                         }}
@@ -1055,8 +1074,8 @@ export default function Settings({
                       onClick={() => window.doty.cancelSttDownload()}
                       style={{
                         fontSize: '11px',
-                        color: '#c8922a',
-                        fontFamily: 'monospace',
+                        color: '#d9a441',
+                        fontFamily: "'IBM Plex Mono', monospace",
                         background: 'none',
                         border: 'none',
                         cursor: 'pointer',
@@ -1068,14 +1087,21 @@ export default function Settings({
                   </div>
                 )}
                 {whisperDownloadError && (
-                  <p style={{ marginTop: '6px', fontSize: '11px', color: '#e07a5f', fontFamily: 'monospace' }}>
+                  <p
+                    style={{
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#e07a5f',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                    }}
+                  >
                     Download failed: {whisperDownloadError}
                   </p>
                 )}
               </div>
 
               {/* d1-omni decision ranker */}
-              <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+              <div style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}>
                 <div className="flex items-center gap-3">
                   <div
                     style={{
@@ -1089,13 +1115,22 @@ export default function Settings({
                     }}
                   />
                   <div className="flex-1 min-w-0">
-                    <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                    <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                       d1-omni Decision Ranker
                     </p>
-                    <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{rankerLabel}</p>
+                    <p style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+                      {rankerLabel}
+                    </p>
                   </div>
                   {rankerProgress !== null ? (
-                    <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace', flexShrink: 0 }}>
+                    <span
+                      style={{
+                        fontSize: '11px',
+                        color: '#d9a441',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        flexShrink: 0,
+                      }}
+                    >
                       {rankerProgress}%
                     </span>
                   ) : rankerInstalled === false ? (
@@ -1105,8 +1140,8 @@ export default function Settings({
                       title="Downloads once, in the background. Keyword matching covers you until it lands."
                       style={{
                         fontSize: '11px',
-                        color: '#c8922a',
-                        fontFamily: 'monospace',
+                        color: '#d9a441',
+                        fontFamily: "'IBM Plex Mono', monospace",
                         background: 'none',
                         border: '1px solid rgba(200,146,42,0.3)',
                         padding: '2px 8px',
@@ -1118,11 +1153,20 @@ export default function Settings({
                     </button>
                   ) : (
                     !rankerIsReady && (
-                      <span style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>1.5 GB</span>
+                      <span style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+                        1.5 GB
+                      </span>
                     )
                   )}
                 </div>
-                <p style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '4px' }}>
+                <p
+                  style={{
+                    fontSize: '11px',
+                    color: '#9d8b66',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    marginTop: '4px',
+                  }}
+                >
                   {rankerInstalled === false
                     ? 'Not installed — suggestions fall back to keyword matching'
                     : !rankerLanguageCovered
@@ -1148,13 +1192,13 @@ export default function Settings({
                   max={20}
                   value={recommendCount}
                   onChange={(e) => onRecommendCountChange(Number(e.target.value))}
-                  style={{ flex: 1, accentColor: '#c8922a' }}
+                  style={{ flex: 1, accentColor: '#d9a441' }}
                 />
                 <span
                   style={{
                     fontSize: '15px',
-                    color: '#c8b07a',
-                    fontFamily: 'monospace',
+                    color: '#e4d6b4',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     minWidth: '24px',
                     textAlign: 'right',
                   }}
@@ -1162,14 +1206,14 @@ export default function Settings({
                   {recommendCount}
                 </span>
               </div>
-              <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+              <p style={{ fontSize: '14px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
                 Number of tracks to suggest per query
               </p>
             </div>
             {/* Divider before Discord */}
             <div
               className="mb-5"
-              style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+              style={{ height: '1px', background: 'linear-gradient(to right, transparent, #3d2f1c, transparent)' }}
             />
             {/* Discord integration — mounted whatever the group, so an open
                   token field keeps what was typed. */}
@@ -1179,7 +1223,7 @@ export default function Settings({
             {/* Divider before future features */}
             <div
               className="mb-5"
-              style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
+              style={{ height: '1px', background: 'linear-gradient(to right, transparent, #3d2f1c, transparent)' }}
             />
             {/* Director */}
             <div className="mb-2">
@@ -1188,27 +1232,34 @@ export default function Settings({
               {/* Autopilot (#12) */}
               <div
                 className="mb-2"
-                style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+                style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                    <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                       Autopilot Mode
                     </p>
                     <span
                       style={{
-                        fontSize: '10px',
-                        color: '#c8922a',
+                        fontSize: '11px',
+                        color: '#d9a441',
                         border: '1px solid rgba(200,146,42,0.3)',
                         padding: '1px 5px',
-                        fontFamily: 'monospace',
+                        fontFamily: "'IBM Plex Mono', monospace",
                       }}
                     >
                       {autopilotEnabled ? 'MASTER ON' : 'MASTER OFF'}
                     </span>
                   </div>
                 </div>
-                <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace', marginBottom: '8px' }}>
+                <p
+                  style={{
+                    fontSize: '12px',
+                    color: '#9d8b66',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    marginBottom: '8px',
+                  }}
+                >
                   The master switch is in the header, off until you turn it on. While it is off nothing changes on its
                   own; these switches decide what it may touch once it is on.
                 </p>
@@ -1227,15 +1278,15 @@ export default function Settings({
                       className="flex items-center gap-2"
                       style={{
                         fontSize: '12px',
-                        fontFamily: 'monospace',
-                        color: autopilotMusic ? '#c8922a' : '#3a2e1a',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: autopilotMusic ? '#d9a441' : '#9d8b66',
                       }}
                     >
                       <div
                         className="w-3 h-3 border"
                         style={{
-                          borderColor: autopilotMusic ? '#c8922a' : '#3a2e1a',
-                          background: autopilotMusic ? '#c8922a' : 'transparent',
+                          borderColor: autopilotMusic ? '#d9a441' : '#9d8b66',
+                          background: autopilotMusic ? '#d9a441' : 'transparent',
                         }}
                       />
                       Music
@@ -1251,15 +1302,15 @@ export default function Settings({
                       className="flex items-center gap-2"
                       style={{
                         fontSize: '12px',
-                        fontFamily: 'monospace',
-                        color: autopilotSfx ? '#4a8a6a' : '#3a2e1a',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: autopilotSfx ? '#6dbf95' : '#9d8b66',
                       }}
                     >
                       <div
                         className="w-3 h-3 border"
                         style={{
-                          borderColor: autopilotSfx ? '#4a8a6a' : '#3a2e1a',
-                          background: autopilotSfx ? '#4a8a6a' : 'transparent',
+                          borderColor: autopilotSfx ? '#6dbf95' : '#9d8b66',
+                          background: autopilotSfx ? '#6dbf95' : 'transparent',
                         }}
                       />
                       SFX
@@ -1269,10 +1320,10 @@ export default function Settings({
                   {/* Confidence threshold */}
                   <div>
                     <div className="flex justify-between mb-1">
-                      <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '11px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>
                         Confidence threshold
                       </span>
-                      <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '11px', color: '#d9a441', fontFamily: "'IBM Plex Mono', monospace" }}>
                         {Math.round(autopilotThreshold * 100)}% — {confidenceLabel(autopilotThreshold)}
                       </span>
                     </div>
@@ -1287,17 +1338,17 @@ export default function Settings({
                         window.doty.setAutopilotConfig({ confidenceThreshold: v })
                       }}
                       className="w-full"
-                      style={{ accentColor: '#c8922a', height: '2px' }}
+                      style={{ accentColor: '#d9a441', height: '2px' }}
                     />
                   </div>
 
                   {/* Crossfade duration */}
                   <div>
                     <div className="flex justify-between mb-1">
-                      <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '11px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>
                         Crossfade duration
                       </span>
-                      <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                      <span style={{ fontSize: '11px', color: '#d9a441', fontFamily: "'IBM Plex Mono', monospace" }}>
                         {autopilotCrossfade}s
                       </span>
                     </div>
@@ -1312,7 +1363,7 @@ export default function Settings({
                         window.doty.setAutopilotConfig({ crossfadeDuration: v })
                       }}
                       className="w-full"
-                      style={{ accentColor: '#c8922a', height: '2px' }}
+                      style={{ accentColor: '#d9a441', height: '2px' }}
                     />
                   </div>
                 </div>
@@ -1321,16 +1372,16 @@ export default function Settings({
               {/* Remote Control (#22) */}
               <div
                 className="flex items-center gap-3"
-                style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px', opacity: 0.5 }}
+                style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px', opacity: 0.5 }}
               >
                 <div
-                  style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#2e2416' }}
+                  style={{ width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, background: '#3d2f1c' }}
                 />
                 <div className="flex-1 min-w-0">
-                  <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                  <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                     Remote Control
                   </p>
-                  <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                  <p style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
                     HTTP API + Stream Deck support
                   </p>
                 </div>
@@ -1347,13 +1398,13 @@ export default function Settings({
             {/* Debug mode */}
             <div className="mb-5">
               <Label>Debug Mode</Label>
-              <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+              <div style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}>
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                    <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                       Capture diagnostics
                     </p>
-                    <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                    <p style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
                       Verbose logs go to a file on this Mac. Nothing is uploaded.
                     </p>
                   </div>
@@ -1365,15 +1416,15 @@ export default function Settings({
                     className="flex items-center gap-2 shrink-0"
                     style={{
                       fontSize: '12px',
-                      fontFamily: 'monospace',
-                      color: debugState?.enabled ? '#c8922a' : '#3a2e1a',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      color: debugState?.enabled ? '#d9a441' : '#9d8b66',
                     }}
                   >
                     <span
                       className="w-3 h-3 border"
                       style={{
-                        borderColor: debugState?.enabled ? '#c8922a' : '#3a2e1a',
-                        background: debugState?.enabled ? '#c8922a' : 'transparent',
+                        borderColor: debugState?.enabled ? '#d9a441' : '#9d8b66',
+                        background: debugState?.enabled ? '#d9a441' : 'transparent',
                       }}
                     />
                     {debugState?.enabled ? 'On' : 'Off'}
@@ -1381,7 +1432,14 @@ export default function Settings({
                 </div>
                 {debugState?.enabled && (
                   <div className="mt-3">
-                    <p style={{ fontSize: '12px', color: '#6b4e15', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    <p
+                      style={{
+                        fontSize: '12px',
+                        color: '#a5813f',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        wordBreak: 'break-all',
+                      }}
+                    >
                       {debugState.logPath}
                     </p>
                     <div className="flex gap-2 mt-2">
@@ -1427,12 +1485,12 @@ export default function Settings({
                 data-testid="debug-diagnostics"
                 style={{
                   background: '#080705',
-                  border: '1px solid #2e2416',
+                  border: '1px solid #3d2f1c',
                   padding: '10px 12px',
                   fontSize: '12px',
                   lineHeight: 1.6,
-                  color: '#c8b07a',
-                  fontFamily: 'monospace',
+                  color: '#e4d6b4',
+                  fontFamily: "'IBM Plex Mono', monospace",
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
                 }}
@@ -1448,14 +1506,14 @@ export default function Settings({
                   data-testid="debug-log"
                   style={{
                     background: '#080705',
-                    border: '1px solid #2e2416',
+                    border: '1px solid #3d2f1c',
                     padding: '10px 12px',
                     maxHeight: '220px',
                     overflow: 'auto',
                     fontSize: '11px',
                     lineHeight: 1.5,
-                    color: '#8a744a',
-                    fontFamily: 'monospace',
+                    color: '#b9a683',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     whiteSpace: 'pre-wrap',
                     wordBreak: 'break-word',
                   }}

@@ -29,8 +29,12 @@ function MetaRow({ label, value }: { label: string; value: string | number | nul
   if (value == null || value === '') return null
   return (
     <div className="flex justify-between gap-2 py-0.5">
-      <span style={{ color: '#3a6b52', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
+      <span
+        style={{ color: '#6dbf95', fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", whiteSpace: 'nowrap' }}
+      >
+        {label}
+      </span>
+      <span style={{ color: '#b9a683', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
         {value}
       </span>
     </div>
@@ -79,7 +83,7 @@ function SfxMetadataTooltip({
         left: pos.left,
         width: pos.width,
         transform: flipBelow ? undefined : 'translateY(-100%)',
-        background: '#0f0d09',
+        background: '#100e0a',
         border: '1px solid rgba(74,138,106,0.3)',
         boxShadow: flipBelow
           ? '0 4px 20px rgba(0,0,0,0.8), 0 -4px 20px rgba(0,0,0,0.6)'
@@ -157,8 +161,8 @@ export default function SfxCard({
       style={{
         background: isPlaying
           ? 'linear-gradient(135deg, rgba(74,138,106,0.12), rgba(74,138,106,0.04))'
-          : 'linear-gradient(160deg, #0f0d09, #080705)',
-        border: `1px solid ${isPinned ? 'rgba(74,138,106,0.4)' : isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416'}`,
+          : 'linear-gradient(160deg, #100e0a, #080705)',
+        border: `1px solid ${isPinned ? 'rgba(74,138,106,0.4)' : isPlaying ? 'rgba(74,138,106,0.4)' : '#3d2f1c'}`,
         boxShadow: isPlaying
           ? '0 0 12px rgba(74,138,106,0.15), inset 0 1px 0 rgba(74,138,106,0.06)'
           : 'inset 0 1px 0 rgba(255,255,255,0.02)',
@@ -171,14 +175,15 @@ export default function SfxCard({
         <button
           type="button"
           onClick={() => (isPlaying ? onStop() : onPlay())}
-          className="w-7 h-7 flex items-center justify-center shrink-0"
+          className="w-8 h-8 flex items-center justify-center shrink-0"
           style={{
-            border: `1px solid ${isPlaying ? 'rgba(74,138,106,0.5)' : '#2e2416'}`,
-            background: isPlaying ? 'rgba(74,138,106,0.1)' : 'transparent',
-            borderRadius: '4px',
-            color: isPlaying ? '#4a8a6a' : '#6b4e15',
+            border: `1px solid ${isPlaying ? 'rgba(109,191,149,0.5)' : '#7a6138'}`,
+            background: isPlaying ? 'rgba(109,191,149,0.1)' : 'transparent',
+            borderRadius: '3px',
+            color: isPlaying ? '#6dbf95' : '#a5813f',
           }}
           title={isPlaying ? 'Stop' : 'Play'}
+          aria-label={`${isPlaying ? 'Stop' : 'Play'} ${sfx.label}`}
         >
           {isPlaying ? <StopIcon /> : <PlayIcon />}
         </button>
@@ -188,8 +193,8 @@ export default function SfxCard({
           className="flex-1 min-w-0"
           style={{
             fontFamily: "'Crimson Text', serif",
-            fontSize: '14px',
-            color: isPlaying ? '#a8d5b8' : '#8a7050',
+            fontSize: '15px',
+            color: isPlaying ? '#a8d5b8' : '#e4d6b4',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -202,7 +207,7 @@ export default function SfxCard({
 
       {/* Hover overlay toolbar */}
       <div
-        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 transition-opacity"
         style={{
           background: 'linear-gradient(to right, transparent, #0a0907 20px)',
           paddingLeft: '24px',
@@ -218,9 +223,9 @@ export default function SfxCard({
                 style={{
                   background: 'rgba(74,138,106,0.12)',
                   border: '1px solid rgba(74,138,106,0.25)',
-                  fontSize: '9px',
-                  fontFamily: 'monospace',
-                  color: '#4a8a6a',
+                  fontSize: '11px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#6dbf95',
                   lineHeight: '14px',
                   maxWidth: '60px',
                 }}
@@ -229,7 +234,9 @@ export default function SfxCard({
               </span>
             ))}
             {tags.length > 2 && (
-              <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#3a2e1a' }}>+{tags.length - 2}</span>
+              <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#9d8b66' }}>
+                +{tags.length - 2}
+              </span>
             )}
           </div>
         )}
@@ -239,7 +246,7 @@ export default function SfxCard({
           onClick={() => (isPlaying ? onToggleLoop() : onPlay(true))}
           className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
           title={isLooping ? 'Stop looping' : 'Loop'}
-          style={{ color: isLooping ? '#4a8a6a' : '#3a2e1a' }}
+          style={{ color: isLooping ? '#6dbf95' : '#9d8b66' }}
         >
           <LoopSmallIcon />
         </button>
@@ -257,7 +264,7 @@ export default function SfxCard({
           onClick={() => setEditingTags((e) => !e)}
           className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity shrink-0"
           title="Edit tags"
-          style={{ color: editingTags ? '#4a8a6a' : '#3a2e1a' }}
+          style={{ color: editingTags ? '#6dbf95' : '#9d8b66' }}
         >
           <TagIcon />
         </button>
@@ -276,7 +283,7 @@ export default function SfxCard({
             type="button"
             className="w-5 h-5 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Effect details"
-            style={{ color: expanded ? '#4a8a6a' : '#3a2e1a' }}
+            style={{ color: expanded ? '#6dbf95' : '#9d8b66' }}
           >
             <InfoIcon />
           </button>
@@ -289,9 +296,9 @@ export default function SfxCard({
         <span
           className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
           style={{
-            fontFamily: 'monospace',
-            fontSize: '9px',
-            color: isPlaying ? 'rgba(74,138,106,0.4)' : '#2e2416',
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontSize: '11px',
+            color: isPlaying ? 'rgba(74,138,106,0.4)' : '#3d2f1c',
             pointerEvents: 'none',
             textTransform: 'uppercase',
             letterSpacing: '0.05em',
