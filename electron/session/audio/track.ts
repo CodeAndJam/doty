@@ -12,7 +12,7 @@
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import ffmpegPath from 'ffmpeg-static'
+import { ffmpegBinary } from '../../ffmpeg'
 import { EMBEDDING_MODEL, type Embedder } from '../embedder'
 import { decideKindFor, KIND_QUERIES, type KindAnchors, type KindDecision } from '../kindDecision'
 
@@ -48,8 +48,7 @@ export async function decodePcm(
   path: string,
   { seconds = AUDIO_SECONDS, offset = 0 }: Partial<ClipWindow> = {},
 ): Promise<Float32Array> {
-  if (!ffmpegPath) throw new Error('ffmpeg is not available')
-  const binary = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
+  const binary = ffmpegBinary()
   const args = ['-v', 'error']
   if (offset > 0) args.push('-ss', String(offset))
   args.push('-i', path, '-t', String(seconds), '-ar', '16000', '-ac', '1', '-f', 'f32le', 'pipe:1')
