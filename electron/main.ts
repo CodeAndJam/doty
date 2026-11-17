@@ -652,16 +652,27 @@ handle(INVOKE.triggerScan, () => {
 handle(INVOKE.getAllMetadata, () => {
   const all = getAllMetadata()
   const kinds = library.kinds()
-  const lanes = library.lanes()
+  // One library read for both the lane map and the items that have no analysed
+  // row, so a metadata request costs one walk instead of two.
+  const items = library.items()
+  const lanes = new Map(items.map((item) => [item.key, item.lane]))
   // `lane` is the resolved label, not the folder: the renderer must not re-derive
   // it, or a badge would disagree with what search and the director use.
-  const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind; lane?: 'music' | 'sfx' }> = {}
+  type Row = (typeof all)[string] & { audioKind?: AudioKind; lane?: 'music' | 'sfx' }
+  const withKind: Record<string, Row> = {}
   for (const [path, meta] of Object.entries(all)) {
     withKind[path] = {
       ...meta,
       ...(kinds[path] ? { audioKind: kinds[path] } : {}),
       ...(lanes.get(path) ? { lane: lanes.get(path) } : {}),
     }
+  }
+  // A cue that lives in the effects folder has no analysed row here, but its
+  // label is still what the ranker must obey. Facts are absent, not invented.
+  for (const item of items) {
+    if (item.lane !== 'music') continue
+    const key = item.origin === 'music' ? item.path : item.absolute
+    if (!withKind[key]) withKind[key] = { lane: item.lane } as Row
   }
   return withKind
 })

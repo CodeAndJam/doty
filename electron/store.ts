@@ -45,7 +45,11 @@ function read(): StoreData {
   }
 }
 
+/** Switches that no longer exist. Written once by an older build, then removed. */
+const RETIRED_KEYS = ['autopilotEnabled'] as const
+
 function write(data: StoreData): void {
+  for (const key of RETIRED_KEYS) delete data[key]
   fs.mkdirSync(join(storePath, '..'), { recursive: true })
   // Atomic replace: a crash mid-write must not truncate the existing config.
   const tmpPath = `${storePath}.tmp`

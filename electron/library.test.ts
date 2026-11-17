@@ -135,9 +135,9 @@ describe('library', () => {
 
   it('exposes the resolved lane for every item, both folders', () => {
     const { library } = harness({ overrides: () => ({ 'sfx:Door/door slam.wav': 'music' }) })
-    const lanes = library.lanes()
-    expect(lanes.get('Tavern/tavern.mp3')).toBe('music')
-    expect(lanes.get('sfx:Door/door slam.wav')).toBe('music')
+    const byKey = new Map(library.items().map((item) => [item.key, item.lane]))
+    expect(byKey.get('Tavern/tavern.mp3')).toBe('music')
+    expect(byKey.get('sfx:Door/door slam.wav')).toBe('music')
   })
 
   it('survives a store that is already closed', () => {
