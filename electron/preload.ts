@@ -142,6 +142,11 @@ contextBridge.exposeInMainWorld('doty', {
   getAutopilotConfig: () => invoke(INVOKE.getAutopilotConfig),
   setAutopilotConfig: (config: Record<string, unknown>) => invoke(INVOKE.setAutopilotConfig, config),
 
+  // Debug
+  debugGetState: () => invoke(INVOKE.debugGetState),
+  debugSetEnabled: (enabled: boolean) => invoke(INVOKE.debugSetEnabled, enabled),
+  debugOpenLog: () => invoke(INVOKE.debugOpenLog),
+
   // Discord
   discordConnect: (token?: string) => invoke(INVOKE.discordConnect, token),
   discordDisconnect: () => invoke(INVOKE.discordDisconnect),

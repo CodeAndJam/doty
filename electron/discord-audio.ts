@@ -3,10 +3,11 @@
  * AudioResource instances for @discordjs/voice to stream to Discord.
  */
 
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import type { Readable } from 'node:stream'
+import { promisify } from 'node:util'
 import { type AudioResource, createAudioResource, StreamType } from '@discordjs/voice'
 import { ffmpegBinary } from './ffmpeg'
 
@@ -48,6 +49,20 @@ function decodePcm(filePath: string, seekSeconds: number): Readable {
   child.stdout.once('close', () => child.kill())
 
   return child.stdout
+}
+
+const run = promisify(execFile)
+
+/** Diagnostic for "connected to Discord but silent". */
+export async function ffmpegStatus(): Promise<{ path: string; ok: boolean; detail: string }> {
+  const ffmpegPath = ffmpegBinary()
+  if (!fs.existsSync(ffmpegPath)) return { path: ffmpegPath, ok: false, detail: 'file missing' }
+  try {
+    const { stdout } = await run(ffmpegPath, ['-version'])
+    return { path: ffmpegPath, ok: true, detail: stdout.split('\n')[0] || 'ok' }
+  } catch (err) {
+    return { path: ffmpegPath, ok: false, detail: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 /**

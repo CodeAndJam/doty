@@ -85,6 +85,10 @@ export const INVOKE = {
   // Autopilot (#12)
   getAutopilotConfig: 'autopilot:get-config',
   setAutopilotConfig: 'autopilot:set-config',
+  // Debug
+  debugGetState: 'debug:get-state',
+  debugSetEnabled: 'debug:set-enabled',
+  debugOpenLog: 'debug:open-log',
   // Discord
   discordConnect: 'discord:connect',
   discordDisconnect: 'discord:disconnect',
