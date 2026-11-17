@@ -85,6 +85,8 @@ export interface Library {
   resume(): void
   /** Audio verdicts by library key, absent when nothing was classified. */
   kinds(): Record<string, AudioKind>
+  /** The effective lane of every item, by library key. */
+  lanes(): Map<string, Lane>
   setLane(key: string, lane: Lane): void
 }
 
@@ -270,6 +272,7 @@ export function createLibrary(deps: LibraryDeps): Library {
       wake = null
     },
     kinds: () => kinds,
+    lanes: () => new Map(items().map((item) => [item.key, item.lane])),
     setLane(key, lane) {
       deps.setOverride(key, lane)
       emit()

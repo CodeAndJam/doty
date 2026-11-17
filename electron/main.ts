@@ -382,19 +382,6 @@ function registerMusicProtocol() {
   })
 }
 
-/**
- * `autopilotEnabled` was a master switch that defaulted to off, while the two
- * channel switches default to on. Removing the master must not start changing
- * music by itself for someone who had it off, so a profile that stored it as
- * false gets both channels switched off, once.
- */
-function migrateAutopilotSwitch(): void {
-  if (store.get('autopilotEnabled', undefined) !== false) return
-  store.set('autopilotMusicEnabled', false)
-  store.set('autopilotSfxEnabled', false)
-  store.set('autopilotEnabled', undefined)
-}
-
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -407,7 +394,6 @@ app.whenReady().then(async () => {
   // Initialize SQLite database and migrate legacy JSON cache
   getDb()
   migrateFromJson()
-  migrateAutopilotSwitch()
 
   registerAppProtocol()
   registerMusicProtocol()
@@ -644,9 +630,16 @@ handle(INVOKE.triggerScan, () => {
 handle(INVOKE.getAllMetadata, () => {
   const all = getAllMetadata()
   const kinds = library.kinds()
-  const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind }> = {}
+  const lanes = library.lanes()
+  // `lane` is the resolved label, not the folder: the renderer must not re-derive
+  // it, or a badge would disagree with what search and the director use.
+  const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind; lane?: 'music' | 'sfx' }> = {}
   for (const [path, meta] of Object.entries(all)) {
-    withKind[path] = kinds[path] ? { ...meta, audioKind: kinds[path] } : meta
+    withKind[path] = {
+      ...meta,
+      ...(kinds[path] ? { audioKind: kinds[path] } : {}),
+      ...(lanes.get(path) ? { lane: lanes.get(path) } : {}),
+    }
   }
   return withKind
 })
@@ -902,13 +895,18 @@ handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
   }
 })
 
-handle(INVOKE.similarTracks, async (_e, text: string, lane: 'music' | 'sfx', k: number) => {
+handle(INVOKE.librarySearch, async (_e, text: string, lane: 'music' | 'sfx', k: number) => {
   try {
     const result = await library.search(text, lane, Math.max(1, Math.min(k, 50)))
-    return result.items.map((item) => item.path)
+    // `mode` travels with the results: the panel has to say when the answer came
+    // from the fallback, and only main knows which matcher ran.
+    return {
+      mode: result.mode,
+      items: result.items.map((item) => ({ key: item.key, path: item.path, lane: item.lane })),
+    }
   } catch (e) {
     console.error('[library] search failed:', e)
-    return []
+    return { mode: 'text' as const, items: [] }
   }
 })
 
@@ -1128,7 +1126,13 @@ handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
 
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
-handle(INVOKE.getSfxList, () => listSfx(store.get('sfxFolder', '') as string))
+handle(INVOKE.getSfxList, () => {
+  const lanes = library.lanes()
+  return listSfx(store.get('sfxFolder', '') as string).map((item) => ({
+    ...item,
+    lane: lanes.get(`sfx:${item.id}`) ?? 'sfx',
+  }))
+})
 
 handle(INVOKE.getSfxFolder, () => store.get('sfxFolder', ''))
 

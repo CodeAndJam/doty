@@ -55,8 +55,11 @@ contextBridge.exposeInMainWorld('doty', {
   sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
-  similarTracks: (text: string, lane: 'music' | 'sfx', k: number) =>
-    invoke(INVOKE.similarTracks, text, lane, k) as Promise<string[]>,
+  librarySearch: (text: string, lane: 'music' | 'sfx', k: number) =>
+    invoke(INVOKE.librarySearch, text, lane, k) as Promise<{
+      mode: 'semantic' | 'text'
+      items: Array<{ key: string; path: string; lane: 'music' | 'sfx' }>
+    }>,
   sfxRank: (state: string, candidates: string[]) => invoke(INVOKE.sfxRank, state, candidates) as Promise<number[]>,
   moveTrack: (path: string, target: 'music' | 'sfx') =>
     invoke(INVOKE.moveTrack, path, target) as Promise<{ ok: boolean; reason?: string; path?: string }>,

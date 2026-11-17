@@ -105,6 +105,13 @@ describe('library', () => {
     expect(library.status()).toMatchObject({ phase: 'idle', indexed: 3, total: 3 })
   })
 
+  it('exposes the resolved lane for every item, both folders', () => {
+    const { library } = harness({ overrides: () => ({ 'sfx:Door/door slam.wav': 'music' }) })
+    const lanes = library.lanes()
+    expect(lanes.get('Tavern/tavern.mp3')).toBe('music')
+    expect(lanes.get('sfx:Door/door slam.wav')).toBe('music')
+  })
+
   it('writes a lane label without touching the disk', () => {
     const { library, written } = harness()
     library.setLane('sfx:Door/door slam.wav', 'music')

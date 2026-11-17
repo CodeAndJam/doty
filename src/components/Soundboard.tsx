@@ -1046,7 +1046,7 @@ export default function Soundboard({
                     tags={tagsMap[f] || []}
                     allTags={allTags}
                     probability={lastRanker === 'model' ? probabilities[f] : undefined}
-                    kind={trackKindOf(f, metaMap[f]) === 'sfx' ? 'sfx' : 'music'}
+                    kind={(metaMap[f]?.lane ?? trackKindOf(f, metaMap[f])) === 'sfx' ? 'sfx' : 'music'}
                     onMoveTo={(target) => {
                       window.doty.moveTrack(f, target).then((r) => {
                         if (r.ok) setMovedAway((prev) => [...prev, f])

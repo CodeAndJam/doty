@@ -37,6 +37,8 @@ export interface TrackMeta {
   energy: number
   /** Audio-embedding verdict, filled by the background pass when it has run. */
   audioKind?: 'music' | 'sfx' | 'uncertain'
+  /** The resolved lane label, which may differ from the folder the file is in. */
+  lane?: 'music' | 'sfx'
   /** dBFS; optional because payloads written before the energy fix lack it. */
   loudness?: number
   analysisVersion?: number
@@ -88,6 +90,8 @@ export interface QueueState {
 
 export interface SfxMeta {
   id: string
+  /** The resolved lane label; an effect can be labelled as a cue and vice versa. */
+  lane?: 'music' | 'sfx'
   filename: string
   category: string
   label: string
@@ -258,8 +262,18 @@ export interface DotyAPI {
     source: 'auto' | 'manual' | 'reject'
   }) => Promise<unknown>
   embeddingStatus: () => Promise<IndexProgress>
-  /** Vector matches on one lane, empty when nothing is indexed yet. */
-  similarTracks: (text: string, lane: 'music' | 'sfx', k: number) => Promise<string[]>
+  /**
+   * Search one lane. Semantic when every track on that lane is embedded; `mode`
+   * says which matcher answered, so the panel can show the fallback.
+   */
+  librarySearch: (
+    text: string,
+    lane: 'music' | 'sfx',
+    k: number,
+  ) => Promise<{
+    mode: 'semantic' | 'text'
+    items: Array<{ key: string; path: string; lane: 'music' | 'sfx' }>
+  }>
   /** Probabilities for each SFX description, in the order given. */
   sfxRank: (state: string, candidates: string[]) => Promise<number[]>
   /** Move one file between the music and effects libraries, on request. */

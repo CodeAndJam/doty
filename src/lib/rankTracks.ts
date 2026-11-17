@@ -74,9 +74,10 @@ export async function rankTracks(
     }
   }
 
-  // An effect that ended up in the music folder can never fit a scene: it is
-  // seconds long and it is not a bed. Drop it before it costs a candidate slot.
-  const playable = files.filter((file) => trackKindOf(file, metadata[file]) !== 'sfx')
+  // An effect can never fit a scene: it is seconds long and it is not a bed.
+  // `lane` is the resolved label from main; the classifier is only the fallback
+  // while metadata has not arrived, so a DM's switch always wins.
+  const playable = files.filter((file) => (metadata[file]?.lane ?? trackKindOf(file, metadata[file])) !== 'sfx')
   if (playable.length === 0)
     return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
   files = playable
