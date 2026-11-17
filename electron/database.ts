@@ -237,6 +237,11 @@ export function getSfxDurations(): Record<string, number> {
   return out
 }
 
+/** Forget every measured effect: "Re-analyse" means the stored seconds are suspect. */
+export function clearSfxDurations(): void {
+  getDb().prepare('DELETE FROM sfx_durations').run()
+}
+
 export function setSfxDuration(path: string, duration: number): void {
   getDb()
     .prepare(

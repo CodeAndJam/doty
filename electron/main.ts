@@ -28,6 +28,7 @@ import {
 import { MOODS } from './d1-omni'
 import {
   clearLaneOverride,
+  clearSfxDurations,
   closeDb,
   getAllTags,
   getDb,
@@ -331,6 +332,9 @@ function launchScanner(folder: string, force = false) {
       // reads them: a library built mid-scan says "music" for an 18-second sting.
       library.invalidate()
       send(EVENTS.scanComplete)
+      // A file the DM dropped in while the app was running lands here too: it has
+      // seconds and energy now, but no vector and no effect duration yet.
+      startBackgroundPasses()
     },
     force,
   )
@@ -675,14 +679,23 @@ handle(INVOKE.pickMusicFolder, async () => {
 })
 
 handle(INVOKE.listMusic, () => {
-  // The lane decides what is offered, not the folder: a file the DM filed as an
-  // effect is not a scene cue even if it lives in the music folder.
-  return library.items('music').map((item) => (item.origin === 'music' ? item.path : item.absolute))
+  // The lane decides what is offered, not the folder — but only a shelf that
+  // exists can hold what is hidden. With no effects folder, an effect stays in
+  // the music list or it disappears from the app entirely.
+  const hasSfxShelf = Boolean(store.get('sfxFolder', ''))
+  return library
+    .items()
+    .filter((item) => showInMusicPanel(item.lane, hasSfxShelf))
+    .map((item) => (item.origin === 'music' ? item.path : item.absolute))
 })
 
 handle(INVOKE.triggerScan, () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return { ok: false }
+  // "Re-analyse" means the stored numbers are not trusted: the effect durations
+  // too, or a file whose seconds were measured wrongly stays misfiled.
+  clearSfxDurations()
+  library.invalidate()
   launchScanner(musicFolder, true)
   return { ok: true }
 })
@@ -937,6 +950,9 @@ const library = createLibrary({
   },
 })
 
+/** The pending background pass, so three triggers collapse into one. */
+let passesTimer: ReturnType<typeof setTimeout> | null = null
+
 /**
  * Effects are seconds long and never enter `tracks`, so their duration has to be
  * measured separately: it is what lets the lane rule tell a 6 s door slam from a
@@ -966,11 +982,13 @@ async function startSfxDurations(): Promise<void> {
 
 /**
  * Minutes of work, so it runs in the background and resumes next launch. Called
- * at startup and on a folder change, which used to leave a newly selected
- * library unindexed until the next launch.
+ * at startup, on a folder change, and whenever a scan settles — the last one is
+ * what makes a file dropped in during a session searchable without a relaunch.
  */
 function startBackgroundPasses(): void {
-  setTimeout(() => {
+  if (passesTimer) clearTimeout(passesTimer)
+  passesTimer = setTimeout(() => {
+    passesTimer = null
     void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
     library
       .ensureIndexed()
