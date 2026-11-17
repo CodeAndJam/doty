@@ -7,8 +7,8 @@
  * apart the two queries were, and how long the embedding took. Opt-in because it
  * embeds 43 tracks at a few seconds each; the pure tests cover the rest.
  *
- * Truth is the rule the product already trusts, not the model's opinion: a track
- * is an effect when it is at most 20 s or tagged `Sound Effects`, music otherwise.
+ * Truth is the library's own genre, not the model's opinion: `Music` and untagged
+ * files are cues, everything else (effects, soundscapes, game ambience) is not.
  *
  * @vitest-environment node
  */
@@ -20,7 +20,7 @@ import Database from 'better-sqlite3'
 import { describe, expect, it } from 'vitest'
 import { audioAvailable, type Embedder, loadEmbedder } from '../embedder'
 import { cosine } from '../embedding'
-import { decideKindFor, KIND_MARGIN, KIND_QUERIES, type KindAnchors } from '../kindDecision'
+import { decideKindFor, KIND_QUERIES, type KindAnchors, MUSIC_THRESHOLD } from '../kindDecision'
 import { clipWindow, decodePcm, loadKindAnchors } from './track'
 
 const MODELS = join(homedir(), '.doty', 'models', 'embeddinggemma-2')
@@ -47,7 +47,7 @@ interface Measured extends Row {
 }
 
 const enabled = process.env.AUDIO_KIND_EVAL === '1' && audioAvailable(MODELS) && fs.existsSync(DB)
-const truth = (row: Row) => ((row.duration ?? 0) <= 20 || row.genre === 'Sound Effects' ? 'sfx' : 'music')
+const truth = (row: Row) => (row.genre && row.genre !== 'Music' ? 'sfx' : 'music')
 const median = (values: number[]) => {
   const sorted = [...values].sort((a, b) => a - b)
   return sorted[Math.floor(sorted.length / 2)] ?? 0
@@ -136,7 +136,7 @@ function report(measured: Measured[], anchorMs: number): string {
     '',
     `- Model: \`${MODELS}\` (fused \`model_q4\` + \`audio_encoder_q4\`)`,
     `- Library: \`${JSON.parse(fs.readFileSync(CONFIG, 'utf8')).musicFolder}\`, ${measured.length} tracks, ${measured.length - times.length} failed to decode`,
-    `- Queries: "${KIND_QUERIES.music}" vs "${KIND_QUERIES.sfx}", margin ${KIND_MARGIN}`,
+    `- Queries: "${KIND_QUERIES.music}" vs "${KIND_QUERIES.sfx}", music needs a margin of ${MUSIC_THRESHOLD}`,
     '- Clip: one 30 s window, from the start when ≤45 s, else 10 % in',
     `- Anchors embedded in ${anchorMs.toFixed(0)} ms; no vector was cached between runs`,
     `- Host: ${os.platform()} ${os.arch()}, ${os.cpus().length} cores, load average ${os.loadavg()[0].toFixed(1)} — timings are an upper bound when it is busy`,
@@ -144,8 +144,8 @@ function report(measured: Measured[], anchorMs: number): string {
     '## Separation',
     '',
     `- Right side of the comparison (any margin): **${s.onSide}/${measured.length}**`,
-    `- Confident (≥ ${KIND_MARGIN}): **${s.decided.length}**, right **${s.right.length}**, wrong **${s.wrong.length}** (${((s.right.length / (s.decided.length || 1)) * 100).toFixed(0)} % precision)`,
-    `- Tracks ≤ 45 s (where duration is not decisive): **${s.shortRight.length}/${s.shortDecided.length}** confident decisions right, ${s.short.length - s.shortDecided.length} uncertain, ${s.shortDecided.length - s.shortRight.length} wrong`,
+    `- Decided (the audio pass produced a verdict): **${s.decided.length}**, right **${s.right.length}**, wrong **${s.wrong.length}** (${((s.right.length / (s.decided.length || 1)) * 100).toFixed(0)} % precision)`,
+    `- Tracks ≤ 45 s: **${s.shortRight.length}/${s.shortDecided.length}** confident decisions right, ${s.short.length - s.shortDecided.length} uncertain, ${s.shortDecided.length - s.shortRight.length} wrong`,
     `- Tracks 45–92 s: ${s.mid.length}, confident ${s.mid.length - s.mid.filter((m) => m.kind === 'uncertain').length}, wrong ${s.midWrong.length}`,
     '',
     '### Confident mistakes',

@@ -125,14 +125,14 @@
       zero-element inputs.
 - [x] Retrieval is text-first (ADR 0003). The eval says top-1 0/24 with 92% of picks
       offered, so a better retriever cannot move the number; the description can.
-- [x] SFX mixed into the music folder: `classifyTrack` separates by duration first
-      (seconds = effect, minutes = cue), then by genre/path, and leaves a middling
-      clip `unknown` rather than guessing. Effects are dropped from music
-      candidates so they stop costing slots.
+- [x] SFX mixed into the music folder: the audio embedding separates cues from
+      effects, soundscapes and game ambience. Duration/genre/path only fill in
+      until the audio pass reaches a file; a middling clip is no longer guessed.
+      Effects are dropped from music candidates so they stop costing slots.
 - [x] SFX routing: every card carries `→ fx` / `→ music`. Main moves the file
       between the two configured folders, numbers collisions instead of
       overwriting, and rewrites the path in `tracks` and `track_tags`. It is a
-      click, never automatic: `decideKind` returns `uncertain` inside 0.03.
+      click, never automatic: the embedding decides the lane once it has a vector.
 - [x] Overrides recorded from every manual change — and skips are stored as
       *rejections*, not preferences. Before, skipping wrote a preference for the
       replacement track, which taught the opposite of the signal.
@@ -144,9 +144,10 @@
       semicausal padding) and matches the `Gemma4AudioFeatureExtractor` output;
       one clip is two passes (audio encoder → `audio_features` → fused graph).
       `decideKind` consumes the vectors, `test-results/audio-sfx.md` has the
-      numbers. On the real library it is right on every track ≤45 s and wrong on
-      long ambience (a campfire loop *is* an effect to the model), so it is used
-      as the grey-band tiebreaker, never to demote a long cue.
+      numbers. The embedding is the primary verdict now; duration/genre/path are
+      only the fallback before a file is embedded. The eval is the measurement:
+      `AUDIO_KIND_EVAL=1` rewrites `test-results/audio-sfx.md` with the per-track
+      verdicts against the library's own genre labels.
 - [x] Embeddings: audio path wiring. `startBackgroundPasses` runs the audio pass
       after the text index, on startup and on every folder change; `getAllMetadata`
       merges the verdict; `trackKindOf` feeds it to candidate filtering and the

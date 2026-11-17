@@ -21,8 +21,9 @@ describe('resolveLane', () => {
     })
   })
 
-  it('uses the audio verdict in the band duration cannot answer', () => {
+  it('lets the audio verdict decide before duration', () => {
     expect(resolveLane({ path: 'loop.wav', folderLane: 'music', duration: 30, audio: 'sfx' }).lane).toBe('sfx')
+    expect(resolveLane({ path: 'rowboat.mp3', folderLane: 'music', duration: 102, audio: 'sfx' }).lane).toBe('sfx')
   })
 
   it('falls back to the folder when nothing else knows', () => {

@@ -3,7 +3,6 @@ import {
   decideKind,
   decideKindFor,
   disambiguate,
-  KIND_MARGIN,
   KIND_QUERIES,
   type KindAnchors,
   kindScores,
@@ -34,8 +33,8 @@ describe('decideKindFor', () => {
     expect(decideKindFor(unit([0.1, 1, 0]), anchors).kind).toBe('sfx')
   })
 
-  it('stays uncertain inside the margin', () => {
-    expect(decideKindFor(unit([1, 1, 0]), anchors).kind).toBe('uncertain')
+  it('decides a near tie as music rather than refusing', () => {
+    expect(decideKindFor(unit([1, 1, 0]), anchors).kind).toBe('music')
   })
 
   it('refuses a vector from another space instead of scoring it', () => {
@@ -62,9 +61,10 @@ describe('decideKind', () => {
     expect(decideKind(0.3, 0.55).kind).toBe('sfx')
   })
 
-  it('refuses to move a track it cannot tell apart', () => {
-    // Silence beats a confident wrong move: the file keeps its place.
-    expect(decideKind(0.5, 0.5 + KIND_MARGIN / 2).kind).toBe('uncertain')
+  it('decides a near tie as music, and a clear effect as an effect', () => {
+    // The music side is the default: only a nearer effect description moves it.
+    expect(decideKind(0.5, 0.5).kind).toBe('music')
+    expect(decideKind(0.5, 0.51).kind).toBe('sfx')
   })
 
   it('treats a missing embedding as uncertain rather than guessing', () => {

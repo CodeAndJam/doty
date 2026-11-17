@@ -199,13 +199,13 @@ Lane resolution, in isolation:
 ```mermaid
 flowchart LR
   O{DM override?} -->|yes| OL[label it]
-  O -->|no| G{genre says effects?}
-  G -->|yes| CL[classifier wins]
+  O -->|no| A{audio verdict?}
+  A -->|yes| CL[classifier wins]
+  A -->|no| G{genre says effects?}
+  G -->|yes| CL
   G -->|no| C{duration ≤ 20 s or ≥ 45 s?}
   C -->|yes| CL
-  C -->|no| A{audio verdict<br/>confident?}
-  A -->|yes| CL
-  A -->|no| N{name says sfx/music?}
+  C -->|no| N{name says sfx/music?}
   N -->|yes| CL
   N -->|no| F[folder it came from]
 ```
