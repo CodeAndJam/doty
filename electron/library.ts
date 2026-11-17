@@ -163,10 +163,17 @@ export function createLibrary(deps: LibraryDeps): Library {
   }
 
   function counts(): { indexed: number; total: number } {
-    const all = items()
-    let indexed = 0
-    for (const item of all) if (deps.store.getVector(item.key, RETRIEVAL_KEY)) indexed++
-    return { indexed, total: all.length }
+    // The store is a database, and a database can be closed: quitting closes it
+    // while a window event may still ask for status. Reporting nothing embedded
+    // is honest; throwing here takes the whole process down.
+    try {
+      const all = items()
+      let indexed = 0
+      for (const item of all) if (deps.store.getVector(item.key, RETRIEVAL_KEY)) indexed++
+      return { indexed, total: all.length }
+    } catch {
+      return { indexed: 0, total: 0 }
+    }
   }
 
   function status(): IndexStatus {
@@ -175,7 +182,12 @@ export function createLibrary(deps: LibraryDeps): Library {
   }
 
   function emit(): void {
-    deps.onStatus(status())
+    // Status is a convenience; it must never be the reason the app dies.
+    try {
+      deps.onStatus(status())
+    } catch (e) {
+      console.warn('[library] status unavailable:', e instanceof Error ? e.message : e)
+    }
   }
 
   /** The expensive calls go through here, so a pause holds work without touching the indexers. */

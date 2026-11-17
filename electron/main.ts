@@ -187,7 +187,13 @@ let mainWindow: BrowserWindow | null = null
 const handle = (channel: InvokeChannel, listener: Parameters<typeof ipcMain.handle>[1]) =>
   ipcMain.handle(channel, listener)
 
-const send = (channel: EventChannel, payload?: unknown) => mainWindow?.webContents.send(channel, payload)
+/** Set once the app is tearing down: sending then is how a quit becomes a crash. */
+let quitting = false
+
+const send = (channel: EventChannel, payload?: unknown) => {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(channel, payload)
+}
 
 const sttDownloads = createModelDownloads({
   download: downloadFile,
@@ -361,14 +367,14 @@ function createWindow() {
   }
 
   // A recording that dies without `sttStop` must not leave the index paused for
-  // the rest of the process: the renderer reloads, crashes, and the window closes.
+  // the rest of the process. Resume after the new document is up — not on
+  // navigation, which also fires during shutdown, after the database is closed.
   mainWindow.webContents.on('render-process-gone', () => library.resume())
-  mainWindow.webContents.on('did-start-navigation', () => library.resume())
+  mainWindow.webContents.on('did-finish-load', () => library.resume())
 
   // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
   mainWindow.on('closed', () => {
     mainWindow = null
-    library.resume()
   })
 }
 
@@ -473,6 +479,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  // Before the database closes: nothing may emit status after that point.
+  quitting = true
   finalizeWavRecording()
   freeRecognizer()
   disposeRanker()

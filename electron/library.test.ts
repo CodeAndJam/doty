@@ -140,6 +140,21 @@ describe('library', () => {
     expect(lanes.get('sfx:Door/door slam.wav')).toBe('music')
   })
 
+  it('survives a store that is already closed', () => {
+    // Quitting closes the database while a window event may still ask for
+    // status. That must report nothing embedded, not take the process down.
+    const { library } = harness({
+      store: {
+        getVector: () => {
+          throw new Error('The database connection is not open')
+        },
+        putVector: () => {},
+      },
+    })
+    expect(() => library.pause()).not.toThrow()
+    expect(library.status()).toMatchObject({ indexed: 0, total: 0, paused: true })
+  })
+
   it('writes a lane label without touching the disk', () => {
     const { library, written } = harness()
     library.setLane('sfx:Door/door slam.wav', 'music')
