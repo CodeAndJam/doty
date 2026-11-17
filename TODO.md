@@ -37,8 +37,10 @@
 - [x] Architecture: `override` and the autopilot master switch are deleted; a
       profile that had `autopilotEnabled: false` is migrated to both channels
       off. The per-channel switches are the only gates.
-- [ ] Wire the lane switch and the index chip into the UI (the backend and the
-      `setLane` / `onEmbeddingProgress` channels exist; nothing draws them yet).
+- [ ] Wire the UI to the new backend: lane badge per row, index chip with the two
+      phases, semantic search in both browse panels (`library:search` returns
+      `{ mode, items }`), and the session-name prompt. The channels and the lane
+      label in `getAllMetadata` / `getSfxList` exist; nothing draws them yet.
 - [x] STT: VAD gating. `silero-vad-v6.2-F32.gguf` (1.2 MB) is loaded when present
       and gates live audio by speech probability; the RMS gate remains the
       fallback. Measured: 0.00 s emitted for a loud music bed, pink noise and

@@ -1127,6 +1127,8 @@ handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
 handle(INVOKE.getSfxList, () => {
+  // Walks the effects folder twice (once here, once inside `lanes`). Fine for a
+  // table's effects shelf; batch them if a library ever holds thousands.
   const lanes = library.lanes()
   return listSfx(store.get('sfxFolder', '') as string).map((item) => ({
     ...item,
