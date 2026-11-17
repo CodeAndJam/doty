@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
+import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
 import { confidentSfx } from '../lib/sfxRank'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
@@ -90,6 +91,8 @@ export default function MainLayout() {
     }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** What the last recommendation was based on, for the two cadence gates. */
+  const lastRunRef = useRef({ at: 0, words: 0 })
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
@@ -211,6 +214,7 @@ export default function MainLayout() {
     setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(recentTranscript)
+    lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
   }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -293,9 +297,24 @@ export default function MainLayout() {
       setTranscripts((prev) => [...prev, { text, elapsedMs }])
       setInterimText('') // Clear interim when final arrives
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
-      // Debounce STT-triggered recommendations — run via Web Worker, not main process
+      // Debounce STT-triggered recommendations, then apply the cadence gates:
+      // three new words, and two seconds since the last answer. A request that is
+      // only too early is retried when the interval allows, not dropped, or a
+      // long uninterrupted sentence would never refresh.
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
-      recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
+      const maybeRecommend = () => {
+        const wordsSince = countWords(transcriptBufferRef.current) - lastRunRef.current.words
+        const msSince = Date.now() - lastRunRef.current.at
+        if (!shouldRecommend(wordsSince, msSince)) {
+          const wait = waitBeforeRecommending(msSince)
+          if (wordsSince >= MIN_NEW_WORDS && wait > 0) {
+            recommendDebounceRef.current = setTimeout(maybeRecommend, wait)
+          }
+          return
+        }
+        void runRecommendation()
+      }
+      recommendDebounceRef.current = setTimeout(maybeRecommend, 1500)
       // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
       // autopilot needs low latency for reactive SFX triggers (see #43)
       runSfxRecommendation()
