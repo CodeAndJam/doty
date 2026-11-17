@@ -331,6 +331,7 @@ setOnLibraryChanged(() => {
   if (librarySyncTimer) clearTimeout(librarySyncTimer)
   librarySyncTimer = setTimeout(() => {
     librarySyncTimer = null
+    library.invalidate()
     send(EVENTS.scanComplete)
   }, 500)
 })
@@ -345,9 +346,15 @@ function registerAppProtocol() {
 }
 
 function createWindow() {
+  // Playwright cannot run Electron headless — there is no headless Electron — so
+  // the closest thing is a window that is created but never shown. Chromium
+  // throttles occluded windows, which stalls timers and playback bookkeeping, so
+  // throttling is off for exactly that mode.
+  const hidden = process.env.DOTY_E2E_HIDE_WINDOW === '1'
   const iconPath = app.isPackaged ? join(process.resourcesPath, 'icon.icns') : join(__dirname, '../../build/icon.png')
 
   mainWindow = new BrowserWindow({
+    show: !hidden,
     width: 1200,
     height: 800,
     minWidth: 900,
@@ -359,6 +366,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: !hidden,
     },
   })
 
@@ -615,6 +623,7 @@ handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
 
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
+  library.invalidate()
   launchScanner(folderPath)
   startBackgroundPasses()
   send(EVENTS.musicFolderChanged, folderPath)
@@ -630,6 +639,7 @@ handle(INVOKE.pickMusicFolder, async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
+    library.invalidate()
     launchScanner(result.filePaths[0])
     startBackgroundPasses()
     send(EVENTS.musicFolderChanged, result.filePaths[0])
@@ -923,6 +933,7 @@ async function startSfxDurations(): Promise<void> {
     }
   }
   // The lanes were resolved with the old numbers.
+  library.invalidate()
   send(EVENTS.sfxChanged)
   send(EVENTS.scanComplete)
 }
@@ -1254,6 +1265,7 @@ handle(INVOKE.pickSfxFolder, async () => {
 
 handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
+  library.invalidate()
   send(EVENTS.sfxChanged)
   // The effects folder is part of the library now: it needs vectors too.
   startBackgroundPasses()

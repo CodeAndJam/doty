@@ -119,6 +119,18 @@ describe('library', () => {
     expect(item).toMatchObject({ origin: 'sfx', lane: 'music', laneSource: 'override' })
   })
 
+  it('builds the library once until something invalidates it', () => {
+    let walks = 0
+    const { library } = harness({ musicFiles: () => (walks++, ['Tavern/tavern.mp3']) })
+    library.items()
+    library.items()
+    library.items('music')
+    expect(walks).toBe(1)
+    library.invalidate()
+    library.items()
+    expect(walks).toBe(2)
+  })
+
   it('does not list a one-folder library twice', () => {
     const { library } = harness({ folders: () => ({ music: '/music', sfx: '/music' }) })
     expect(library.items()).toHaveLength(2)

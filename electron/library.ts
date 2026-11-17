@@ -89,6 +89,8 @@ export interface Library {
   ensureIndexed(): Promise<void>
   pause(): void
   resume(): void
+  /** Forget the built library: a scan, a folder change or a label changed it. */
+  invalidate(): void
   /** Audio verdicts by library key, absent when nothing was classified. */
   kinds(): Record<string, AudioKind>
   setLane(key: string, lane: Lane): void
@@ -105,8 +107,19 @@ export function createLibrary(deps: LibraryDeps): Library {
   let phaseTotal = 0
   let kinds: Record<string, AudioKind> = {}
   let wake: (() => void) | null = null
+  /** Rebuilt on demand; dropped whenever the library, a label or a folder changes. */
+  let cached: LibraryItem[] | null = null
 
   function items(lane?: Lane): LibraryItem[] {
+    // A recommendation pass asks for the library while the DM is talking, and
+    // building it means a walk, a tags read, an overrides read and a description
+    // per track. Nothing invalidates it faster than a scan does, so it is kept
+    // until something changes.
+    cached ??= buildItems()
+    return lane ? cached.filter((item) => item.lane === lane) : cached
+  }
+
+  function buildItems(): LibraryItem[] {
     const { music, sfx } = deps.folders()
     const facts = deps.facts()
     const tags = deps.tags()
@@ -166,7 +179,7 @@ export function createLibrary(deps: LibraryDeps): Library {
         )
       }
     }
-    return lane ? out.filter((item) => item.lane === lane) : out
+    return out
   }
 
   function counts(): { indexed: number; total: number } {
@@ -321,13 +334,18 @@ export function createLibrary(deps: LibraryDeps): Library {
       wake?.()
       wake = null
     },
+    invalidate() {
+      cached = null
+    },
     kinds: () => kinds,
     setLane(key, lane) {
       deps.setOverride(key, lane)
+      this.invalidate()
       emit()
     },
     clearLane(key) {
       deps.clearOverride(key)
+      this.invalidate()
       emit()
     },
   }
