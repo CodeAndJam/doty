@@ -3,7 +3,7 @@ import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
-import { confidentSfx } from '../lib/sfxRank'
+import { confidentSfx, mergeSfxCandidates, rankSfxCandidates } from '../lib/sfxRank'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
@@ -30,6 +30,8 @@ export default function MainLayout() {
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
+  /** The subset the model was sure enough about for autopilot to play unasked. */
+  const [sfxAutopilot, setSfxAutopilot] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   /**
    * The master switch, persisted: Doty changes nothing on its own until the DM
@@ -235,14 +237,28 @@ export default function MainLayout() {
     const playFrequencies = await window.doty.getPlayFrequencies('sfx')
     const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
     console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
-    const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap, playFrequencies)
-    console.log('[sfx-recommend] results:', results.length, results)
-    setSfxRecommendations(results)
+    const count = sfxRecommendCountRef.current
+    const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
 
-    // The model decides when a sound is worth firing; the keyword shortlist only
-    // narrows what it chooses between. A missing model leaves the heuristic list.
-    if (!text.trim()) return
-    const descriptions = results.map((id) => {
+    // Keywords cannot answer a concept: "air" is in no mood profile and no label,
+    // so the heuristic falls back to history and offers a monster roar. The index
+    // can answer it — the same one the search box uses — so both lists go to the
+    // model, which is the only thing that can tell which of them fits the scene.
+    const hits = text.trim() ? await window.doty.librarySearch(text, 'sfx', count).catch(() => null) : null
+    const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
+    const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
+    const candidates = mergeSfxCandidates(nearest, results, count)
+    console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
+    setSfxRecommendations(candidates)
+
+    // The model decides when a sound is worth firing; the shortlist only narrows
+    // what it chooses between. A missing model leaves the shortlist and nothing
+    // for autopilot.
+    if (!text.trim()) {
+      setSfxAutopilot([])
+      return
+    }
+    const descriptions = candidates.map((id) => {
       const sfx = sfxList.find((s) => s.id === id)
       const tags = (tagsMap[id] ?? []).join(', ')
       return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
@@ -251,9 +267,11 @@ export default function MainLayout() {
     window.doty
       .sfxRank(text, descriptions)
       .then((probabilities) => {
-        const confident = confidentSfx(results, probabilities)
-        // Nothing clears the bar: silence is the right answer, not the second best.
-        setSfxRecommendations(confident.map((c) => c.path))
+        // The column shows the model's ranking — nothing fires from it, so a
+        // second-best suggestion costs the DM one glance. Autopilot is the part
+        // that must be sure: it plays a sound nobody asked for.
+        setSfxRecommendations(rankSfxCandidates(candidates, probabilities, count))
+        setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
       })
       .catch(() => {})
   }, [])
@@ -761,6 +779,7 @@ export default function MainLayout() {
               rankerStatus={modelStatus}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
+              sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
               lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}

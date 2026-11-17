@@ -26,3 +26,28 @@ export function confidentSfx(paths: string[], probabilities: number[], threshold
   }
   return out.sort((a, b) => b.probability - a.probability)
 }
+
+/**
+ * The candidates the model chooses between: what the index found nearest the
+ * words first, then the keyword shortlist, with no effect listed twice.
+ *
+ * Neither list is enough alone. Keywords know "sword" and "battle"; the index
+ * knows "air" means wind and rain. The model is the judge, so it gets both.
+ */
+export function mergeSfxCandidates(nearest: string[], heuristic: string[], count: number): string[] {
+  const out: string[] = []
+  for (const id of [...nearest, ...heuristic]) {
+    if (out.length >= count * 2) break
+    if (!out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/** The model's ranking, cut to the column's size. */
+export function rankSfxCandidates(paths: string[], probabilities: number[], count: number): string[] {
+  return paths
+    .map((path, i) => ({ path, probability: probabilities[i] ?? 0 }))
+    .sort((a, b) => b.probability - a.probability)
+    .slice(0, count)
+    .map((c) => c.path)
+}

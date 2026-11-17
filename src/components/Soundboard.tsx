@@ -86,7 +86,10 @@ function CollapsedRail({
 
 interface Props {
   recommendations: string[]
+  /** The effects the column offers: the model's ranking, best first. */
   sfxRecommendations: string[]
+  /** The `sfxRecommendations` the model was sure enough about for autopilot to fire. */
+  sfxAutopilot: string[]
   lastConfidence: number
   /** TypeSafe choice confidence: how settled the pick is across the candidates. */
   lastChoiceConfidence: number
@@ -113,6 +116,7 @@ interface Props {
 export default function Soundboard({
   recommendations,
   sfxRecommendations,
+  sfxAutopilot,
   lastConfidence,
   lastChoiceConfidence,
   probabilities,
@@ -645,13 +649,14 @@ export default function Soundboard({
     onRecommendationRef.current(recommendations[0], lastConfidence)
   }, [recommendations, lastConfidence, lastRanker, autopilotEnabled])
 
-  // Feed SFX recommendations to autopilot
+  // Feed SFX recommendations to autopilot. Only the confident ones: the column
+  // may offer five, but autopilot plays a sound nobody asked for.
   useEffect(() => {
     if (!autopilotEnabled) return
-    if (sfxRecommendations.length > 0) {
-      onSfxRecommendationRef.current(sfxRecommendations)
+    if (sfxAutopilot.length > 0) {
+      onSfxRecommendationRef.current(sfxAutopilot)
     }
-  }, [sfxRecommendations, autopilotEnabled])
+  }, [sfxAutopilot, autopilotEnabled])
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {

@@ -31,6 +31,7 @@ function renderBoard() {
     <Soundboard
       recommendations={['battle-theme.mp3']}
       sfxRecommendations={[]}
+      sfxAutopilot={[]}
       lastConfidence={0}
       lastChoiceConfidence={0}
       probabilities={{}}
