@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
+import { defaultSessionName } from '../lib/sessionName'
 import { confidentSfx } from '../lib/sfxRank'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
@@ -590,7 +591,11 @@ export default function MainLayout() {
               activeSession={activeSession}
               sessionStartTime={sessionStartTime}
               onNewSession={async () => {
-                const s = await window.doty.sessionCreate()
+                // A prompt, but never a blocker: dismissing it still creates the
+                // session with the dated default.
+                const suggested = defaultSessionName()
+                const typed = window.prompt('Session name', suggested)
+                const s = await window.doty.sessionCreate((typed ?? '').trim() || suggested)
                 setSessions((prev) => [s, ...prev])
                 setActiveSession(s.file)
                 setTranscripts([])

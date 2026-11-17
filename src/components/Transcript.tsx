@@ -61,6 +61,14 @@ export default function Transcript({
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [showDropdown, setShowDropdown] = useState(false)
+  const [editingName, setEditingName] = useState(false)
+  const nameInputRef = useRef<HTMLInputElement>(null)
+  const [nameValue, setNameValue] = useState('')
+
+  // The field only exists while the DM is editing it, so focus follows the intent.
+  useEffect(() => {
+    if (editingName) nameInputRef.current?.focus()
+  }, [editingName])
   const [elapsed, setElapsed] = useState('')
   const [pinnedToBottom, setPinnedToBottom] = useState(true)
   const [showNewTextPill, setShowNewTextPill] = useState(false)
@@ -176,24 +184,74 @@ export default function Transcript({
         className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0"
         style={{ borderBottom: '1px solid rgba(46,36,22,0.8)' }}
       >
-        <div className="relative" data-session-dropdown>
+        <div className="relative flex items-center gap-1" data-session-dropdown>
+          {editingName && activeSession ? (
+            <input
+              ref={nameInputRef}
+              data-testid="session-name-input"
+              className="bg-transparent outline-none"
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontSize: '13px',
+                letterSpacing: '0.15em',
+                color: '#c8b07a',
+                textTransform: 'uppercase',
+                width: '160px',
+                borderBottom: '1px solid rgba(200,146,42,0.4)',
+              }}
+              value={nameValue}
+              onChange={(e) => setNameValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
+                  setEditingName(false)
+                }
+                // An edit that exists already: Escape puts it back.
+                if (e.key === 'Escape') setEditingName(false)
+              }}
+              onBlur={() => {
+                if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
+                setEditingName(false)
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              data-testid="session-name"
+              onClick={() => {
+                if (!activeSession) return
+                setNameValue(sessions.find((s) => s.file === activeSession)?.name ?? '')
+                setEditingName(true)
+              }}
+              title="Click to rename this session"
+              className="flex items-center gap-1"
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontSize: '13px',
+                letterSpacing: '0.15em',
+                color: '#6b4e15',
+                textTransform: 'uppercase',
+                background: 'none',
+                border: 'none',
+                cursor: 'text',
+                maxWidth: '180px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {sessions.find((s) => s.file === activeSession)?.name || 'No Session'}
+            </button>
+          )}
           <button
             type="button"
+            data-testid="session-list-toggle"
             onClick={() => setShowDropdown(!showDropdown)}
-            className="flex items-center gap-1"
-            style={{
-              fontFamily: "'Cinzel', serif",
-              fontSize: '13px',
-              letterSpacing: '0.15em',
-              color: '#6b4e15',
-              textTransform: 'uppercase',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-            }}
+            title="Switch session"
+            aria-label="Switch session"
+            style={{ fontSize: '10px', color: '#6b4e15', background: 'none', border: 'none' }}
           >
-            {sessions.find((s) => s.file === activeSession)?.name || 'No Session'}
-            <span style={{ fontSize: '10px' }}>▼</span>
+            ▼
           </button>
           {showDropdown && (
             <div
