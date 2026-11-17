@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { formatTime } from '../lib/formatTime'
 import type { LoopMode } from '../types'
 import {
@@ -67,7 +67,6 @@ export default function PlayerBar({
 }: Props) {
   const barRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
-  const [showTrackInfo, setShowTrackInfo] = useState(false)
 
   const lastPointerXRef = useRef(0)
 
@@ -203,64 +202,9 @@ export default function PlayerBar({
           </button>
         )}
 
-        {/* Track info tooltip, with the same facts readable without hovering */}
+        {/* The face of the transport: name, time and queue position, no hover needed */}
         <div className="flex-1 min-w-0 flex items-center gap-2">
-          <div
-            className="relative flex items-center"
-            onMouseEnter={() => setShowTrackInfo(true)}
-            onMouseLeave={() => setShowTrackInfo(false)}
-            onFocus={() => setShowTrackInfo(true)}
-            onBlur={() => setShowTrackInfo(false)}
-          >
-            <button
-              type="button"
-              className="w-8 h-8 flex items-center justify-center hover:opacity-100 opacity-90"
-              style={{ color: '#d9a441' }}
-              aria-label="Track info"
-            >
-              <MusicNoteIcon />
-            </button>
-            {showTrackInfo && (
-              <div className="absolute bottom-full left-0 pb-1" style={{ zIndex: 50 }}>
-                <div
-                  className="px-3 py-2 whitespace-nowrap"
-                  style={{
-                    background: 'rgba(15,13,9,0.95)',
-                    border: '1px solid rgba(200,146,42,0.3)',
-                    borderRadius: '4px',
-                    minWidth: '160px',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontFamily: "'Crimson Text', serif",
-                      fontSize: '13px',
-                      color: '#f2e6c9',
-                      lineHeight: '1.4',
-                      marginBottom: '2px',
-                    }}
-                  >
-                    {trackName(filename)}
-                  </div>
-                  <div
-                    style={{
-                      fontFamily: "'IBM Plex Mono', monospace",
-                      fontSize: '11px',
-                      color: '#a5813f',
-                    }}
-                  >
-                    {formatTime(currentTime)}
-                    {duration > 0 ? ` / ${formatTime(duration)}` : ''}
-                    {queuePosition && queuePosition[1] > 0 && (
-                      <span style={{ marginLeft: '8px', color: '#9d8b66' }}>
-                        {queuePosition[0] + 1}/{queuePosition[1]}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          <MusicNoteIcon />
           <span
             className="min-w-0 truncate"
             style={{ fontFamily: "'Crimson Text', serif", fontSize: '15px', color: '#e4d6b4' }}
@@ -272,6 +216,11 @@ export default function PlayerBar({
             {formatTime(currentTime)}
             {duration > 0 ? ` / ${formatTime(duration)}` : ''}
           </span>
+          {queuePosition && queuePosition[1] > 0 && (
+            <span className="data-label shrink-0" style={{ color: '#9d8b66' }}>
+              {queuePosition[0] + 1}/{queuePosition[1]}
+            </span>
+          )}
         </div>
 
         {/* Loop toggle */}
