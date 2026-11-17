@@ -24,9 +24,6 @@ function renderBoard() {
   return render(
     <Soundboard
       recommendations={['battle-theme.mp3']}
-      override={false}
-      onManualAction={() => {}}
-      onResumeAuto={() => {}}
       sfxRecommendations={[]}
       lastConfidence={0}
       lastChoiceConfidence={0}

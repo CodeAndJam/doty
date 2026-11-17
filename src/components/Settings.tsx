@@ -99,7 +99,6 @@ export default function Settings({
   const [micPermissionDenied, setMicPermissionDenied] = useState(false)
   const [sfxFolder, setSfxFolder] = useState('')
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
-  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [autopilotThreshold, setAutopilotThreshold] = useState(0.9)
   const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
   const [autopilotMusic, setAutopilotMusic] = useState(true)
@@ -156,7 +155,6 @@ export default function Settings({
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
     window.doty.getAutopilotConfig().then((cfg) => {
-      setAutopilotEnabled(cfg.enabled)
       setAutopilotThreshold(cfg.confidenceThreshold)
       setAutopilotCrossfade(cfg.crossfadeDuration)
       setAutopilotMusic(cfg.musicEnabled)
@@ -973,9 +971,9 @@ export default function Settings({
           style={{ height: '1px', background: 'linear-gradient(to right, transparent, #2e2416, transparent)' }}
         />
 
-        {/* Future features */}
+        {/* Director */}
         <div className="mb-2">
-          <Label>Coming Soon</Label>
+          <Label>Director</Label>
 
           {/* Autopilot (#12) */}
           <div className="mb-2" style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
@@ -993,132 +991,109 @@ export default function Settings({
                     fontFamily: 'monospace',
                   }}
                 >
-                  BETA
+                  ALWAYS ON
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  const next = !autopilotEnabled
-                  setAutopilotEnabled(next)
-                  window.doty.setAutopilotConfig({ enabled: next })
-                }}
-                className="w-10 h-5 rounded-full transition-colors relative"
-                style={{
-                  background: autopilotEnabled ? 'rgba(200,146,42,0.4)' : 'rgba(46,36,22,0.6)',
-                  border: `1px solid ${autopilotEnabled ? 'rgba(200,146,42,0.6)' : '#2e2416'}`,
-                }}
-              >
-                <div
-                  className="absolute top-0.5 w-3.5 h-3.5 rounded-full transition-all"
-                  style={{
-                    background: autopilotEnabled ? '#c8922a' : '#3a2e1a',
-                    left: autopilotEnabled ? '21px' : '3px',
-                  }}
-                />
-              </button>
             </div>
             <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace', marginBottom: '8px' }}>
-              Auto-play music and SFX when the AI is highly confident
+              Music and SFX follow the table on their own. Switch a channel off to keep it in your hands.
             </p>
 
-            {autopilotEnabled && (
-              <div className="space-y-3">
-                {/* Individual channel toggles */}
-                <div className="flex gap-4">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const next = !autopilotMusic
-                      setAutopilotMusic(next)
-                      window.doty.setAutopilotConfig({ musicEnabled: next })
+            <div className="space-y-3">
+              {/* Individual channel toggles */}
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const next = !autopilotMusic
+                    setAutopilotMusic(next)
+                    window.doty.setAutopilotConfig({ musicEnabled: next })
+                  }}
+                  className="flex items-center gap-2"
+                  style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotMusic ? '#c8922a' : '#3a2e1a' }}
+                >
+                  <div
+                    className="w-3 h-3 border"
+                    style={{
+                      borderColor: autopilotMusic ? '#c8922a' : '#3a2e1a',
+                      background: autopilotMusic ? '#c8922a' : 'transparent',
                     }}
-                    className="flex items-center gap-2"
-                    style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotMusic ? '#c8922a' : '#3a2e1a' }}
-                  >
-                    <div
-                      className="w-3 h-3 border"
-                      style={{
-                        borderColor: autopilotMusic ? '#c8922a' : '#3a2e1a',
-                        background: autopilotMusic ? '#c8922a' : 'transparent',
-                      }}
-                    />
-                    Music
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      const next = !autopilotSfx
-                      setAutopilotSfx(next)
-                      window.doty.setAutopilotConfig({ sfxEnabled: next })
-                    }}
-                    className="flex items-center gap-2"
-                    style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotSfx ? '#4a8a6a' : '#3a2e1a' }}
-                  >
-                    <div
-                      className="w-3 h-3 border"
-                      style={{
-                        borderColor: autopilotSfx ? '#4a8a6a' : '#3a2e1a',
-                        background: autopilotSfx ? '#4a8a6a' : 'transparent',
-                      }}
-                    />
-                    SFX
-                  </button>
-                </div>
-
-                {/* Confidence threshold */}
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
-                      Confidence threshold
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
-                      {Math.round(autopilotThreshold * 100)}% — {confidenceLabel(autopilotThreshold)}
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={80}
-                    max={99}
-                    value={Math.round(autopilotThreshold * 100)}
-                    onChange={(e) => {
-                      const v = Number(e.target.value) / 100
-                      setAutopilotThreshold(v)
-                      window.doty.setAutopilotConfig({ confidenceThreshold: v })
-                    }}
-                    className="w-full"
-                    style={{ accentColor: '#c8922a', height: '2px' }}
                   />
-                </div>
-
-                {/* Crossfade duration */}
-                <div>
-                  <div className="flex justify-between mb-1">
-                    <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
-                      Crossfade duration
-                    </span>
-                    <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
-                      {autopilotCrossfade}s
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={1}
-                    max={10}
-                    value={autopilotCrossfade}
-                    onChange={(e) => {
-                      const v = Number(e.target.value)
-                      setAutopilotCrossfade(v)
-                      window.doty.setAutopilotConfig({ crossfadeDuration: v })
+                  Music
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    const next = !autopilotSfx
+                    setAutopilotSfx(next)
+                    window.doty.setAutopilotConfig({ sfxEnabled: next })
+                  }}
+                  className="flex items-center gap-2"
+                  style={{ fontSize: '12px', fontFamily: 'monospace', color: autopilotSfx ? '#4a8a6a' : '#3a2e1a' }}
+                >
+                  <div
+                    className="w-3 h-3 border"
+                    style={{
+                      borderColor: autopilotSfx ? '#4a8a6a' : '#3a2e1a',
+                      background: autopilotSfx ? '#4a8a6a' : 'transparent',
                     }}
-                    className="w-full"
-                    style={{ accentColor: '#c8922a', height: '2px' }}
                   />
-                </div>
+                  SFX
+                </button>
               </div>
-            )}
+
+              {/* Confidence threshold */}
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                    Confidence threshold
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                    {Math.round(autopilotThreshold * 100)}% — {confidenceLabel(autopilotThreshold)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={80}
+                  max={99}
+                  value={Math.round(autopilotThreshold * 100)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value) / 100
+                    setAutopilotThreshold(v)
+                    window.doty.setAutopilotConfig({ confidenceThreshold: v })
+                  }}
+                  className="w-full"
+                  style={{ accentColor: '#c8922a', height: '2px' }}
+                />
+              </div>
+
+              {/* Crossfade duration */}
+              <div>
+                <div className="flex justify-between mb-1">
+                  <span style={{ fontSize: '11px', color: '#6b4e15', fontFamily: 'monospace' }}>
+                    Crossfade duration
+                  </span>
+                  <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+                    {autopilotCrossfade}s
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  value={autopilotCrossfade}
+                  onChange={(e) => {
+                    const v = Number(e.target.value)
+                    setAutopilotCrossfade(v)
+                    window.doty.setAutopilotConfig({ crossfadeDuration: v })
+                  }}
+                  className="w-full"
+                  style={{ accentColor: '#c8922a', height: '2px' }}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Remote Control (#22) */}

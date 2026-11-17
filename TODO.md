@@ -24,6 +24,21 @@
 - [ ] STT: remaining word-level slips on mumbles ("mas para a cidade" for "vamos
       para a cidade"). Two-tier re-decode of finalized sentences with a larger
       context is the next lever.
+- [x] Architecture: the library is one module (`electron/library.ts`); membership,
+      one description per item, and vectors no longer get reassembled by each
+      caller. The SFX folder is indexed too, under a prefixed key.
+- [x] Architecture: the lane is a label (`src/lib/lane.ts` + `lane_overrides`),
+      not the folder a file sits in. `setLane` writes a row; `moveTrack` stays
+      the separate disk action.
+- [x] Architecture: one indexing run with two reported phases, paused while the
+      microphone is recording, instead of two booleans and a borrowed event.
+- [x] Architecture: the session pass lives in `electron/session/pass.ts` with
+      injected dependencies, so the hold throttle and serialisation are tested.
+- [x] Architecture: `override` and the autopilot master switch are deleted; a
+      profile that had `autopilotEnabled: false` is migrated to both channels
+      off. The per-channel switches are the only gates.
+- [ ] Wire the lane switch and the index chip into the UI (the backend and the
+      `setLane` / `onEmbeddingProgress` channels exist; nothing draws them yet).
 - [x] STT: VAD gating. `silero-vad-v6.2-F32.gguf` (1.2 MB) is loaded when present
       and gates live audio by speech probability; the RMS gate remains the
       fallback. Measured: 0.00 s emitted for a loud music bed, pink noise and

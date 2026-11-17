@@ -29,12 +29,14 @@ import {
   closeDb,
   getAllTags,
   getDb,
+  getLaneOverrides,
   getPlayFrequencies,
   getTags,
   getTagsMap,
   getTopPlayed,
   pruneMissingTracks,
   recordPlay,
+  setLaneOverride,
   setTags,
 } from './database'
 import {
@@ -63,6 +65,7 @@ import {
 } from './discord'
 import { downloadFile } from './download-file'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
+import { createLibrary } from './library'
 import { migrateFromJson } from './metadata-cache'
 import { createModelDownloads } from './model-downloads'
 import {
@@ -79,15 +82,10 @@ import { getMusicFiles, invalidateMusicLibrary } from './music-library'
 import { handleMusicRequest } from './music-protocol'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
-import { createAudioIndexer } from './session/audio/indexer'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
-import { planStep } from './session/director'
 import { audioAvailable, embedderAvailable, loadEmbedder, RETRIEVAL_KEY } from './session/embedder'
-import { topK } from './session/embedding'
-import { createIndexer } from './session/indexer'
 import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
-import { DEFAULT_POLICY } from './session/policy'
-import { learnedPick } from './session/preferences'
+import { createSessionPass, type PassRequest } from './session/pass'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
@@ -384,6 +382,19 @@ function registerMusicProtocol() {
   })
 }
 
+/**
+ * `autopilotEnabled` was a master switch that defaulted to off, while the two
+ * channel switches default to on. Removing the master must not start changing
+ * music by itself for someone who had it off, so a profile that stored it as
+ * false gets both channels switched off, once.
+ */
+function migrateAutopilotSwitch(): void {
+  if (store.get('autopilotEnabled', undefined) !== false) return
+  store.set('autopilotMusicEnabled', false)
+  store.set('autopilotSfxEnabled', false)
+  store.set('autopilotEnabled', undefined)
+}
+
 app.whenReady().then(async () => {
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
@@ -396,6 +407,7 @@ app.whenReady().then(async () => {
   // Initialize SQLite database and migrate legacy JSON cache
   getDb()
   migrateFromJson()
+  migrateAutopilotSwitch()
 
   registerAppProtocol()
   registerMusicProtocol()
@@ -456,10 +468,9 @@ app.whenReady().then(async () => {
   }
 
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) {
-    launchScanner(musicFolder)
-    startBackgroundPasses(musicFolder)
-  }
+  if (musicFolder) launchScanner(musicFolder)
+  // Either folder is a source now, so either one is worth indexing at startup.
+  if (musicFolder || store.get('sfxFolder', '')) startBackgroundPasses()
 
   // One background download, once per machine. No prompt: the app is useless
   // without it, and 1.5 GB of silence during a session would be worse.
@@ -510,6 +521,8 @@ handle(INVOKE.sttStart, () => {
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
   recordingActive = true
+  // The index is minutes of model work; the transcript is the critical path.
+  library.pause()
   startWavRecording()
   startStream()
   return { ok: true }
@@ -518,6 +531,7 @@ handle(INVOKE.sttStop, () => {
   finalizeStream()
   finalizeWavRecording()
   recordingActive = false
+  library.resume()
   return { ok: true }
 })
 
@@ -581,10 +595,18 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   return { ok: true, path: to }
 })
 
+// A lane is a label: switching it writes one row and leaves the file where the
+// DM put it. Moving files is the action above, and it stays a separate one.
+handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
+  if (lane !== 'music' && lane !== 'sfx') return { ok: false }
+  library.setLane(key, lane)
+  return { ok: true }
+})
+
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
   launchScanner(folderPath)
-  startBackgroundPasses(folderPath)
+  startBackgroundPasses()
   send(EVENTS.musicFolderChanged, folderPath)
   return { ok: true }
 })
@@ -599,7 +621,7 @@ handle(INVOKE.pickMusicFolder, async () => {
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
     launchScanner(result.filePaths[0])
-    startBackgroundPasses(result.filePaths[0])
+    startBackgroundPasses()
     send(EVENTS.musicFolderChanged, result.filePaths[0])
     return result.filePaths[0]
   }
@@ -621,9 +643,10 @@ handle(INVOKE.triggerScan, () => {
 
 handle(INVOKE.getAllMetadata, () => {
   const all = getAllMetadata()
+  const kinds = library.kinds()
   const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind }> = {}
   for (const [path, meta] of Object.entries(all)) {
-    withKind[path] = audioKinds[path] ? { ...meta, audioKind: audioKinds[path] } : meta
+    withKind[path] = kinds[path] ? { ...meta, audioKind: kinds[path] } : meta
   }
   return withKind
 })
@@ -796,125 +819,14 @@ handle(INVOKE.rankerDownload, () => downloadRanker())
 
 const sessionStore = createSessionStore(getDb())
 
-let liveScene: Scene | null = null
-let lastChangeAt = 0
-let lastLoggedAt = 0
-/** One session pass at a time: two in flight would race the scene and the clock. */
-let sessionPipeline: Promise<unknown> = Promise.resolve()
+const sessionPass = createSessionPass({
+  evaluate: (state, candidates) => evaluateSession(state, candidates),
+  store: sessionStore,
+  now: () => Date.now(),
+})
 
-handle(
-  INVOKE.sessionEvaluate,
-  async (
-    _e,
-    request: {
-      state: string
-      candidates: string[]
-      paths: string[]
-      msUntilTrackEnd: number | null
-      autopilot: boolean
-      override: boolean
-      /** The DM's threshold from Settings; absent keeps the policy default. */
-      confidenceThreshold?: number
-    },
-  ) => {
-    const run = sessionPipeline.then(async () => {
-      const { tracks, moods } = await evaluateSession(request.state, request.candidates)
-      if (moods.length === 0) return { tracks, moods, plan: null }
+handle(INVOKE.sessionEvaluate, (_e, request: PassRequest) => sessionPass.run(request))
 
-      let best = 0
-      for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
-      const now = Date.now()
-
-      // The margin the policy gates on: the runner-up is the strongest competitor.
-      let top = tracks.length > 0 ? tracks[0] : 0
-      let second = 0
-      for (let i = 1; i < tracks.length; i++) {
-        if (tracks[i] > top) {
-          second = top
-          top = tracks[i]
-        } else if (tracks[i] > second) {
-          second = tracks[i]
-        }
-      }
-
-      // Where the model cannot decide, prefer what the DM chose for this scene.
-      const learned = learnedPick({
-        probabilities: tracks,
-        paths: request.paths,
-        preferences: sessionStore.recentPreferences(200),
-        scene: liveScene?.mood ?? MOODS[best] ?? null,
-      })
-      // The learned pick changes *which* track, never the probability: rewriting
-      // the numbers would fake a confidence the model never had.
-      const pickIndex =
-        learned && learned.path ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
-      const step = planStep({
-        previous: liveScene,
-        observation: {
-          mood: MOODS[best] ?? 'exploration',
-          intensity: 0.5,
-          moodProbability: moods[best] ?? 0,
-          trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
-          secondTrackProbability: second,
-        },
-        now,
-        msUntilTrackEnd: request.msUntilTrackEnd,
-        msSinceLastChange: now - lastChangeAt,
-        autopilot: request.autopilot,
-        override: request.override,
-        // Settings must move the real gate, not just the label under it. The
-        // threshold is the cut-in bar; boundaries always pick the next track.
-        policy: {
-          ...DEFAULT_POLICY,
-          interruptMinProbability: request.confidenceThreshold ?? DEFAULT_POLICY.interruptMinProbability,
-        },
-      })
-
-      const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
-      if (sceneMoved) {
-        sessionStore.recordScene({
-          session: 'live',
-          mood: step.scene.mood,
-          intensity: step.scene.intensity,
-          startedAt: step.scene.since,
-        })
-      }
-      // The clock gates the change cooldown, so it only moves when music would.
-      if (step.action.kind !== 'hold') lastChangeAt = now
-      liveScene = step.scene
-
-      // Holds are main's to log (throttled: one per half minute). Actions are logged
-      // by the renderer once it has actually executed them, so `autoActions` counts
-      // changes that happened rather than changes that were proposed.
-      if (step.action.kind === 'hold' && now - lastLoggedAt > 30_000) {
-        lastLoggedAt = now
-        sessionStore.recordDecision({
-          at: now,
-          kind: 'music',
-          action: step.action.kind,
-          reason: step.action.reason,
-          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
-          probability: best >= 0 ? (tracks[best] ?? 0) : 0,
-          mood: step.scene.mood,
-          source: 'auto',
-        })
-      }
-
-      return {
-        tracks,
-        moods,
-        plan: {
-          scene: step.scene.mood,
-          action: step.action.kind,
-          reason: step.action.reason,
-          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
-        },
-      }
-    })
-    sessionPipeline = run.catch(() => {})
-    return run
-  },
-)
 handle(INVOKE.sessionDecision, (_e, row: Parameters<typeof sessionStore.recordDecision>[0]) => {
   sessionStore.recordDecision(row)
   return { ok: true }
@@ -925,108 +837,60 @@ handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.record
 })
 handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
-// ── Embeddings: indexed in the background, used when they exist ───────────────
+// ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
-let embedding: { done: number; total: number } = { done: 0, total: 0 }
-let indexing = false
 
-/** Load the model and index whatever is missing, in batches, without blocking. */
-async function startIndexing(folder: string): Promise<void> {
-  if (indexing || !embedderAvailable(EMBEDDER_DIR)) return
-  indexing = true
-  try {
-    embedder ??= await loadEmbedder(EMBEDDER_DIR)
-    const allMetadata = getAllMetadata()
-    const allTags = getTagsMap()
-    const files = getMusicFiles(folder)
-    embedding = { done: 0, total: files.length }
-    const indexer = createIndexer({
-      paths: () => files,
-      store: sessionStore,
-      embed: (texts) => embedder!.embedDocuments(texts),
-      model: RETRIEVAL_KEY,
-      // Exactly the text the ranker judges, so a retrieved track is one the model
-      // was also shown. Two describers would drift and retrieve names the ranker
-      // has never heard of.
-      describe: (path) => describeTrack(path, allMetadata[path], allTags[path] ?? []),
-      batch: 8,
-      onProgress: (p) => {
-        embedding = p
-        send(EVENTS.embeddingProgress, p)
-      },
-    })
-    await indexer.run()
-  } catch (e) {
-    console.error('[embedding] indexing failed:', e)
-  } finally {
-    indexing = false
-  }
+async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedder>> | null> {
+  if (embedder) return embedder
+  if (!embedderAvailable(EMBEDDER_DIR)) return null
+  embedder = await loadEmbedder(EMBEDDER_DIR)
+  return embedder
 }
 
-/** Audio verdicts from the background pass; absent means "use duration". */
-let audioKinds: Record<string, AudioKind> = {}
-let audioIndexing = false
+const library = createLibrary({
+  folders: () => ({
+    music: store.get('musicFolder', '') as string,
+    sfx: store.get('sfxFolder', '') as string,
+  }),
+  musicFiles: (folder) => getMusicFiles(folder),
+  sfxItems: (folder) => listSfx(folder),
+  facts: () => getAllMetadata(),
+  tags: () => getTagsMap(),
+  overrides: () => getLaneOverrides(),
+  setOverride: (key, lane) => setLaneOverride(key, lane),
+  embedder: () => loadEmbedderOnce(),
+  embedderAvailable: () => embedderAvailable(EMBEDDER_DIR),
+  audioAvailable: () => audioAvailable(EMBEDDER_DIR),
+  kindAnchors: (model) => loadKindAnchors(model),
+  // The decoder needs the real path. A relative one makes ffmpeg fail for every
+  // track, silently, because the audio indexer treats a failure as unclassified.
+  embedAudio: (absolute, durationSeconds) => embedTrackAudio(embedder!, absolute, clipWindow(durationSeconds)),
+  store: sessionStore,
+  onStatus: (status) => {
+    send(EVENTS.embeddingProgress, status)
+  },
+})
 
 /**
- * Minutes of work, so it runs in the background and resumes next launch. Audio
- * classification waits for the text pass: both need the embedder, and the audio
- * encoder is another ~190 MB resident. Called at startup and on a folder change,
- * which used to leave a newly selected library unindexed until the next launch.
+ * Minutes of work, so it runs in the background and resumes next launch. Called
+ * at startup and on a folder change, which used to leave a newly selected
+ * library unindexed until the next launch.
  */
-function startBackgroundPasses(folder: string): void {
+function startBackgroundPasses(): void {
   setTimeout(() => {
-    startIndexing(folder)
-      .catch((e) => console.error('[embedding] pass failed:', e))
-      .finally(() => startAudioKinds(folder).catch((e) => console.error('[audio-kind] pass failed:', e)))
+    library
+      .ensureIndexed()
+      .then(() => {
+        const status = library.status()
+        if (!status.ready) console.log('[library] no embedding model installed; search falls back to text')
+        else console.log(`[library] indexed ${status.indexed}/${status.total}`)
+      })
+      .catch((e) => console.error('[library] index failed:', e))
   }, 3_000)
 }
 
-/**
- * One audio embedding per track, classified as music or effect. Duration decides
- * the clear cases; this fills the 20–45 s grey band where the folder name is the
- * only other evidence. Runs after the text pass, never on the playback path.
- */
-async function startAudioKinds(folder: string): Promise<void> {
-  if (audioIndexing || !audioAvailable(EMBEDDER_DIR)) return
-  audioIndexing = true
-  try {
-    embedder ??= await loadEmbedder(EMBEDDER_DIR)
-    const anchors = await loadKindAnchors(embedder)
-    if (!anchors) return
-    const metadata = getAllMetadata()
-    const files = getMusicFiles(folder)
-    const indexer = createAudioIndexer({
-      paths: () => files,
-      store: sessionStore,
-      // `getMusicFiles` is relative to the library root; the decoder needs the
-      // real path. Passing the relative one makes ffmpeg fail for every track,
-      // silently, because the indexer treats an embed failure as "unclassified".
-      embed: (path) => embedTrackAudio(embedder!, join(folder, path), clipWindow(metadata[path]?.duration)),
-      classify: (vector) => decideKindFor(vector, anchors).kind,
-    })
-    await indexer.run()
-    audioKinds = indexer.kinds
-    if (files.length > 0 && Object.keys(audioKinds).length === 0) {
-      console.warn('[audio-kind] no track could be decoded or embedded; using duration only')
-    }
-    console.log(
-      `[audio-kind] classified ${Object.keys(audioKinds).length} tracks (${
-        Object.entries(audioKinds).filter(([, kind]) => kind === 'sfx').length
-      } effects)`,
-    )
-    // Badges read `metaMap`, which the renderer refreshes on this event.
-    send(EVENTS.scanComplete)
-  } finally {
-    audioIndexing = false
-  }
-}
-
-handle(INVOKE.embeddingStatus, () => {
-  const folder = store.get('musicFolder', '') as string
-  const total = folder ? getMusicFiles(folder).length : 0
-  return { ready: embedder !== null, indexed: embedding.done, total }
-})
+handle(INVOKE.embeddingStatus, () => library.status())
 
 handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
   if (candidates.length === 0 || !state.trim()) return []
@@ -1038,18 +902,12 @@ handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
   }
 })
 
-handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
-  if (!embedder || !text.trim()) return []
+handle(INVOKE.similarTracks, async (_e, text: string, lane: 'music' | 'sfx', k: number) => {
   try {
-    const query = await embedder.embedQuery(text)
-    const vectors = new Map<string, Float32Array>()
-    for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
-      const vector = sessionStore.getVector(path, RETRIEVAL_KEY)
-      if (vector) vectors.set(path, vector)
-    }
-    return topK(query, vectors, Math.max(1, Math.min(k, 50)))
+    const result = await library.search(text, lane, Math.max(1, Math.min(k, 50)))
+    return result.items.map((item) => item.path)
   } catch (e) {
-    console.error('[embedding] query failed:', e)
+    console.error('[library] search failed:', e)
     return []
   }
 })
@@ -1290,6 +1148,8 @@ handle(INVOKE.pickSfxFolder, async () => {
 handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
   send(EVENTS.sfxChanged)
+  // The effects folder is part of the library now: it needs vectors too.
+  startBackgroundPasses()
   return { ok: true }
 })
 
@@ -1303,7 +1163,6 @@ handle(INVOKE.setSfxRecommendationCount, (_e, count: number) => {
 // ── IPC: Autopilot (#12) ──────────────────────────────────────────────────────
 
 handle(INVOKE.getAutopilotConfig, () => ({
-  enabled: store.get('autopilotEnabled', false),
   musicEnabled: store.get('autopilotMusicEnabled', true),
   sfxEnabled: store.get('autopilotSfxEnabled', true),
   confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.9),
@@ -1317,7 +1176,6 @@ handle(INVOKE.getAutopilotConfig, () => ({
 }))
 
 handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
-  if (typeof config.enabled === 'boolean') store.set('autopilotEnabled', config.enabled)
   if (typeof config.musicEnabled === 'boolean') store.set('autopilotMusicEnabled', config.musicEnabled)
   if (typeof config.sfxEnabled === 'boolean') store.set('autopilotSfxEnabled', config.sfxEnabled)
   if (typeof config.confidenceThreshold === 'number')

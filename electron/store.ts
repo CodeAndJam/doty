@@ -20,7 +20,8 @@ interface StoreData {
   discordLastChannelId?: string // last joined channel
   // Sessions / models
   lastSession?: string
-  // Autopilot (#12)
+  // Autopilot (#12). The master switch is gone: the per-channel switches are the
+  // only gates, so a profile that had autopilot off is migrated at startup.
   autopilotEnabled?: boolean
   autopilotMusicEnabled?: boolean
   autopilotSfxEnabled?: boolean

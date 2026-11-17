@@ -36,7 +36,6 @@ export default function MainLayout() {
   )
   const [dmPrompt, setDmPrompt] = useState('')
   const [rankerCached, setRankerCached] = useState<boolean | null>(null)
-  const [override, setOverride] = useState(false)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
@@ -188,8 +187,6 @@ export default function MainLayout() {
   const showRankerMissing = rankerCached === false && modelStatus !== 'ready'
 
   const runRecommendation = useCallback(async () => {
-    // Override: the DM is driving by hand, so the ranker stays idle.
-    if (override) return
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
     if (files.length === 0) {
@@ -212,7 +209,7 @@ export default function MainLayout() {
     setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(recentTranscript)
-  }, [override])
+  }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     const sfxList = await window.doty.getSfxList()
@@ -668,12 +665,6 @@ export default function MainLayout() {
           <div className="flex-1 overflow-hidden">
             <Soundboard
               rankerStatus={modelStatus}
-              override={override}
-              onManualAction={() => setOverride(true)}
-              onResumeAuto={() => {
-                setOverride(false)
-                runRecommendation()
-              }}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
               lastConfidence={lastConfidence}

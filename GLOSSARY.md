@@ -30,7 +30,14 @@ _Avoid_: reranker, scorer, cross-encoder
 A ranked set of candidates plus a confidence, offered to the user.
 _Avoid_: suggestion, playlist
 
-**Override**:
-A mode in which the table has taken control of playback by hand, so the ranker stops offering
-recommendations until it is explicitly resumed.
-_Avoid_: manual mode, mute, pause
+**Lane**:
+Which shelf a file belongs on: the score, or the effects. A label, not a folder — resolved from the
+DM's switch, then the classifier (duration, audio verdict, name), then the folder the file came
+from. Folders are only sources, and one folder may hold both lanes.
+_Avoid_: kind, type, category (the effects folder's own subfolder), library
+
+**Override** — retired as a mode:
+The table taking playback by hand no longer silences the ranker: suggestions keep arriving and
+autopilot changes only at a boundary. Only the metric survives — `overrideRate` is the share of
+acted-on decisions the DM replaced.
+_Avoid_: manual mode, autopilot off, resume auto

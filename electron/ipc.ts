@@ -39,6 +39,7 @@ export const INVOKE = {
   similarTracks: 'embedding:similar',
   sfxRank: 'session:sfx-rank',
   moveTrack: 'library:move-track',
+  setLane: 'library:set-lane',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection

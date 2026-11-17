@@ -49,18 +49,21 @@ contextBridge.exposeInMainWorld('doty', {
     candidates: string[]
     paths: string[]
     msUntilTrackEnd: number | null
-    autopilot: boolean
-    override: boolean
+    musicEnabled: boolean
   }) => invoke(INVOKE.sessionEvaluate, request),
   sessionDecision: (row: unknown) => invoke(INVOKE.sessionDecision, row),
   sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
-  similarTracks: (text: string, k: number) => invoke(INVOKE.similarTracks, text, k) as Promise<string[]>,
+  similarTracks: (text: string, lane: 'music' | 'sfx', k: number) =>
+    invoke(INVOKE.similarTracks, text, lane, k) as Promise<string[]>,
   sfxRank: (state: string, candidates: string[]) => invoke(INVOKE.sfxRank, state, candidates) as Promise<number[]>,
   moveTrack: (path: string, target: 'music' | 'sfx') =>
     invoke(INVOKE.moveTrack, path, target) as Promise<{ ok: boolean; reason?: string; path?: string }>,
-  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => subscribe(EVENTS.embeddingProgress, cb),
+  /** Label a track without touching the disk: a lane is a label, not a folder. */
+  setLane: (key: string, lane: 'music' | 'sfx') => invoke(INVOKE.setLane, key, lane) as Promise<{ ok: boolean }>,
+  onEmbeddingProgress: (cb: (p: import('../src/types').IndexProgress) => void) =>
+    subscribe(EVENTS.embeddingProgress, cb),
   onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
     subscribe(EVENTS.rankerDownloadProgress, cb),
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),

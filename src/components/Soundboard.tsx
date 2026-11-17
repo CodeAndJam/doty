@@ -85,10 +85,6 @@ function CollapsedRail({
 
 interface Props {
   recommendations: string[]
-  /** The DM is driving by hand; the ranker stays idle until they resume. */
-  override: boolean
-  onManualAction: () => void
-  onResumeAuto: () => void
   sfxRecommendations: string[]
   lastConfidence: number
   /** TypeSafe choice confidence: how settled the pick is across the candidates. */
@@ -110,9 +106,6 @@ interface Props {
 }
 
 export default function Soundboard({
-  override,
-  onManualAction,
-  onResumeAuto,
   recommendations,
   sfxRecommendations,
   lastConfidence,
@@ -306,7 +299,6 @@ export default function Soundboard({
   }
 
   function recordSkip(track: string) {
-    onManualAction()
     window.doty
       .sessionDecision({
         at: Date.now(),
@@ -373,10 +365,9 @@ export default function Soundboard({
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
-    // An automatic change is not the DM taking over: latching override here would
-    // switch the director off on its own first cut.
+    // An automatic change is not a label: only the DM's own pick is what they
+    // chose for this moment.
     if (source === 'auto') return
-    onManualAction()
     // Every manual pick is a label: what the DM chose for this moment.
     window.doty
       .sessionPreference({ at: Date.now(), segment: sessionText, track: filename, scene, source: 'manual' })
@@ -429,7 +420,6 @@ export default function Soundboard({
     const track = queue.tracks[index]
     if (!track) return
     recordPreference(track)
-    onManualAction()
     queue.setCurrentIndex(index)
     if (playing === track) {
       // Same track — toggle pause/resume (matches the pause icon in the queue)
@@ -444,7 +434,6 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
-    onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -500,7 +489,6 @@ export default function Soundboard({
       }
     },
     sfxPlayer.channels.length > 0,
-    override,
   )
 
   // Reload autopilot config when Settings modal closes
@@ -515,13 +503,13 @@ export default function Soundboard({
   // The director: main owns the scene and the policy, this only executes the plan.
   // Player timing lives in refs so the effect does not re-run every quarter second.
   const playerRef = useRef({ currentTime, duration })
-  const autopilotRef = useRef(autopilot.enabled)
+  const autopilotRef = useRef(autopilot.config.musicEnabled)
   useEffect(() => {
     playerRef.current = { currentTime, duration }
   }, [currentTime, duration])
   useEffect(() => {
-    autopilotRef.current = autopilot.enabled
-  }, [autopilot.enabled])
+    autopilotRef.current = autopilot.config.musicEnabled
+  }, [autopilot.config.musicEnabled])
 
   /** Crossing into the last 21 s of a track is its own trigger: silence at the table
    *  must not mean the boundary goes unplanned. */
@@ -552,8 +540,7 @@ export default function Soundboard({
         candidates: candidates.map((f) => describeTrack(f, metaMap[f], tagsMap[f] || [])),
         paths: candidates,
         msUntilTrackEnd: remaining,
-        autopilot: autopilotRef.current,
-        override,
+        musicEnabled: autopilotRef.current,
         confidenceThreshold: autopilot.config.confidenceThreshold,
       })
       .then(({ tracks, plan }) => {
@@ -617,7 +604,6 @@ export default function Soundboard({
     candidates,
     lastRanker,
     sessionText,
-    override,
     nearEnd,
     refreshReport,
     metaMap,
@@ -827,7 +813,7 @@ export default function Soundboard({
               >
                 Music
               </span>
-              {autopilot.enabled && autopilot.config.musicEnabled && (
+              {autopilot.config.musicEnabled && (
                 <span
                   data-testid="autopilot-chip"
                   title={`At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(
@@ -1027,23 +1013,6 @@ export default function Soundboard({
                         {Math.round(report.overrideRate * 100)}%
                       </span>
                     )}
-                    {override && (
-                      <button
-                        type="button"
-                        onClick={onResumeAuto}
-                        title="Playback is yours until you resume automatic suggestions"
-                        style={{
-                          fontSize: '9px',
-                          fontFamily: 'monospace',
-                          padding: '0 4px',
-                          border: '1px solid rgba(74,138,106,0.45)',
-                          color: '#4a8a6a',
-                          letterSpacing: '0.05em',
-                        }}
-                      >
-                        RESUME AUTO
-                      </button>
-                    )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
                     {/* Decision log toggle */}
                     <button
@@ -1175,7 +1144,7 @@ export default function Soundboard({
               >
                 SFX
               </span>
-              {autopilot.enabled && autopilot.config.sfxEnabled && (
+              {autopilot.config.sfxEnabled && (
                 <span
                   style={{
                     fontSize: '9px',

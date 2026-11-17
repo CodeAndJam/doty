@@ -6,8 +6,6 @@
  */
 
 export interface AutopilotConfig {
-  /** Whether autopilot is enabled (default: false) */
-  enabled: boolean
   /** Whether music auto-transitions are enabled (default: true) */
   musicEnabled: boolean
   /** Whether SFX auto-triggers are enabled (default: true) */
@@ -35,7 +33,6 @@ export interface AutopilotConfig {
 }
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
-  enabled: false,
   musicEnabled: true,
   sfxEnabled: true,
   confidenceThreshold: 0.9,

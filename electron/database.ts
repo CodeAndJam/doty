@@ -71,6 +71,16 @@ export function getDb(): Database.Database {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_item ON play_history(item_id, item_type)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at)`)
 
+  // The DM's lane labels. Keyed by the item's library key, not by a `tracks`
+  // row: effects never enter `tracks`, and a lane must cover both libraries.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lane_overrides (
+      path       TEXT PRIMARY KEY,
+      lane       TEXT NOT NULL CHECK(lane IN ('music', 'sfx')),
+      updated_at INTEGER NOT NULL
+    )
+  `)
+
   return db
 }
 
@@ -178,4 +188,25 @@ export function getTopPlayed(itemType: 'music' | 'sfx', limit = 10): string[] {
 export function closeDb(): void {
   db?.close()
   db = null
+}
+
+// ── Lane overrides ────────────────────────────────────────────────────────────
+
+/** Every label the DM has set, by library key. */
+export function getLaneOverrides(): Record<string, 'music' | 'sfx'> {
+  const rows = getDb().prepare('SELECT path, lane FROM lane_overrides').all() as Array<{
+    path: string
+    lane: 'music' | 'sfx'
+  }>
+  const out: Record<string, 'music' | 'sfx'> = {}
+  for (const row of rows) out[row.path] = row.lane
+  return out
+}
+
+export function setLaneOverride(path: string, lane: 'music' | 'sfx'): void {
+  getDb()
+    .prepare(
+      'INSERT INTO lane_overrides (path, lane, updated_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET lane = ?, updated_at = ?',
+    )
+    .run(path, lane, Date.now(), lane, Date.now())
 }

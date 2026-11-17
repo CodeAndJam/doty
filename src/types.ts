@@ -16,6 +16,18 @@ export interface ScanProgress {
   current: string
 }
 
+/** How far the library index has got: two phases, and why it may be stopped. */
+export interface IndexProgress {
+  ready: boolean
+  phase: 'idle' | 'text' | 'audio'
+  paused: boolean
+  /** Items with a text vector, over the whole library. */
+  indexed: number
+  total: number
+  phaseDone: number
+  phaseTotal: number
+}
+
 export interface TrackMeta {
   bpm: number
   bpmConfidence: number
@@ -219,8 +231,7 @@ export interface DotyAPI {
     /** The same candidates as file paths, in the same order. */
     paths: string[]
     msUntilTrackEnd: number | null
-    autopilot: boolean
-    override: boolean
+    musicEnabled: boolean
     /** The DM's threshold from Settings; absent keeps the policy default. */
     confidenceThreshold?: number
   }) => Promise<{
@@ -246,14 +257,16 @@ export interface DotyAPI {
     /** `reject` records a skip, so history can tell a choice from a dismissal. */
     source: 'auto' | 'manual' | 'reject'
   }) => Promise<unknown>
-  embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
-  /** Vector matches from the whole library, empty when nothing is indexed yet. */
-  similarTracks: (text: string, k: number) => Promise<string[]>
+  embeddingStatus: () => Promise<IndexProgress>
+  /** Vector matches on one lane, empty when nothing is indexed yet. */
+  similarTracks: (text: string, lane: 'music' | 'sfx', k: number) => Promise<string[]>
   /** Probabilities for each SFX description, in the order given. */
   sfxRank: (state: string, candidates: string[]) => Promise<number[]>
   /** Move one file between the music and effects libraries, on request. */
   moveTrack: (path: string, target: 'music' | 'sfx') => Promise<{ ok: boolean; reason?: string; path?: string }>
-  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
+  /** Label a track without touching the disk: a lane is a label, not a folder. */
+  setLane: (key: string, lane: 'music' | 'sfx') => Promise<{ ok: boolean }>
+  onEmbeddingProgress: (cb: (p: IndexProgress) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number
     autoActions: number
