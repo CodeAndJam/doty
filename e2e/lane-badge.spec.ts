@@ -100,7 +100,7 @@ function disk(dir: string): string[] {
 }
 
 async function searchBox(page: Page, which: 'tracks' | 'effects') {
-  return page.getByPlaceholder(which === 'tracks' ? 'Search tracks or tags...' : 'Search effects...')
+  return page.getByPlaceholder(which === 'tracks' ? 'Search the library' : 'Search effects')
 }
 
 async function openBrowse(page: Page, which: 'tracks' | 'effects') {

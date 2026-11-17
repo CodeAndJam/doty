@@ -157,11 +157,12 @@ test('searching a name narrows the music shelf, clearing restores it, and the re
     await page.keyboard.press('Escape')
     await expect(badges).toHaveCount(0)
     await expect(page.getByRole('slider', { name: 'Seek' })).toBeVisible({ timeout: 15_000 })
-    // Move off first: the pointer can already sit where the player appears, and
-    // an unchanged position does not fire the mouseenter that opens the tooltip.
+    // Synthetic enter, not a real hover: on an unfocused Electron window the
+    // pointer move does not always reach the renderer, and this only needs the
+    // tooltip the player shows for its current track.
     await page.mouse.move(0, 0)
     const info = page.getByRole('button', { name: 'Track info' })
-    await info.hover()
+    await info.dispatchEvent('mouseover')
     await expect(info.locator('xpath=..')).toContainText('Spooky - Desna')
   } finally {
     if (app) await gracefulClose(app)
@@ -220,10 +221,10 @@ test('a second query replaces the first answer and the old rows do not come back
     await box.fill('Desna')
 
     await expect(shelf.getByText('Spooky - Desna', { exact: true })).toBeVisible()
+    await expect(badges).toHaveCount(1)
     await expect(shelf.getByText('Fantasy Tavern', { exact: true })).toHaveCount(0)
     // A late first answer must not paint the old row back over the new one.
     await page.waitForTimeout(700)
-    await expect(badges).toHaveCount(1)
     await expect(shelf.getByText('Fantasy Tavern', { exact: true })).toHaveCount(0)
   } finally {
     if (app) await gracefulClose(app)
