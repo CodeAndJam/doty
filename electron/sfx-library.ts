@@ -38,9 +38,12 @@ function walk(dir: string, base: string, category: string, out: SfxItem[]): void
 }
 
 /** Audio files under `folder`, one level of category from the folder name. */
-export function listSfx(folder: string): SfxItem[] {
+export function listSfx(folder: string, durations: Record<string, number> = {}): SfxItem[] {
   if (!folder || !fs.existsSync(folder)) return []
   const items: SfxItem[] = []
   walk(folder, folder, '', items)
+  // A measured duration decides the lane; zero means "not probed yet" and the
+  // classifier falls back to the folder, which is where the DM put it.
+  for (const item of items) item.duration = durations[item.filename] ?? 0
   return items
 }

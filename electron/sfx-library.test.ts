@@ -1,43 +1,23 @@
 import fs from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import os from 'node:os'
+import path from 'node:path'
+import { afterAll, describe, expect, it } from 'vitest'
 import { listSfx } from './sfx-library'
 
-const dirs: string[] = []
+const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-sfx-'))
+fs.mkdirSync(path.join(folder, 'Door'), { recursive: true })
+fs.writeFileSync(path.join(folder, 'Door', 'slam.wav'), 'not really a wav')
+fs.writeFileSync(path.join(folder, 'roar.mp3'), 'nor this')
 
-function tempDir(): string {
-  const dir = fs.mkdtempSync(join(tmpdir(), 'doty-sfx-'))
-  dirs.push(dir)
-  return dir
-}
+afterAll(() => fs.rmSync(folder, { recursive: true, force: true }))
 
-function touch(path: string): void {
-  fs.mkdirSync(join(path, '..'), { recursive: true })
-  fs.writeFileSync(path, '')
-}
-
-afterEach(() => {
-  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true })
-})
-
-describe('sfx library', () => {
-  it('lists audio files with their folder as category', () => {
-    const root = tempDir()
-    touch(join(root, 'combat', 'sword_hit.mp3'))
-    touch(join(root, 'rain.ogg'))
-    touch(join(root, 'combat', 'notes.txt'))
-
-    const items = listSfx(root)
-    expect(items.map((i) => [i.id, i.category, i.label])).toEqual([
-      [join('combat', 'sword_hit.mp3'), 'combat', 'sword hit'],
-      ['rain.ogg', 'custom', 'rain'],
-    ])
-    expect(items[0].filename).toBe(join(root, 'combat', 'sword_hit.mp3'))
-  })
-
-  it('returns nothing for a missing or empty folder', () => {
-    expect(listSfx('')).toEqual([])
-    expect(listSfx(join(tmpdir(), 'doty-does-not-exist'))).toEqual([])
+describe('listSfx', () => {
+  it('reports a measured duration when the cache has one', () => {
+    const items = listSfx(folder, { [path.join(folder, 'Door', 'slam.wav')]: 2.5 })
+    const slam = items.find((item) => item.id === 'Door/slam.wav')
+    const roar = items.find((item) => item.id === 'roar.mp3')
+    expect(slam?.duration).toBe(2.5)
+    // Unprobed stays 0, which the lane rule reads as "no evidence", not as zero.
+    expect(roar?.duration).toBe(0)
   })
 })

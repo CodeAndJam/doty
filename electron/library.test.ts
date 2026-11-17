@@ -93,6 +93,26 @@ describe('library', () => {
     expect(item?.lane).toBe('sfx')
   })
 
+  it('uses a measured effect duration the way it uses a cue duration', () => {
+    // Once the probe has run, seconds decide: a long bed in the effects folder is
+    // a cue, and a short stab is an effect wherever it lives.
+    const { library } = harness({
+      sfxItems: () => [
+        {
+          id: 'Weather/storm.wav',
+          filename: '/sfx/Weather/storm.wav',
+          category: 'Weather',
+          label: 'storm',
+          description: '',
+          duration: 240,
+          source: 'custom',
+        },
+      ],
+    })
+    const item = library.items().find((i) => i.key === 'sfx:Weather/storm.wav')
+    expect(item?.lane).toBe('music')
+  })
+
   it('reports where each item came from as well as what it is filed as', () => {
     const { library } = harness({ overrides: () => ({ 'sfx:Door/door slam.wav': 'music' }) })
     const item = library.items().find((i) => i.key === 'sfx:Door/door slam.wav')

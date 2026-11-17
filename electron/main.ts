@@ -32,12 +32,14 @@ import {
   getDb,
   getLaneOverrides,
   getPlayFrequencies,
+  getSfxDurations,
   getTags,
   getTagsMap,
   getTopPlayed,
   pruneMissingTracks,
   recordPlay,
   setLaneOverride,
+  setSfxDuration,
   setTags,
 } from './database'
 import {
@@ -880,7 +882,7 @@ const library = createLibrary({
     sfx: store.get('sfxFolder', '') as string,
   }),
   musicFiles: (folder) => getMusicFiles(folder),
-  sfxItems: (folder) => listSfx(folder),
+  sfxItems: (folder) => listSfx(folder, getSfxDurations()),
   facts: () => getAllMetadata(),
   tags: () => getTagsMap(),
   overrides: () => getLaneOverrides(),
@@ -900,12 +902,39 @@ const library = createLibrary({
 })
 
 /**
+ * Effects are seconds long and never enter `tracks`, so their duration has to be
+ * measured separately: it is what lets the lane rule tell a 6 s door slam from a
+ * 3 min cue sitting in the same folder. One pass, cached, silent on failure.
+ */
+async function startSfxDurations(): Promise<void> {
+  const folder = store.get('sfxFolder', '') as string
+  if (!folder) return
+  const cached = getSfxDurations()
+  const missing = listSfx(folder).filter((item) => !cached[item.filename])
+  if (missing.length === 0) return
+  const { parseFile } = await import('music-metadata')
+  for (const item of missing) {
+    try {
+      const meta = await parseFile(item.filename, { duration: true })
+      const seconds = meta.format.duration
+      if (seconds) setSfxDuration(item.filename, seconds)
+    } catch {
+      /* unreadable: it keeps the folder's answer */
+    }
+  }
+  // The lanes were resolved with the old numbers.
+  send(EVENTS.sfxChanged)
+  send(EVENTS.scanComplete)
+}
+
+/**
  * Minutes of work, so it runs in the background and resumes next launch. Called
  * at startup and on a folder change, which used to leave a newly selected
  * library unindexed until the next launch.
  */
 function startBackgroundPasses(): void {
   setTimeout(() => {
+    void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
     library
       .ensureIndexed()
       .then(() => {
@@ -1171,7 +1200,9 @@ handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
 handle(INVOKE.getSfxList, () => {
-  const known = new Map(listSfx(store.get('sfxFolder', '') as string).map((item) => [`sfx:${item.id}`, item]))
+  const known = new Map(
+    listSfx(store.get('sfxFolder', '') as string, getSfxDurations()).map((item) => [`sfx:${item.id}`, item]),
+  )
   return library.items('sfx').map((item) => {
     const found = known.get(item.key)
     if (found) return { ...found, lane: item.lane }

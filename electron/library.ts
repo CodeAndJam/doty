@@ -154,7 +154,16 @@ export function createLibrary(deps: LibraryDeps): Library {
         // index survives; upgrade when a second source folder lands.
         const key = `sfx:${item.id}`
         const description = [item.label, item.category, ...(tags[item.filename] ?? [])].filter(Boolean).join(', ')
-        pick(key, item.id, item.filename, 'sfx', undefined, description)
+        // Duration and category are the only facts an effect has; without the
+        // duration the lane rule has nothing but its name to go on.
+        pick(
+          key,
+          item.id,
+          item.filename,
+          'sfx',
+          { duration: item.duration, genre: item.category } as TrackMeta,
+          description,
+        )
       }
     }
     return lane ? out.filter((item) => item.lane === lane) : out

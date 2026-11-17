@@ -71,6 +71,15 @@ export function getDb(): Database.Database {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_item ON play_history(item_id, item_type)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at)`)
 
+  // Effects never enter `tracks`, so their measured duration needs its own row.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sfx_durations (
+      path       TEXT PRIMARY KEY,
+      duration   REAL NOT NULL,
+      updated_at INTEGER NOT NULL
+    )
+  `)
+
   // The DM's lane labels. Keyed by the item's library key, not by a `tracks`
   // row: effects never enter `tracks`, and a lane must cover both libraries.
   db.exec(`
@@ -213,4 +222,25 @@ export function setLaneOverride(path: string, lane: 'music' | 'sfx'): void {
       'INSERT INTO lane_overrides (path, lane, updated_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET lane = ?, updated_at = ?',
     )
     .run(path, lane, Date.now(), lane, Date.now())
+}
+
+// ── Effect durations ──────────────────────────────────────────────────────────
+
+/** Measured seconds per absolute path, for effects that have been probed. */
+export function getSfxDurations(): Record<string, number> {
+  const rows = getDb().prepare('SELECT path, duration FROM sfx_durations').all() as Array<{
+    path: string
+    duration: number
+  }>
+  const out: Record<string, number> = {}
+  for (const row of rows) out[row.path] = row.duration
+  return out
+}
+
+export function setSfxDuration(path: string, duration: number): void {
+  getDb()
+    .prepare(
+      'INSERT INTO sfx_durations (path, duration, updated_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET duration = ?, updated_at = ?',
+    )
+    .run(path, duration, Date.now(), duration, Date.now())
 }
