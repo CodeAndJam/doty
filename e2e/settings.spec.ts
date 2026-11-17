@@ -82,7 +82,8 @@ async function openApp(h: Harness): Promise<{ app: ElectronApplication; page: Pa
 /** The gear is the one header button whose icon rotates on hover. */
 const gear = (page: Page): Locator => page.locator('header button:has([class*="rotate-45"])')
 const dialog = (page: Page): Locator => page.getByRole('dialog', { name: 'Settings' })
-const panel = (page: Page): Locator => page.getByTestId('settings-content')
+const panel = (page: Page, section: SectionId): Locator =>
+  page.locator(`[role="tabpanel"]#settings-panel-${section}`)
 const tab = (page: Page, section: SectionId): Locator => page.getByTestId(`settings-section-${section}`)
 
 async function openSettings(page: Page) {
@@ -120,13 +121,13 @@ test('the gear opens one dialog whose rail is exactly the four groups', async ()
     // Each group is the only one on screen.
     for (const shown of SECTIONS) {
       await tab(page, shown).click()
-      await expect(panel(page)).toBeVisible()
+      await expect(panel(page, shown)).toBeVisible()
       for (const other of SECTIONS) {
         const control = uniqueControl(page, other)
         if (other === shown) {
           await expect(control, `${other} should be visible on its own tab`).toBeVisible()
         } else {
-          await expect(control, `${other} should be hidden on ${shown}`).toHaveCount(0)
+          await expect(control, `${other} should be hidden on ${shown}`).toBeHidden()
         }
       }
     }
@@ -155,7 +156,7 @@ test('arrows move the tab, Escape closes from inside, focus returns to the gear'
       expect(await tab(page, section).getAttribute('aria-controls')).toBe(`settings-panel-${section}`)
     }
     await tab(page, 'audio').click()
-    expect(await panel(page).getAttribute('id')).toBe('settings-panel-audio')
+    await expect(panel(page, 'audio')).toBeVisible()
     expect(await tab(page, 'audio').getAttribute('aria-selected')).toBe('true')
 
     // ArrowDown walks the rail and takes focus with it.
@@ -163,7 +164,7 @@ test('arrows move the tab, Escape closes from inside, focus returns to the gear'
     await page.keyboard.press('ArrowDown')
     await expect(tab(page, 'library')).toHaveAttribute('aria-selected', 'true')
     expect(await activeElementId(page)).toBe('settings-tab-library')
-    expect(await panel(page).getAttribute('id')).toBe('settings-panel-library')
+    await expect(panel(page, 'library')).toBeVisible()
     await expect(uniqueControl(page, 'library')).toBeVisible()
 
     // Home/End are part of the same roving-tabindex contract.
