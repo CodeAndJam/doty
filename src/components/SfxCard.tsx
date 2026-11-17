@@ -157,6 +157,7 @@ export default function SfxCard({
   return (
     <div
       ref={cardRef}
+      data-testid="sfx-card"
       className="relative group transition-all"
       style={{
         background: isPlaying
