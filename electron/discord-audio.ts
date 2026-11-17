@@ -3,18 +3,34 @@
  * AudioResource instances for @discordjs/voice to stream to Discord.
  */
 
-import { exec } from 'node:child_process'
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+import { promisify } from 'node:util'
 import { type AudioResource, createAudioResource, StreamType } from '@discordjs/voice'
 import prism from 'prism-media'
 
-// ffmpeg path — use bundled ffmpeg-static if available
+const run = promisify(execFile)
+
+// ffmpeg path — use bundled ffmpeg-static if available. A packaged build hands
+// us a path inside app.asar, where spawn cannot execute; electron-builder unpacks
+// the binary next to it, so point there instead (only when `.asar` ends a segment).
 let ffmpegPath: string
 try {
-  ffmpegPath = require('ffmpeg-static') as string
+  ffmpegPath = (require('ffmpeg-static') as string).replace(/([\\/])app\.asar([\\/])/, '$1app.asar.unpacked$2')
 } catch {
   ffmpegPath = 'ffmpeg'
+}
+
+/** Diagnostic for "connected to Discord but silent". */
+export async function ffmpegStatus(): Promise<{ path: string; ok: boolean; detail: string }> {
+  if (!fs.existsSync(ffmpegPath)) return { path: ffmpegPath, ok: false, detail: 'file missing' }
+  try {
+    const { stdout } = await run(ffmpegPath, ['-version'])
+    return { path: ffmpegPath, ok: true, detail: stdout.split('\n')[0] || 'ok' }
+  } catch (err) {
+    return { path: ffmpegPath, ok: false, detail: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 /**
@@ -87,15 +103,4 @@ export function createSfxResource(absolutePath: string, volume = 1.0): AudioReso
   })
   resource.volume?.setVolume(volume)
   return resource
-}
-
-/**
- * Check if ffmpeg is available (needed for audio transcoding).
- */
-function checkFfmpeg(): Promise<boolean> {
-  return new Promise((resolve) => {
-    exec(`"${ffmpegPath}" -version`, (err) => {
-      resolve(!err)
-    })
-  })
 }
