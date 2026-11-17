@@ -996,8 +996,14 @@ function startBackgroundPasses(): void {
       .ensureIndexed()
       .then(() => {
         const status = library.status()
-        if (!status.ready) console.log('[library] no embedding model installed; search falls back to text')
-        else console.log(`[library] indexed ${status.indexed}/${status.total}`)
+        if (!status.ready) {
+          console.log('[library] no embedding model installed; search falls back to text')
+          return
+        }
+        console.log(`[library] indexed ${status.indexed}/${status.total}`)
+        // The audio pass resolves lanes, and every panel reads them from main;
+        // without this signal the new labels wait for the next disk scan.
+        send(EVENTS.scanComplete)
       })
       .catch((e) => console.error('[library] index failed:', e))
   }, 3_000)
