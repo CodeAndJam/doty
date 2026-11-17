@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useLibrarySearch } from '../hooks/useLibrarySearch'
+import { searchModeLabel } from '../lib/searchLabel'
 import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
@@ -65,19 +67,16 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
     setActiveTagFilters((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }
 
-  const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
-  const filtered = allFiles.filter((f) => {
-    const lower = f.toLowerCase()
+  const found = useLibrarySearch(search, 'music', 12)
+  // While something is typed the library answers; an empty box is the local
+  // list, which keeps the tag chips working without a round trip.
+  const results = search.trim() ? (found?.hits.map((hit) => hit.path) ?? []) : allFiles
+
+  const filtered = results.filter((f) => {
     const fileTags = tagsMap[f] || []
-
-    // Text search: match filename OR tags
-    const textMatch =
-      tokens.length === 0 || tokens.every((t) => lower.includes(t) || fileTags.some((tag) => tag.includes(t)))
-
-    // Tag chip filters: must have ALL active tag filters
-    const tagMatch = activeTagFilters.length === 0 || activeTagFilters.every((t) => fileTags.includes(t))
-
-    return textMatch && tagMatch
+    // Tag chips still narrow whatever answered; text matching belongs to the
+    // library now, so the panel does not keep a second opinion about it.
+    return activeTagFilters.length === 0 || activeTagFilters.every((t) => fileTags.includes(t))
   })
 
   return (
@@ -95,7 +94,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search tracks or tags..."
+          placeholder="Search the library"
           className="flex-1 bg-transparent outline-none text-sm"
           style={{
             fontFamily: "'Crimson Text', serif",
@@ -103,6 +102,19 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             color: '#c8922a',
           }}
         />
+        {search.trim() && found && (
+          <span
+            data-testid="search-mode"
+            style={{
+              fontSize: '9px',
+              color: found.mode === 'semantic' ? '#4a8a6a' : '#b06a2a',
+              fontFamily: 'monospace',
+            }}
+            title="How this answer was found"
+          >
+            {searchModeLabel(found.mode, found.index)}
+          </span>
+        )}
         <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filtered.length}</span>
         <button
           type="button"

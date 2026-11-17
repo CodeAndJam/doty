@@ -917,7 +917,14 @@ handle(INVOKE.librarySearch, async (_e, text: string, lane: 'music' | 'sfx', k: 
     // from the fallback, and only main knows which matcher ran.
     return {
       mode: result.mode,
-      items: result.items.map((item) => ({ key: item.key, path: item.path, lane: item.lane })),
+      items: result.items.map((item) => ({
+        key: item.key,
+        path: item.path,
+        lane: item.lane,
+        // The effects panel identifies its cards by absolute filename, the music
+        // panel by relative path; both need to find the same result.
+        absolute: item.absolute,
+      })),
     }
   } catch (e) {
     console.error('[library] search failed:', e)

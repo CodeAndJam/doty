@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLibrarySearch } from '../hooks/useLibrarySearch'
 import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
+import { searchModeLabel } from '../lib/searchLabel'
 import type { SfxCategory, SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS } from '../types'
 import { CloseIcon, PinIcon, SearchIcon, StopIcon } from './Icons'
@@ -103,21 +105,18 @@ export default function SfxBrowsePanel({
       .catch(() => {})
   }
 
+  const found = useLibrarySearch(search, 'sfx', 12)
+
   // Filter SFX based on selected category and search
   const filteredSfx = useMemo(() => {
     let list = allSfx
 
-    // When searching, search across ALL SFX regardless of selected tab
+    // When searching, the library answers across the whole shelf, ignoring the
+    // selected tab: a DM looking for a sound does not think in categories.
     if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(
-        (s) =>
-          s.label.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          s.category.toLowerCase().includes(q) ||
-          (tagsMap[s.filename] || []).some((t) => t.includes(q)),
-      )
-      return list
+      if (!found) return list
+      const byFile = new Map(allSfx.map((s) => [s.filename, s]))
+      return found.hits.map((hit) => byFile.get(hit.absolute)).filter((s): s is SfxMeta => Boolean(s))
     }
 
     if (selectedCategory === 'recommended') {
@@ -129,7 +128,7 @@ export default function SfxBrowsePanel({
     }
 
     return list
-  }, [allSfx, selectedCategory, search, sfxRecommendations, tagsMap])
+  }, [allSfx, selectedCategory, search, sfxRecommendations, tagsMap, found])
 
   // Map sfxId -> active channel
   const activeChannelMap = useMemo(() => {
@@ -209,10 +208,23 @@ export default function SfxBrowsePanel({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search effects..."
+          placeholder="Search effects"
           className="flex-1 bg-transparent outline-none text-sm"
           style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#4a8a6a' }}
         />
+        {search.trim() && found && (
+          <span
+            data-testid="search-mode"
+            style={{
+              fontSize: '9px',
+              color: found.mode === 'semantic' ? '#4a8a6a' : '#b06a2a',
+              fontFamily: 'monospace',
+            }}
+            title="How this answer was found"
+          >
+            {searchModeLabel(found.mode, found.index)}
+          </span>
+        )}
         <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filteredSfx.length}</span>
         {hasActiveSfx && (
           <button
