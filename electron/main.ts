@@ -310,6 +310,9 @@ function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
     (done, total, current) => {
+      // Each analysed file changes the duration the lane rule reads, so a library
+      // built mid-scan is stale before the scan even finishes.
+      library.invalidate()
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
