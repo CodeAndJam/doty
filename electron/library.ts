@@ -36,6 +36,8 @@ export interface LibraryItem {
   laneSource: LaneSource
   /** The text the ranker and the retrieval index both see. */
   description: string
+  /** Every tag, for text search: the description keeps only the two the model sees. */
+  tags: string[]
 }
 
 export interface IndexStatus {
@@ -137,6 +139,7 @@ export function createLibrary(deps: LibraryDeps): Library {
         lane,
         laneSource: source,
         description,
+        tags: tags[path] ?? tags[absolute] ?? [],
       })
     }
 
@@ -317,7 +320,7 @@ function textSearch(pool: LibraryItem[], query: string, k: number): LibraryItem[
   const tokens = query.toLowerCase().split(/\s+/).filter(Boolean)
   const exact = query.toLowerCase()
   const matches = pool.filter((item) => {
-    const haystack = item.description.toLowerCase()
+    const haystack = `${item.description} ${item.path} ${item.tags.join(' ')}`.toLowerCase()
     return tokens.every((token) => haystack.includes(token))
   })
   return matches

@@ -277,7 +277,7 @@ export interface DotyAPI {
     k: number,
   ) => Promise<{
     mode: 'semantic' | 'text'
-    items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string }>
+    items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string; origin: 'music' | 'sfx' }>
   }>
   /** Probabilities for each SFX description, in the order given. */
   sfxRank: (state: string, candidates: string[]) => Promise<number[]>

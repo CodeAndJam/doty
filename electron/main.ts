@@ -924,6 +924,9 @@ handle(INVOKE.librarySearch, async (_e, text: string, lane: 'music' | 'sfx', k: 
         // The effects panel identifies its cards by absolute filename, the music
         // panel by relative path; both need to find the same result.
         absolute: item.absolute,
+        // Which path plays: a music-folder file is relative, anything else is
+        // only reachable by its absolute path.
+        origin: item.origin,
       })),
     }
   } catch (e) {

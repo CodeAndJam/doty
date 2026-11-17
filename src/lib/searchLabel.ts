@@ -10,9 +10,11 @@ import type { IndexProgress } from '../types'
 export type SearchMode = 'semantic' | 'text'
 
 export function searchModeLabel(mode: SearchMode, status: IndexProgress | null): string {
-  if (mode === 'semantic') return 'semantic'
-  if (!status) return 'text search'
-  if (!status.ready) return 'text search — no embedding model'
-  if (status.indexed < status.total) return `text search — index ${status.indexed}/${status.total}`
-  return 'text search'
+  // The DM's words, not the model's: "semantic" names a mechanism they did not
+  // ask for, and "text search" alone does not say why.
+  if (mode === 'semantic') return 'best match'
+  if (!status) return 'by name'
+  if (!status.ready) return 'by name — no embedding model'
+  if (status.indexed < status.total) return `by name — index ${status.indexed}/${status.total}`
+  return 'by name'
 }

@@ -215,6 +215,8 @@ export default function SfxBrowsePanel({
         {search.trim() && found && (
           <span
             data-testid="search-mode"
+            role="status"
+            aria-live="polite"
             style={{
               fontSize: '9px',
               color: found.mode === 'semantic' ? '#4a8a6a' : '#b06a2a',

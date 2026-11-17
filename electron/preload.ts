@@ -62,7 +62,7 @@ contextBridge.exposeInMainWorld('doty', {
   librarySearch: (text: string, lane: 'music' | 'sfx', k: number) =>
     invoke(INVOKE.librarySearch, text, lane, k) as Promise<{
       mode: 'semantic' | 'text'
-      items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string }>
+      items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string; origin: 'music' | 'sfx' }>
     }>,
   sfxRank: (state: string, candidates: string[]) => invoke(INVOKE.sfxRank, state, candidates) as Promise<number[]>,
   moveTrack: (path: string, target: 'music' | 'sfx') =>

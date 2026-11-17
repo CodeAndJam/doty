@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLibrarySearch } from '../hooks/useLibrarySearch'
+import { playablePath, useLibrarySearch } from '../hooks/useLibrarySearch'
 import { searchModeLabel } from '../lib/searchLabel'
 import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
@@ -67,10 +67,11 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
     setActiveTagFilters((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }
 
-  const found = useLibrarySearch(search, 'music', 12)
-  // While something is typed the library answers; an empty box is the local
+  const found = useLibrarySearch(search, 'music')
+  // While something is typed the library answers; until the first answer lands
+  // the shelf stays visible rather than flashing "0". An empty box is the local
   // list, which keeps the tag chips working without a round trip.
-  const results = search.trim() ? (found?.hits.map((hit) => hit.path) ?? []) : allFiles
+  const results = search.trim() ? (found?.hits.map(playablePath) ?? allFiles) : allFiles
 
   const filtered = results.filter((f) => {
     const fileTags = tagsMap[f] || []
@@ -105,6 +106,8 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
         {search.trim() && found && (
           <span
             data-testid="search-mode"
+            role="status"
+            aria-live="polite"
             style={{
               fontSize: '9px',
               color: found.mode === 'semantic' ? '#4a8a6a' : '#b06a2a',
