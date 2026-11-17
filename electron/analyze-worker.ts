@@ -8,10 +8,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { parentPort, workerData } from 'node:worker_threads'
 import { ANALYSIS_VERSION } from './analyzer'
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-let ffmpegPath: string = require('ffmpeg-static')
-ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked')
+import { ffmpegBinary } from './ffmpeg'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let essentiaInstance: any = null
@@ -30,7 +27,7 @@ function decodeAudio(filePath: string): Promise<{ samples: Float32Array; duratio
     const chunks: Buffer[] = []
 
     const ff = spawn(
-      ffmpegPath,
+      ffmpegBinary(),
       // Cap analysis to the first 10 minutes: BPM/key/energy are stable there and
       // a full 3-hour set would otherwise buffer several GB per concurrent worker.
       ['-i', filePath, '-t', '600', '-f', 'f32le', '-ar', String(sampleRate), '-ac', '1', '-vn', 'pipe:1'],
