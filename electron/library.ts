@@ -99,6 +99,8 @@ export function createLibrary(deps: LibraryDeps): Library {
   let phase: IndexStatus['phase'] = 'idle'
   let paused = false
   let running = false
+  /** A library change during a run: finish it, then start again on the new one. */
+  let rerun = false
   let phaseDone = 0
   let phaseTotal = 0
   let kinds: Record<string, AudioKind> = {}
@@ -180,7 +182,10 @@ export function createLibrary(deps: LibraryDeps): Library {
   }
 
   async function ensureIndexed(): Promise<void> {
-    if (running) return
+    if (running) {
+      rerun = true
+      return
+    }
     running = true
     try {
       const embedder = await deps.embedder()
@@ -242,6 +247,10 @@ export function createLibrary(deps: LibraryDeps): Library {
       phaseDone = 0
       phaseTotal = 0
       emit()
+      if (rerun) {
+        rerun = false
+        void ensureIndexed().catch((e) => console.error('[library] rerun failed:', e))
+      }
     }
   }
 

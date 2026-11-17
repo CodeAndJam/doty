@@ -360,9 +360,15 @@ function createWindow() {
     mainWindow.loadURL('app://doty/')
   }
 
+  // A recording that dies without `sttStop` must not leave the index paused for
+  // the rest of the process: the renderer reloads, crashes, and the window closes.
+  mainWindow.webContents.on('render-process-gone', () => library.resume())
+  mainWindow.webContents.on('did-start-navigation', () => library.resume())
+
   // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
   mainWindow.on('closed', () => {
     mainWindow = null
+    library.resume()
   })
 }
 

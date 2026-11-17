@@ -117,7 +117,8 @@ export function getLastCueStartMs(file: string): number {
 export function renameSession(file: string, newName: string): void {
   if (!fs.existsSync(file)) return
   const content = fs.readFileSync(file, 'utf-8')
-  const updated = content.replace(/^(NOTE\n)Name: .*/m, `$1Name: ${newName}`)
+  // A function replacement: a typed `$&` is part of the name, not a pattern.
+  const updated = content.replace(/^(NOTE\n)Name: .*/m, (_match, note: string) => `${note}Name: ${newName}`)
   fs.writeFileSync(file, updated, 'utf-8')
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { defaultSessionName } from '../lib/sessionName'
 import type { MicPermission } from '../types'
 
 interface SessionMeta {
@@ -26,7 +27,8 @@ interface Props {
   sessions: SessionMeta[]
   activeSession: string | null
   sessionStartTime: number | null
-  onNewSession: () => void
+  /** Receives the name the DM typed, or the suggested default. */
+  onNewSession: (name: string) => void
   onSwitchSession: (file: string) => void
   onRenameSession: (file: string, name: string) => void
   onDeleteSession: (file: string) => void
@@ -63,12 +65,29 @@ export default function Transcript({
   const [showDropdown, setShowDropdown] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const nameButtonRef = useRef<HTMLButtonElement>(null)
   const [nameValue, setNameValue] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [createValue, setCreateValue] = useState('')
 
-  // The field only exists while the DM is editing it, so focus follows the intent.
+  // The field only exists while the DM is naming something, so focus and select
+  // follow the intent: typing replaces the suggested name instead of appending.
   useEffect(() => {
-    if (editingName) nameInputRef.current?.focus()
-  }, [editingName])
+    if (!editingName && !creating) return
+    nameInputRef.current?.focus()
+    nameInputRef.current?.select()
+  }, [editingName, creating])
+
+  // A rename must not follow the DM to another session's file.
+  useEffect(() => {
+    setEditingName(false)
+    setCreating(false)
+  }, [activeSession])
+
+  function finishCreate(name: string) {
+    setCreating(false)
+    onNewSession(name.trim() || defaultSessionName())
+  }
   const [elapsed, setElapsed] = useState('')
   const [pinnedToBottom, setPinnedToBottom] = useState(true)
   const [showNewTextPill, setShowNewTextPill] = useState(false)
@@ -185,10 +204,34 @@ export default function Transcript({
         style={{ borderBottom: '1px solid rgba(46,36,22,0.8)' }}
       >
         <div className="relative flex items-center gap-1" data-session-dropdown>
-          {editingName && activeSession ? (
+          {creating ? (
             <input
               ref={nameInputRef}
               data-testid="session-name-input"
+              aria-label="Name for the new session"
+              className="bg-transparent outline-none"
+              style={{
+                fontFamily: "'Cinzel', serif",
+                fontSize: '13px',
+                letterSpacing: '0.15em',
+                color: '#c8b07a',
+                textTransform: 'uppercase',
+                width: '160px',
+                borderBottom: '1px solid rgba(200,146,42,0.4)',
+              }}
+              value={createValue}
+              onChange={(e) => setCreateValue(e.target.value)}
+              onKeyDown={(e) => {
+                // Both keys name it: a session is never left uncreated.
+                if (e.key === 'Enter' || e.key === 'Escape') finishCreate(createValue)
+              }}
+              onBlur={() => finishCreate(createValue)}
+            />
+          ) : editingName && activeSession ? (
+            <input
+              ref={nameInputRef}
+              data-testid="session-name-input"
+              aria-label="Session name"
               className="bg-transparent outline-none"
               style={{
                 fontFamily: "'Cinzel', serif",
@@ -206,8 +249,12 @@ export default function Transcript({
                   if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
                   setEditingName(false)
                 }
-                // An edit that exists already: Escape puts it back.
-                if (e.key === 'Escape') setEditingName(false)
+                // An edit that exists already: Escape puts it back, and gives the
+                // keyboard back to the title it came from.
+                if (e.key === 'Escape') {
+                  setEditingName(false)
+                  nameButtonRef.current?.focus()
+                }
               }}
               onBlur={() => {
                 if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
@@ -216,10 +263,12 @@ export default function Transcript({
             />
           ) : (
             <button
+              ref={nameButtonRef}
               type="button"
               data-testid="session-name"
               onClick={() => {
                 if (!activeSession) return
+                setShowDropdown(false)
                 setNameValue(sessions.find((s) => s.file === activeSession)?.name ?? '')
                 setEditingName(true)
               }}
@@ -268,7 +317,7 @@ export default function Transcript({
                       onChange={(e) => setRenameValue(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          onRenameSession(s.file, renameValue)
+                          if (renameValue.trim()) onRenameSession(s.file, renameValue.trim())
                           setRenaming(null)
                         }
                         if (e.key === 'Escape') setRenaming(null)
@@ -357,10 +406,16 @@ export default function Transcript({
           </button>
           <button
             type="button"
-            onClick={onNewSession}
+            onClick={() => {
+              // An in-app field, not `window.prompt`: Electron does not implement
+              // it, and a blocking dialog during a recording helps nobody.
+              setCreateValue(defaultSessionName())
+              setCreating(true)
+            }}
             className="text-sm px-1.5 rounded hover:bg-[#2e2416]"
             style={{ color: '#6b4e15' }}
             title="New session"
+            data-testid="new-session"
           >
             +
           </button>

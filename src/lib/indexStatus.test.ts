@@ -22,6 +22,11 @@ describe('index status copy', () => {
     expect(indexChipText({ ...base, phase: 'audio', phaseDone: 30, phaseTotal: 43 })).toBe('indexing audio 30/43')
   })
 
+  it('does not call a finished index paused', () => {
+    expect(indexChipText({ ...base, paused: true })).toBeNull()
+    expect(indexSummary({ ...base, paused: true })).toBe('43 of 43 embedded — complete')
+  })
+
   it('prefers the pause, because that is the surprising state', () => {
     expect(indexChipText({ ...base, paused: true, phase: 'text', phaseDone: 1, phaseTotal: 4 })).toBe(
       'paused · recording',

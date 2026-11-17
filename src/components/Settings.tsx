@@ -156,12 +156,19 @@ export default function Settings({
     window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
-    // Same subscription the browser chip uses: one source, two surfaces.
+    // Subscribe first, then fetch: an event that lands while the fetch is in
+    // flight must not be overwritten by the older snapshot.
+    let sawEvent = false
+    const unsubIndex = window.doty.onEmbeddingProgress((status) => {
+      sawEvent = true
+      setIndexStatus(status)
+    })
     window.doty
       .embeddingStatus()
-      .then(setIndexStatus)
+      .then((status) => {
+        if (!sawEvent) setIndexStatus(status)
+      })
       .catch(() => {})
-    const unsubIndex = window.doty.onEmbeddingProgress(setIndexStatus)
 
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotThreshold(cfg.confidenceThreshold)
@@ -545,14 +552,23 @@ export default function Settings({
                 {scanDone ? `Analysis complete${lastScanTime ? ` · ${lastScanTime}` : ''}` : 'Awaiting analysis...'}
               </div>
             )}
-            <p
-              data-testid="index-summary"
-              style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '6px' }}
-            >
-              {indexSummary(indexStatus)}
-            </p>
           </div>
         )}
+
+        {/* Outside the "music folder chosen" gate: the model can be missing with
+            no folder set, which is exactly when the explanation matters. */}
+        <p
+          data-testid="index-summary"
+          style={{
+            fontSize: '13px',
+            color: '#3a2e1a',
+            fontFamily: 'monospace',
+            marginTop: '-8px',
+            marginBottom: '16px',
+          }}
+        >
+          {indexSummary(indexStatus)}
+        </p>
 
         {/* Transcript folder */}
         <div className="mb-5">

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
-import { defaultSessionName } from '../lib/sessionName'
 import { confidentSfx } from '../lib/sfxRank'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
@@ -303,12 +302,19 @@ export default function MainLayout() {
     })
 
     // The index runs in the background for minutes; one subscription feeds the
-    // browser chip and Settings without either polling.
+    // browser chip and Settings without either polling. Subscribe before the
+    // fetch, or an event during the round trip is overwritten by the snapshot.
+    let sawIndexEvent = false
+    const unsubIndex = window.doty.onEmbeddingProgress((status) => {
+      sawIndexEvent = true
+      setIndexStatus(status)
+    })
     window.doty
       .embeddingStatus()
-      .then(setIndexStatus)
+      .then((status) => {
+        if (!sawIndexEvent) setIndexStatus(status)
+      })
       .catch(() => {})
-    const unsubIndex = window.doty.onEmbeddingProgress(setIndexStatus)
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
       if (status === 'crashed' || status === 'error') {
@@ -590,15 +596,14 @@ export default function MainLayout() {
               sessions={sessions}
               activeSession={activeSession}
               sessionStartTime={sessionStartTime}
-              onNewSession={async () => {
-                // A prompt, but never a blocker: dismissing it still creates the
-                // session with the dated default.
-                const suggested = defaultSessionName()
-                const typed = window.prompt('Session name', suggested)
-                const s = await window.doty.sessionCreate((typed ?? '').trim() || suggested)
+              onNewSession={async (name: string) => {
+                const s = await window.doty.sessionCreate(name)
                 setSessions((prev) => [s, ...prev])
                 setActiveSession(s.file)
                 setTranscripts([])
+                // Main restarts its own clock for the new file; the header must
+                // restart with it, or the take keeps counting from the old one.
+                if (recording) setSessionStartTime(Date.now())
               }}
               onSwitchSession={async (file) => {
                 setActiveSession(file)
