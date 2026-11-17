@@ -95,6 +95,19 @@ Concretely, when changing anything in the recommendation or playback path:
 - **Everything local.** No telemetry, no cloud calls; model downloads are the
   only network use.
 
+## Contracts before you grep
+
+- **An IPC channel is declared once** in `electron/ipc.ts` and then appears in
+  `electron/preload.ts`, `src/types.ts` and a handler in `electron/main.ts`.
+  Four files, no exceptions.
+- **Every path names its space**: relative inside the music folder, absolute
+  everywhere else (effects, sessions). Mixing the two is the defect behind most
+  of the library bugs; `docs/ARCHITECTURE.md` has the diagram and the rules.
+- **The architecture is written down** in `docs/ARCHITECTURE.md`: audio to
+  transcript, transcript to a cue, library to search, and the data model.
+- **Review reads `CODING_STANDARDS.md`** for the judgement calls a check cannot
+  make.
+
 ## Local Development
 
 Dependencies are held for **10 days** after publish before adoption
@@ -104,6 +117,17 @@ older than that; security fixes can be exempted with `minimumReleaseAgeExclude`.
 `pnpm dev` in a git worktree uses its own profile (`~/.doty/profiles/<name>`),
 so several checkouts can run at once; `DOTY_PROFILE=<name>` overrides it and
 downloaded models stay shared in `~/.doty/models`.
+
+Running the app yourself:
+
+- **Launch with an isolated profile** — `DOTY_PROFILE=<name> pnpm dev`. The
+  default profile belongs to the DM, and a second instance contends for it.
+- **Signal only the process you started.** Stop it by pid or through the
+  Playwright handle; a pattern kill ends the DM's session too.
+- **Verify a UI slice with `pnpm test:e2e`.** Specs run one at a time (each
+  launches its own app); `DOTY_E2E_HIDE_WINDOW=1` runs them without a window.
+- **`pnpm check` is the whole check** (lint, forbidden APIs, both typechecks,
+  tests). `pnpm verify:build` proves the build can actually run.
 
 ```bash
 # Install deps and rebuild native addons

@@ -13,8 +13,12 @@ function MetaRow({ label, value }: { label: string; value: string | number | nul
   if (value == null || value === '') return null
   return (
     <div className="flex justify-between gap-2 py-0.5">
-      <span style={{ color: '#6b4e15', fontSize: '11px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{label}</span>
-      <span style={{ color: '#8a7050', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
+      <span
+        style={{ color: '#a5813f', fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", whiteSpace: 'nowrap' }}
+      >
+        {label}
+      </span>
+      <span style={{ color: '#b9a683', fontSize: '11px', fontFamily: "'Crimson Text', serif", textAlign: 'right' }}>
         {value}
       </span>
     </div>
@@ -68,7 +72,7 @@ function MetadataTooltip({
         left: pos.left,
         width: pos.width,
         transform: flipBelow ? undefined : 'translateY(-100%)',
-        background: '#0f0d09',
+        background: '#100e0a',
         border: '1px solid rgba(200,146,42,0.3)',
         boxShadow: flipBelow
           ? '0 4px 20px rgba(0,0,0,0.8), 0 -4px 20px rgba(0,0,0,0.6)'
@@ -161,28 +165,35 @@ export default function TrackCard({
       data-testid="track-card"
       className="relative transition-all group flex-1"
       style={{
-        minHeight: '36px',
+        minHeight: '48px',
         maxHeight: editingTags ? 'none' : '64px',
         overflow: editingTags ? 'visible' : 'hidden',
         zIndex: editingTags ? 20 : undefined,
         background: isPlaying
-          ? 'linear-gradient(135deg, rgba(200,146,42,0.12), rgba(107,78,21,0.06))'
-          : 'linear-gradient(160deg, #0f0d09, #080705)',
-        border: `1px solid ${isPinned ? 'rgba(200,146,42,0.35)' : isPlaying ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
+          ? 'linear-gradient(135deg, rgba(217,164,65,0.14), rgba(165,129,63,0.06))'
+          : 'linear-gradient(160deg, #100e0a, #080705)',
+        border: `1px solid ${isPinned ? 'rgba(217,164,65,0.4)' : isPlaying ? 'rgba(217,164,65,0.55)' : '#3d2f1c'}`,
         boxShadow: isPlaying
-          ? '0 0 16px rgba(200,146,42,0.2), inset 0 1px 0 rgba(200,146,42,0.08)'
+          ? '0 0 16px rgba(217,164,65,0.18), inset 0 1px 0 rgba(217,164,65,0.08)'
           : 'inset 0 1px 0 rgba(255,255,255,0.02)',
       }}
     >
-      <div className="flex items-center gap-3 px-3 h-full">
+      {/* Hover/focus tint: the whole row answers the pointer and the keyboard. */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+        style={{ background: 'rgba(217,164,65,0.05)' }}
+      />
+      <div className="relative flex items-center gap-3 px-3 h-full">
         <button
           type="button"
           onClick={onPlay}
-          className="w-9 h-9 flex items-center justify-center shrink-0"
+          title={isPlaying ? 'Pause' : 'Play'}
+          aria-label={isPlaying ? `Pause ${name}` : `Play ${name}`}
+          className="w-10 h-10 flex items-center justify-center shrink-0 transition-colors hover:bg-[rgba(217,164,65,0.12)]"
           style={{
-            border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
-            background: isPlaying ? 'rgba(200,146,42,0.1)' : 'transparent',
-            borderRadius: '4px',
+            border: `1px solid ${isPlaying ? 'rgba(217,164,65,0.55)' : '#7a6138'}`,
+            background: isPlaying ? 'rgba(217,164,65,0.1)' : 'transparent',
+            borderRadius: '3px',
           }}
         >
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
@@ -193,7 +204,7 @@ export default function TrackCard({
           style={{
             fontFamily: "'Crimson Text', serif",
             fontSize: '17px',
-            color: isPlaying ? '#e8d5a3' : '#8a7050',
+            color: isPlaying ? '#f2e6c9' : '#e4d6b4',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
@@ -207,9 +218,9 @@ export default function TrackCard({
             data-testid="track-probability"
             title="The model's probability that this is the right track, out of the candidates it ranked"
             style={{
-              fontFamily: 'monospace',
+              fontFamily: "'IBM Plex Mono', monospace",
               fontSize: '11px',
-              color: '#8a7050',
+              color: '#b9a683',
               flexShrink: 0,
               minWidth: '34px',
               textAlign: 'right',
@@ -229,8 +240,8 @@ export default function TrackCard({
             onMoveTo(kind === 'sfx' ? 'music' : 'sfx')
           }}
           title={kind === 'sfx' ? 'Move to the music library' : 'Move to the effects library'}
-          className="absolute top-0 right-1 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
-          style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15' }}
+          className="absolute top-0 right-1 opacity-0 group-hover:opacity-70 group-focus-within:opacity-70 focus-visible:opacity-100 hover:opacity-100 transition-opacity"
+          style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}
         >
           {kind === 'sfx' ? '→ music' : '→ fx'}
         </button>
@@ -238,10 +249,11 @@ export default function TrackCard({
 
       {/* Hover overlay toolbar — appears on top of the right side */}
       <div
-        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 transition-opacity"
         style={{
           background: 'linear-gradient(to right, transparent, #0a0907 24px)',
           paddingLeft: '28px',
+          zIndex: 1,
         }}
       >
         {/* Tag pills */}
@@ -254,9 +266,9 @@ export default function TrackCard({
                 style={{
                   background: 'rgba(200,146,42,0.12)',
                   border: '1px solid rgba(200,146,42,0.25)',
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
-                  color: '#c8922a',
+                  fontSize: '11px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#d9a441',
                   lineHeight: '16px',
                   maxWidth: '80px',
                 }}
@@ -265,7 +277,9 @@ export default function TrackCard({
               </span>
             ))}
             {tags.length > 3 && (
-              <span style={{ fontSize: '10px', fontFamily: 'monospace', color: '#6b4e15' }}>+{tags.length - 3}</span>
+              <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}>
+                +{tags.length - 3}
+              </span>
             )}
           </div>
         )}
@@ -299,7 +313,7 @@ export default function TrackCard({
               type="button"
               className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
               title="Track details"
-              style={{ color: expanded ? '#c8922a' : undefined }}
+              style={{ color: expanded ? '#d9a441' : undefined }}
             >
               <InfoIcon />
             </button>
@@ -313,7 +327,7 @@ export default function TrackCard({
             onClick={() => setEditingTags((e) => !e)}
             className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
             title="Edit tags"
-            style={{ color: editingTags ? '#c8922a' : undefined, fontSize: '14px' }}
+            style={{ color: editingTags ? '#d9a441' : undefined, fontSize: '14px' }}
           >
             <TagIcon />
           </button>
@@ -326,9 +340,9 @@ export default function TrackCard({
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Play next"
             style={{
-              fontSize: '9px',
-              fontFamily: 'monospace',
-              color: '#6b4e15',
+              fontSize: '11px',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: '#a5813f',
               border: '1px solid rgba(200,146,42,0.2)',
               lineHeight: '14px',
             }}
@@ -343,9 +357,9 @@ export default function TrackCard({
             className="px-1.5 py-0.5 hover:opacity-80 transition-opacity"
             title="Add to queue"
             style={{
-              fontSize: '9px',
-              fontFamily: 'monospace',
-              color: '#6b4e15',
+              fontSize: '11px',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: '#a5813f',
               border: '1px solid rgba(200,146,42,0.2)',
               lineHeight: '14px',
             }}

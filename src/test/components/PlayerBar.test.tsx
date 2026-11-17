@@ -46,9 +46,8 @@ describe('trackName', () => {
 })
 
 describe('PlayerBar', () => {
-  it('renders track name without extension on hover', () => {
+  it('renders the track name without its extension', () => {
     renderBar()
-    fireEvent.mouseEnter(screen.getByLabelText('Track info'))
     expect(screen.getByText('tavern_ambience')).toBeInTheDocument()
   })
 
@@ -67,16 +66,14 @@ describe('PlayerBar', () => {
     expect(onToggle).toHaveBeenCalledOnce()
   })
 
-  it('displays formatted time on hover', () => {
+  it('shows elapsed and total time', () => {
     renderBar({ currentTime: 65, duration: 180 })
-    fireEvent.mouseEnter(screen.getByLabelText('Track info'))
     // 65s = 1:05, 180s = 3:00
     expect(screen.getByText('1:05 / 3:00')).toBeInTheDocument()
   })
 
-  it('displays only elapsed time when duration is 0 on hover', () => {
+  it('shows only elapsed time when the duration is unknown', () => {
     renderBar({ currentTime: 10, duration: 0 })
-    fireEvent.mouseEnter(screen.getByLabelText('Track info'))
     expect(screen.getByText('0:10')).toBeInTheDocument()
   })
 
@@ -213,15 +210,14 @@ describe('PlayerBar', () => {
     expect(onSkipPrev).toHaveBeenCalledOnce()
   })
 
-  it('shows queue position when queuePosition is provided on hover', () => {
+  it('shows the queue position when there is a queue', () => {
     renderBar({ queuePosition: [2, 10] } as any)
-    fireEvent.mouseEnter(screen.getByLabelText('Track info'))
     expect(screen.getByText('3/10')).toBeTruthy()
   })
 
-  it('does not show queue position when queuePosition is null', () => {
+  it('does not show a queue position without a queue', () => {
     renderBar({ queuePosition: null } as any)
-    expect(screen.queryByText(/\/\d+/)).toBeNull()
+    expect(screen.queryByText(/^\d+\/\d+$/)).toBeNull()
   })
 
   it('shows queue toggle button when onToggleQueue is provided', () => {

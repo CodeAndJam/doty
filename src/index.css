@@ -1,19 +1,34 @@
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap");
 
 @import "tailwindcss";
 @config "../tailwind.config.js";
 
-/* Base styles live in the same cascade layer as preflight so Tailwind
- * utilities (also layered) can still override spacing, fonts, etc.
- * An unlayered `* { margin: 0; padding: 0 }` silently beats every
- * `p-*`/`m-*` utility in Tailwind v4. */
+/* One place for the palette, so a colour is a decision rather than a literal.
+ * Ink values are picked for WCAG AA at their smallest size; the ornament
+ * colours are decorative and never carry text on their own. */
+:root {
+  --surface: #080705;
+  --panel: #100e0a;
+  --panel-raised: #17130c;
+  --line: #3d2f1c;
+  --line-strong: #7a6138;
+  --ink: #f2e6c9;
+  --ink-body: #e4d6b4;
+  --ink-secondary: #b9a683;
+  --ink-muted: #9d8b66;
+  --accent: #d9a441;
+  --accent-dim: #a5813f;
+  --copper: #b06a2a;
+  --rune: #6dbf95;
+  --danger: #ef4444;
+}
+
 @layer base {
   body {
-    background: #080705;
-    color: #e8d5a3;
+    background: var(--surface);
+    color: var(--ink-body);
     font-family: "Crimson Text", Georgia, serif;
     font-size: 16px;
-    -webkit-font-smoothing: antialiased;
     user-select: none;
   }
 
@@ -22,80 +37,81 @@
   h3,
   .font-display {
     font-family: "Cinzel", Georgia, serif;
-    letter-spacing: 0.1em;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+  }
+
+  button:not(:disabled),
+  [role="button"],
+  [role="slider"],
+  select {
+    cursor: pointer;
+  }
+
+  /* Keyboard users get a visible target on every control, including the
+   * icon-only ones that only had a hover state before. The box-shadow keeps
+   * the ring on inputs that carry Tailwind's outline-none. */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 4px var(--accent);
+  }
+
+  ::selection {
+    background: rgba(217, 164, 65, 0.35);
+    color: var(--ink);
+  }
+
+  ::placeholder {
+    color: #8f7f61;
+  }
+
+  /* The track is a click target, so it gets a real thumb and height rather
+   * than the 2px hairline the browser draws by default. */
+  input[type="range"] {
+    accent-color: var(--rune);
+    height: 20px;
   }
 }
 
+/* The engraved-caps label: one size, one tracking value, everywhere. */
+.label-caps {
+  font-family: "Cinzel", Georgia, serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+/* Data labels: counts, probabilities, timestamps. */
+.data-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--ink-secondary);
+}
+
 ::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2e2416;
-  border-radius: 2px;
+  background: var(--line-strong);
+  border-radius: 4px;
 }
 
 /* Etched border effect */
 .border-etched {
-  border: 1px solid #2e2416;
+  border: 1px solid var(--line);
   box-shadow:
-    inset 0 1px 0 rgba(200, 146, 42, 0.08),
+    inset 0 1px 0 rgba(217, 164, 65, 0.08),
     0 1px 0 rgba(0, 0, 0, 0.6);
-}
-
-/* Rune glow text */
-.text-rune {
-  color: #4a8a6a;
-  text-shadow: 0 0 8px rgba(74, 138, 106, 0.7);
-}
-
-/* Amber glow text */
-.text-amber-glow {
-  color: #c8922a;
-  text-shadow: 0 0 10px rgba(200, 146, 42, 0.6);
-}
-
-/* Scanline overlay for digital-art feel */
-.scanlines::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.08) 2px,
-    rgba(0, 0, 0, 0.08) 4px
-  );
-  pointer-events: none;
-  border-radius: inherit;
-}
-
-/* Corner ornament */
-.corner-ornament {
-  position: relative;
-}
-.corner-ornament::before,
-.corner-ornament::after {
-  content: "";
-  position: absolute;
-  width: 8px;
-  height: 8px;
-  border-color: #c8922a;
-  border-style: solid;
-  opacity: 0.5;
-}
-.corner-ornament::before {
-  top: 0;
-  left: 0;
-  border-width: 1px 0 0 1px;
-}
-.corner-ornament::after {
-  bottom: 0;
-  right: 0;
-  border-width: 0 1px 1px 0;
 }
 
 @keyframes blink {
@@ -105,5 +121,16 @@
   }
   50% {
     opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

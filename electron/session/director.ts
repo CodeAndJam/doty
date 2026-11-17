@@ -27,8 +27,7 @@ export interface StepInput {
   /** Milliseconds left on the current track, or null when nothing plays. */
   msUntilTrackEnd: number | null
   msSinceLastChange: number
-  autopilot: boolean
-  override: boolean
+  musicEnabled: boolean
   policy?: PolicyConfig
   sceneConfig?: SceneConfig
 }
@@ -70,8 +69,7 @@ export function planStep(input: StepInput): StepResult {
       categorical,
       msUntilTrackEnd: input.msUntilTrackEnd,
       msSinceLastChange: input.msSinceLastChange,
-      autopilot: input.autopilot,
-      override: input.override,
+      musicEnabled: input.musicEnabled,
     },
     input.policy ?? DEFAULT_POLICY,
   )

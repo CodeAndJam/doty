@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useLibrarySearch } from '../hooks/useLibrarySearch'
 import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
+import { searchModeLabel } from '../lib/searchLabel'
 import type { SfxCategory, SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS } from '../types'
 import { CloseIcon, PinIcon, SearchIcon, StopIcon } from './Icons'
@@ -21,18 +23,42 @@ export default function SfxBrowsePanel({
   onClose,
 }: SfxBrowsePanelProps) {
   const [allSfx, setAllSfx] = useState<SfxMeta[]>([])
+  const [lanes, setLanes] = useState<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>(
+    {},
+  )
   const [selectedCategory, setSelectedCategory] = useState<SfxCategory | 'all' | 'recommended'>('all')
   const [search, setSearch] = useState('')
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
 
-  // Load SFX list on mount
+  const refresh = async () => {
+    // Settled independently: a failed lane lookup must not empty the shelf.
+    const [list, next] = await Promise.all([
+      window.doty.getSfxList().catch(() => null),
+      window.doty.libraryLanes().catch(() => null),
+    ])
+    if (list) setAllSfx(list)
+    if (next) setLanes(next)
+  }
+
+  // Load SFX list on mount, and follow a lane change made anywhere else.
   useEffect(() => {
-    window.doty
-      .getSfxList()
-      .then(setAllSfx)
-      .catch(() => setAllSfx([]))
+    void refresh()
+    const unsubScan = window.doty.onScanComplete(() => void refresh())
+    const unsubSfx = window.doty.onSfxChanged(() => void refresh())
+    return () => {
+      unsubScan()
+      unsubSfx()
+    }
   }, [])
+
+  /** Label, never a disk move. */
+  async function switchLane(filename: string) {
+    const info = lanes[filename]
+    if (!info) return
+    await window.doty.setLane(info.key, info.lane === 'music' ? 'sfx' : 'music')
+    await refresh()
+  }
 
   // Load tags on mount
   useEffect(() => {
@@ -79,21 +105,18 @@ export default function SfxBrowsePanel({
       .catch(() => {})
   }
 
+  const found = useLibrarySearch(search, 'sfx', 12)
+
   // Filter SFX based on selected category and search
   const filteredSfx = useMemo(() => {
     let list = allSfx
 
-    // When searching, search across ALL SFX regardless of selected tab
+    // When searching, the library answers across the whole shelf, ignoring the
+    // selected tab: a DM looking for a sound does not think in categories.
     if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(
-        (s) =>
-          s.label.toLowerCase().includes(q) ||
-          s.description.toLowerCase().includes(q) ||
-          s.category.toLowerCase().includes(q) ||
-          (tagsMap[s.filename] || []).some((t) => t.includes(q)),
-      )
-      return list
+      if (!found) return list
+      const byFile = new Map(allSfx.map((s) => [s.filename, s]))
+      return found.hits.map((hit) => byFile.get(hit.absolute)).filter((s): s is SfxMeta => Boolean(s))
     }
 
     if (selectedCategory === 'recommended') {
@@ -105,7 +128,7 @@ export default function SfxBrowsePanel({
     }
 
     return list
-  }, [allSfx, selectedCategory, search, sfxRecommendations, tagsMap])
+  }, [allSfx, selectedCategory, search, sfxRecommendations, tagsMap, found])
 
   // Map sfxId -> active channel
   const activeChannelMap = useMemo(() => {
@@ -118,9 +141,38 @@ export default function SfxBrowsePanel({
 
   function renderSfxCard(sfx: SfxMeta) {
     const ch = activeChannelMap.get(sfx.id)
+    const lane = lanes[sfx.filename]
     return (
       <SfxCard
         key={sfx.id}
+        badge={
+          <button
+            type="button"
+            data-testid="lane-badge"
+            onClick={(e) => {
+              e.stopPropagation()
+              void switchLane(sfx.filename)
+            }}
+            disabled={!lane}
+            aria-label={
+              lane
+                ? `Filed as ${lane.lane === 'music' ? 'music' : 'an effect'}; switch to the other shelf`
+                : 'Lane unknown'
+            }
+            title={
+              lane ? `Filed as ${lane.lane === 'music' ? 'music' : 'an effect'} — click to change` : 'Lane unknown'
+            }
+            style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '11px',
+              padding: '0 4px',
+              color: lane?.lane === 'music' ? '#6dbf95' : '#b06a2a',
+              border: `1px solid ${lane && lane.lane !== lane.origin ? 'rgba(200,146,42,0.6)' : 'transparent'}`,
+            }}
+          >
+            {lane?.lane === 'music' ? '♪' : 'FX'}
+          </button>
+        }
         sfx={sfx}
         channelId={ch?.id ?? null}
         isPlaying={!!ch?.playing}
@@ -156,18 +208,35 @@ export default function SfxBrowsePanel({
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search effects..."
+          placeholder="Search effects"
           className="flex-1 bg-transparent outline-none text-sm"
-          style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#4a8a6a' }}
+          style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#6dbf95' }}
         />
-        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filteredSfx.length}</span>
+        {search.trim() && found && (
+          <span
+            data-testid="search-mode"
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: '11px',
+              color: found.mode === 'semantic' ? '#6dbf95' : '#b06a2a',
+              fontFamily: "'IBM Plex Mono', monospace",
+            }}
+            title="How this answer was found"
+          >
+            {searchModeLabel(found.mode, found.index)}
+          </span>
+        )}
+        <span style={{ fontSize: '12px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+          {filteredSfx.length}
+        </span>
         {hasActiveSfx && (
           <button
             type="button"
             onClick={sfxPlayer.stopAll}
             className="p-1 hover:opacity-80 transition-opacity"
             title="Stop all effects"
-            style={{ color: '#4a8a6a' }}
+            style={{ color: '#6dbf95' }}
           >
             <StopIcon />
           </button>
@@ -201,7 +270,7 @@ export default function SfxBrowsePanel({
                   color: '#a8d5b8',
                 }}
               >
-                {ch.looping && <span style={{ fontSize: '8px', color: '#4a8a6a' }}>&#x21BB;</span>}
+                {ch.looping && <span style={{ fontSize: '8px', color: '#6dbf95' }}>&#x21BB;</span>}
                 <span className="truncate" style={{ maxWidth: '80px' }}>
                   {ch.label}
                 </span>
@@ -209,7 +278,7 @@ export default function SfxBrowsePanel({
                   type="button"
                   onClick={() => sfxPlayer.stop(ch.id)}
                   className="w-3 h-3 flex items-center justify-center hover:opacity-80"
-                  style={{ color: '#4a8a6a' }}
+                  style={{ color: '#6dbf95' }}
                 >
                   <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path d="M6 18L18 6M6 6l12 12" />
@@ -228,9 +297,9 @@ export default function SfxBrowsePanel({
       >
         <span
           style={{
-            fontSize: '10px',
-            fontFamily: 'monospace',
-            color: '#3a2e1a',
+            fontSize: '11px',
+            fontFamily: "'IBM Plex Mono', monospace",
+            color: '#9d8b66',
             textTransform: 'uppercase',
             letterSpacing: '0.1em',
           }}
@@ -244,11 +313,17 @@ export default function SfxBrowsePanel({
           value={Math.round(sfxPlayer.masterVolume * 100)}
           onChange={(e) => sfxPlayer.setMasterVolume(Number(e.target.value) / 100)}
           className="flex-1"
-          style={{ accentColor: '#4a8a6a', height: '2px' }}
+          style={{ accentColor: '#6dbf95', height: '2px' }}
           aria-label="SFX master volume"
         />
         <span
-          style={{ fontSize: '10px', fontFamily: 'monospace', color: '#3a2e1a', minWidth: '28px', textAlign: 'right' }}
+          style={{
+            fontSize: '11px',
+            fontFamily: "'IBM Plex Mono', monospace",
+            color: '#9d8b66',
+            minWidth: '28px',
+            textAlign: 'right',
+          }}
         >
           {Math.round(sfxPlayer.masterVolume * 100)}%
         </span>
@@ -264,11 +339,11 @@ export default function SfxBrowsePanel({
           onClick={() => setSelectedCategory('all')}
           className="px-2 py-0.5 shrink-0 transition-all"
           style={{
-            fontSize: '10px',
+            fontSize: '11px',
             fontFamily: "'Cinzel', serif",
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: selectedCategory === 'all' ? '#4a8a6a' : '#3a2e1a',
+            color: selectedCategory === 'all' ? '#6dbf95' : '#9d8b66',
             border: `1px solid ${selectedCategory === 'all' ? 'rgba(74,138,106,0.4)' : 'rgba(46,36,22,0.3)'}`,
             background: selectedCategory === 'all' ? 'rgba(74,138,106,0.08)' : 'transparent',
           }}
@@ -280,11 +355,11 @@ export default function SfxBrowsePanel({
           onClick={() => setSelectedCategory('recommended')}
           className="px-2 py-0.5 shrink-0 transition-all"
           style={{
-            fontSize: '10px',
+            fontSize: '11px',
             fontFamily: "'Cinzel', serif",
             letterSpacing: '0.1em',
             textTransform: 'uppercase',
-            color: selectedCategory === 'recommended' ? '#4a8a6a' : '#3a2e1a',
+            color: selectedCategory === 'recommended' ? '#6dbf95' : '#9d8b66',
             border: `1px solid ${selectedCategory === 'recommended' ? 'rgba(74,138,106,0.4)' : 'rgba(46,36,22,0.3)'}`,
             background: selectedCategory === 'recommended' ? 'rgba(74,138,106,0.08)' : 'transparent',
           }}
@@ -298,11 +373,11 @@ export default function SfxBrowsePanel({
             onClick={() => setSelectedCategory(cat)}
             className="px-2 py-0.5 shrink-0 transition-all"
             style={{
-              fontSize: '10px',
+              fontSize: '11px',
               fontFamily: "'Cinzel', serif",
               letterSpacing: '0.1em',
               textTransform: 'uppercase',
-              color: selectedCategory === cat ? '#4a8a6a' : '#3a2e1a',
+              color: selectedCategory === cat ? '#6dbf95' : '#9d8b66',
               border: `1px solid ${selectedCategory === cat ? 'rgba(74,138,106,0.4)' : 'rgba(46,36,22,0.3)'}`,
               background: selectedCategory === cat ? 'rgba(74,138,106,0.08)' : 'transparent',
             }}
@@ -324,7 +399,7 @@ export default function SfxBrowsePanel({
                   fontFamily: "'Cinzel', serif",
                   fontSize: '11px',
                   letterSpacing: '0.2em',
-                  color: '#4a8a6a',
+                  color: '#6dbf95',
                   textTransform: 'uppercase',
                 }}
               >
@@ -346,13 +421,13 @@ export default function SfxBrowsePanel({
           <>
             {sfxPinned.length > 0 && (
               <div className="flex items-center gap-2 shrink-0 mb-1" style={{ height: '20px' }}>
-                <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
+                <span style={{ fontSize: '11px', color: '#9d8b66' }}>&#x2B21;</span>
                 <span
                   style={{
                     fontFamily: "'Cinzel', serif",
                     fontSize: '11px',
                     letterSpacing: '0.2em',
-                    color: '#3a2e1a',
+                    color: '#9d8b66',
                     textTransform: 'uppercase',
                   }}
                 >
@@ -369,7 +444,7 @@ export default function SfxBrowsePanel({
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center py-8">
-            <p style={{ fontFamily: "'Cinzel', serif", fontSize: '13px', color: '#3a2e1a', letterSpacing: '0.1em' }}>
+            <p style={{ fontFamily: "'Cinzel', serif", fontSize: '13px', color: '#9d8b66', letterSpacing: '0.1em' }}>
               {selectedCategory === 'recommended' ? 'No suggested effects yet' : 'No effects match your search'}
             </p>
           </div>

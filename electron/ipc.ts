@@ -36,9 +36,11 @@ export const INVOKE = {
   sessionPreference: 'session:preference',
   sessionReport: 'session:report',
   embeddingStatus: 'embedding:status',
-  similarTracks: 'embedding:similar',
+  librarySearch: 'library:search',
+  libraryLanes: 'library:lanes',
   sfxRank: 'session:sfx-rank',
   moveTrack: 'library:move-track',
+  setLane: 'library:set-lane',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
   // STT model selection
@@ -83,6 +85,10 @@ export const INVOKE = {
   // Autopilot (#12)
   getAutopilotConfig: 'autopilot:get-config',
   setAutopilotConfig: 'autopilot:set-config',
+  // Debug
+  debugGetState: 'debug:get-state',
+  debugSetEnabled: 'debug:set-enabled',
+  debugOpenLog: 'debug:open-log',
   // Discord
   discordConnect: 'discord:connect',
   discordDisconnect: 'discord:disconnect',

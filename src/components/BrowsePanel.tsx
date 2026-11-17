@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { playablePath, useLibrarySearch } from '../hooks/useLibrarySearch'
+import { searchModeLabel } from '../lib/searchLabel'
 import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
@@ -14,12 +16,41 @@ interface BrowsePanelProps {
 
 export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay, onPin, onClose }: BrowsePanelProps) {
   const [allFiles, setAllFiles] = useState<string[]>([])
+  const [lanes, setLanes] = useState<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>(
+    {},
+  )
   const [search, setSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([])
 
+  const refresh = async () => {
+    // Settled independently: a failed lane lookup must not empty the list.
+    const [files, next] = await Promise.all([
+      window.doty.listMusic().catch(() => null),
+      window.doty.libraryLanes().catch(() => null),
+    ])
+    if (files) setAllFiles(files)
+    if (next) setLanes(next)
+  }
+
   useEffect(() => {
-    window.doty.listMusic().then(setAllFiles)
+    void refresh()
+    // The label can change from the effects panel or a background pass; a drawer
+    // left open must not keep showing the old one.
+    const unsubScan = window.doty.onScanComplete(() => void refresh())
+    const unsubSfx = window.doty.onSfxChanged(() => void refresh())
+    return () => {
+      unsubScan()
+      unsubSfx()
+    }
   }, [])
+
+  /** Label, never a disk move: the file stays where the DM put it. */
+  async function switchLane(file: string) {
+    const info = lanes[file]
+    if (!info) return
+    await window.doty.setLane(info.key, info.lane === 'music' ? 'sfx' : 'music')
+    await refresh()
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -36,19 +67,17 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
     setActiveTagFilters((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
   }
 
-  const tokens = search.toLowerCase().split(/\s+/).filter(Boolean)
-  const filtered = allFiles.filter((f) => {
-    const lower = f.toLowerCase()
+  const found = useLibrarySearch(search, 'music')
+  // While something is typed the library answers; until the first answer lands
+  // the shelf stays visible rather than flashing "0". An empty box is the local
+  // list, which keeps the tag chips working without a round trip.
+  const results = search.trim() ? (found?.hits.map(playablePath) ?? allFiles) : allFiles
+
+  const filtered = results.filter((f) => {
     const fileTags = tagsMap[f] || []
-
-    // Text search: match filename OR tags
-    const textMatch =
-      tokens.length === 0 || tokens.every((t) => lower.includes(t) || fileTags.some((tag) => tag.includes(t)))
-
-    // Tag chip filters: must have ALL active tag filters
-    const tagMatch = activeTagFilters.length === 0 || activeTagFilters.every((t) => fileTags.includes(t))
-
-    return textMatch && tagMatch
+    // Tag chips still narrow whatever answered; text matching belongs to the
+    // library now, so the panel does not keep a second opinion about it.
+    return activeTagFilters.length === 0 || activeTagFilters.every((t) => fileTags.includes(t))
   })
 
   return (
@@ -56,25 +85,42 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
       className="absolute inset-0 z-10 flex flex-col"
       style={{
         background: '#080705',
-        border: '1px solid #2e2416',
+        border: '1px solid #3d2f1c',
       }}
     >
       {/* Header */}
-      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #2e2416' }}>
+      <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #3d2f1c' }}>
         <SearchIcon />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search tracks or tags..."
+          placeholder="Search the library"
           className="flex-1 bg-transparent outline-none text-sm"
           style={{
             fontFamily: "'Crimson Text', serif",
             fontSize: '14px',
-            color: '#c8922a',
+            color: '#d9a441',
           }}
         />
-        <span style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace' }}>{filtered.length}</span>
+        {search.trim() && found && (
+          <span
+            data-testid="search-mode"
+            role="status"
+            aria-live="polite"
+            style={{
+              fontSize: '11px',
+              color: found.mode === 'semantic' ? '#6dbf95' : '#b06a2a',
+              fontFamily: "'IBM Plex Mono', monospace",
+            }}
+            title="How this answer was found"
+          >
+            {searchModeLabel(found.mode, found.index)}
+          </span>
+        )}
+        <span style={{ fontSize: '12px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+          {filtered.length}
+        </span>
         <button
           type="button"
           onClick={(e) => {
@@ -107,8 +153,8 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                   background: active ? 'rgba(200,146,42,0.25)' : 'rgba(200,146,42,0.08)',
                   border: `1px solid ${active ? 'rgba(200,146,42,0.5)' : 'rgba(200,146,42,0.2)'}`,
                   fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: active ? '#e8d5a3' : '#8a7050',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: active ? '#f2e6c9' : '#b9a683',
                   lineHeight: '18px',
                   cursor: 'pointer',
                 }}
@@ -122,7 +168,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
               type="button"
               onClick={() => setActiveTagFilters([])}
               className="px-1 opacity-50 hover:opacity-100"
-              style={{ fontSize: '11px', fontFamily: 'monospace', color: '#6b4e15' }}
+              style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}
             >
               clear
             </button>
@@ -150,17 +196,47 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 onClick={() => onPlay(f)}
                 className="w-5 h-5 flex items-center justify-center shrink-0"
                 style={{
-                  border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#2e2416'}`,
+                  border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#3d2f1c'}`,
                 }}
               >
                 {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </button>
+              <button
+                type="button"
+                data-testid="lane-badge"
+                onClick={() => void switchLane(f)}
+                disabled={!lanes[f]}
+                aria-label={
+                  lanes[f]
+                    ? `Filed as ${lanes[f].lane === 'music' ? 'music' : 'an effect'}; switch to the other shelf`
+                    : 'Lane unknown'
+                }
+                title={
+                  lanes[f]
+                    ? `Filed as ${lanes[f].lane === 'music' ? 'music' : 'an effect'} — click to change`
+                    : 'Lane unknown'
+                }
+                className="shrink-0"
+                style={{
+                  width: '24px',
+                  height: '20px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontSize: '11px',
+                  lineHeight: '18px',
+                  color: lanes[f]?.lane === 'sfx' ? '#b06a2a' : '#6dbf95',
+                  border: `1px solid ${
+                    lanes[f] && lanes[f].lane !== lanes[f].origin ? 'rgba(200,146,42,0.6)' : 'transparent'
+                  }`,
+                }}
+              >
+                {lanes[f]?.lane === 'sfx' ? 'FX' : '♪'}
               </button>
               <span
                 className="flex-1 min-w-0 truncate"
                 style={{
                   fontFamily: "'Crimson Text', serif",
                   fontSize: '14px',
-                  color: isPlaying ? '#e8d5a3' : '#8a7050',
+                  color: isPlaying ? '#f2e6c9' : '#b9a683',
                 }}
               >
                 {trackName(f)}
@@ -175,9 +251,9 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                       style={{
                         background: 'rgba(200,146,42,0.1)',
                         border: '1px solid rgba(200,146,42,0.2)',
-                        fontSize: '9px',
-                        fontFamily: 'monospace',
-                        color: '#c8922a',
+                        fontSize: '11px',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: '#d9a441',
                         lineHeight: '14px',
                         maxWidth: '60px',
                       }}
@@ -186,7 +262,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                     </span>
                   ))}
                   {fileTags.length > 2 && (
-                    <span style={{ fontSize: '9px', fontFamily: 'monospace', color: '#6b4e15' }}>
+                    <span style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#a5813f' }}>
                       +{fileTags.length - 2}
                     </span>
                   )}

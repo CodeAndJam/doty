@@ -9,17 +9,12 @@ const base = {
   categorical: true,
   msUntilTrackEnd: 200_000,
   msSinceLastChange: 600_000,
-  autopilot: true,
-  override: false,
+  musicEnabled: true,
 }
 
 describe('decideAction', () => {
-  it('does nothing when autopilot is off', () => {
-    expect(decideAction({ ...base, autopilot: false }).kind).toBe('hold')
-  })
-
-  it('does nothing while the DM has taken playback', () => {
-    expect(decideAction({ ...base, override: true }).kind).toBe('hold')
+  it('does nothing when automatic music changes are off', () => {
+    expect(decideAction({ ...base, musicEnabled: false }).kind).toBe('hold')
   })
 
   it('never interrupts mid-track on a merely better option', () => {
@@ -78,7 +73,7 @@ describe('decideAction', () => {
   })
 
   it('says why, so the decision log is readable', () => {
-    expect(decideAction({ ...base, autopilot: false }).reason).toMatch(/autopilot/i)
+    expect(decideAction({ ...base, musicEnabled: false }).reason).toMatch(/automatic/i)
     expect(decideAction({ ...base, sameScene: true }).reason).toMatch(/scene/i)
   })
 })

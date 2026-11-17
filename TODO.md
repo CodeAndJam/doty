@@ -24,6 +24,23 @@
 - [ ] STT: remaining word-level slips on mumbles ("mas para a cidade" for "vamos
       para a cidade"). Two-tier re-decode of finalized sentences with a larger
       context is the next lever.
+- [x] Architecture: the library is one module (`electron/library.ts`); membership,
+      one description per item, and vectors no longer get reassembled by each
+      caller. The SFX folder is indexed too, under a prefixed key.
+- [x] Architecture: the lane is a label (`src/lib/lane.ts` + `lane_overrides`),
+      not the folder a file sits in. `setLane` writes a row; `moveTrack` stays
+      the separate disk action.
+- [x] Architecture: one indexing run with two reported phases, paused while the
+      microphone is recording, instead of two booleans and a borrowed event.
+- [x] Architecture: the session pass lives in `electron/session/pass.ts` with
+      injected dependencies, so the hold throttle and serialisation are tested.
+- [x] Architecture: `override` and the autopilot master switch are deleted; a
+      profile that had `autopilotEnabled: false` is migrated to both channels
+      off. The per-channel switches are the only gates.
+- [ ] Wire the UI to the new backend: lane badge per row, index chip with the two
+      phases, semantic search in both browse panels (`library:search` returns
+      `{ mode, items }`), and the session-name prompt. The channels and the lane
+      label in `getAllMetadata` / `getSfxList` exist; nothing draws them yet.
 - [x] STT: VAD gating. `silero-vad-v6.2-F32.gguf` (1.2 MB) is loaded when present
       and gates live audio by speech probability; the RMS gate remains the
       fallback. Measured: 0.00 s emitted for a loud music bed, pink noise and
@@ -76,11 +93,12 @@
 - [ ] Ranker: label the rows. Add real narration moments to
       `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
       browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.
-- [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
-      `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
-      the sha256 in `electron/d1-model.ts` matches it. Until then the background
-      fetch 404s and the app stays on keyword matching. The LFM licence note
-      belongs on that download.
+- [x] Ranker: `models-v1` is published with `d1-omni-text-v1.tar.gz`, and the app's
+      download button installs it (verified end to end on a throwaway profile:
+      1.4 GB fetched, graph sha256 matches the manifest, licence extracted). The
+      archive now carries the LFM licence, which changes its hash — repack with
+      `scripts/export-d1-omni.py --pack` and update `RANKER_SHA256` whenever the
+      export changes.
 - [x] Ranker: the session loop is wired. The player repeats the current cue by
       default (`loopMode` single), so a boundary is a genuine choice rather than a
       deadline. Autopilot changes cue at 0.40 with a 1.5x margin, or 0.30 on a
@@ -107,14 +125,14 @@
       zero-element inputs.
 - [x] Retrieval is text-first (ADR 0003). The eval says top-1 0/24 with 92% of picks
       offered, so a better retriever cannot move the number; the description can.
-- [x] SFX mixed into the music folder: `classifyTrack` separates by duration first
-      (seconds = effect, minutes = cue), then by genre/path, and leaves a middling
-      clip `unknown` rather than guessing. Effects are dropped from music
-      candidates so they stop costing slots.
+- [x] SFX mixed into the music folder: the audio embedding separates cues from
+      effects, soundscapes and game ambience. Duration/genre/path only fill in
+      until the audio pass reaches a file; a middling clip is no longer guessed.
+      Effects are dropped from music candidates so they stop costing slots.
 - [x] SFX routing: every card carries `→ fx` / `→ music`. Main moves the file
       between the two configured folders, numbers collisions instead of
       overwriting, and rewrites the path in `tracks` and `track_tags`. It is a
-      click, never automatic: `decideKind` returns `uncertain` inside 0.03.
+      click, never automatic: the embedding decides the lane once it has a vector.
 - [x] Overrides recorded from every manual change — and skips are stored as
       *rejections*, not preferences. Before, skipping wrote a preference for the
       replacement track, which taught the opposite of the signal.
@@ -126,9 +144,10 @@
       semicausal padding) and matches the `Gemma4AudioFeatureExtractor` output;
       one clip is two passes (audio encoder → `audio_features` → fused graph).
       `decideKind` consumes the vectors, `test-results/audio-sfx.md` has the
-      numbers. On the real library it is right on every track ≤45 s and wrong on
-      long ambience (a campfire loop *is* an effect to the model), so it is used
-      as the grey-band tiebreaker, never to demote a long cue.
+      numbers. The embedding is the primary verdict now; duration/genre/path are
+      only the fallback before a file is embedded. The eval is the measurement:
+      `AUDIO_KIND_EVAL=1` rewrites `test-results/audio-sfx.md` with the per-track
+      verdicts against the library's own genre labels.
 - [x] Embeddings: audio path wiring. `startBackgroundPasses` runs the audio pass
       after the text index, on startup and on every folder change; `getAllMetadata`
       merges the verdict; `trackKindOf` feeds it to candidate filtering and the

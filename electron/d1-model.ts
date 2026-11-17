@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { MODELS_DIR } from './models-dir'
 import { resolveLanguage } from './stt-language'
 
-/** GitHub rejects release assets over 2 GB; this archive is ~1.5 GB. */
+/** GitHub rejects release assets over 2 GB; this archive is ~1.4 GB. */
 export const RANKER_ARCHIVE = 'd1-omni-text-v1.tar.gz'
 
 /**
@@ -23,8 +23,14 @@ export const RANKER_ARCHIVE = 'd1-omni-text-v1.tar.gz'
  */
 export const RANKER_URL = `https://github.com/CodeAndJam/doty/releases/download/models-v1/${RANKER_ARCHIVE}`
 
-/** sha256 of the archive, printed by `scripts/export-d1-omni.py --pack`. */
-export const RANKER_SHA256 = 'c825fa241b4c61db398dc93de2c77ffc1b0e944f7d7f5328aab94eb448d49c9f'
+/**
+ * sha256 of the archive, printed by `scripts/export-d1-omni.py --pack`.
+ *
+ * The archive carries the graph, its manifest, the tokenizer and the model's
+ * licence: the weights are LFM Open License v1.0, which requires the notice to
+ * travel with every copy.
+ */
+export const RANKER_SHA256 = '25065b87b37c7bb34ec6d321b8b1ac4b67f1f8bf2d719d849a1f2d54e0c37da0'
 
 const GRAPH = 'd1-omni-text.onnx'
 const MANIFEST = 'd1-omni-text-manifest.json'
@@ -95,7 +101,7 @@ export function verifyArchive(archive: string, expected = RANKER_SHA256): void {
   if (actual !== expected) throw new Error(`ranker archive checksum ${actual} != ${expected}`)
 }
 
-/** Verify, extract, then drop the archive so a 1.5 GB download is not kept twice. */
+/** Verify, extract, then drop the archive so a 1.4 GB download is not kept twice. */
 export function installRankerArchive(archive: string, dir = MODELS_DIR, expected = RANKER_SHA256): void {
   if (isRankerInstalled(dir)) {
     fs.rmSync(archive, { force: true })

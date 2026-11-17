@@ -25,24 +25,53 @@ describe('classifyTrack', () => {
     expect(classifyTrack({ path: 'Unknown/thunder.mp3', genre: 'Music' })).toBe('unknown')
   })
 
+  it('lets an explicit effects genre outrank a long duration', () => {
+    // Rain and wind loops run for minutes; the library tags them as effects and
+    // the duration rule used to overrule that and call them cues.
+    expect(
+      classifyTrack({ path: 'Walking/Night/Weather - Heavy Rain.mp3', duration: 73, genre: 'Sound Effects' }),
+    ).toBe('sfx')
+    expect(
+      classifyTrack({
+        path: 'Exploration/Dungeon/Natural World - Landslide Near and Far.mp3',
+        duration: 54,
+        genre: 'Sound Effects',
+      }),
+    ).toBe('sfx')
+  })
+
+  it('does not let the tagger default "Music" outrank duration', () => {
+    expect(classifyTrack({ path: 'Weather - Heavy Rain.mp3', duration: 73, genre: 'Music' })).toBe('music')
+  })
+
+  it('does not treat a long cue in a SFX folder as an effect', () => {
+    expect(classifyTrack({ path: 'SFX/Ambush Theme.mp3', duration: 184 })).toBe('music')
+  })
+
   it('leaves a middling clip unknown rather than guessing', () => {
     expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30 })).toBe('unknown')
   })
 
-  it('lets a confident audio verdict fill the band duration cannot decide', () => {
+  it('lets the audio verdict decide the band duration cannot answer', () => {
     expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30, audio: 'sfx' })).toBe('sfx')
     expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 35, audio: 'music' })).toBe('music')
     expect(classifyTrack({ path: 'Misc/track 7.mp3', audio: 'sfx' })).toBe('sfx')
   })
 
-  it('does not let audio demote a long ambience bed to an effect', () => {
-    // The model calls a rain or campfire loop an effect, and it is right about
-    // the sound — but a ten-minute cue is still a cue, and moving it is worse.
-    expect(classifyTrack({ path: 'Campfire.mp3', duration: 600, audio: 'sfx' })).toBe('music')
+  it('lets the audio verdict move a long ambience bed to the effects shelf', () => {
+    // A rain or campfire loop is not a cue however long it runs; duration is only
+    // the fallback for a file the audio pass has not reached.
+    expect(classifyTrack({ path: 'Campfire.mp3', duration: 600, audio: 'sfx' })).toBe('sfx')
   })
 
-  it('does not let audio promote a two-second hit to a cue', () => {
-    expect(classifyTrack({ path: 'hit.wav', duration: 2, audio: 'music' })).toBe('sfx')
+  it('lets the audio verdict keep a short hit on the score', () => {
+    expect(classifyTrack({ path: 'hit.wav', duration: 2, audio: 'music' })).toBe('music')
+  })
+
+  it('lets the sound outrank a genre tag', () => {
+    expect(classifyTrack({ path: 'Weather - Rain.mp3', duration: 73, genre: 'Sound Effects', audio: 'music' })).toBe(
+      'music',
+    )
   })
 
   it('falls through when the audio verdict is uncertain', () => {

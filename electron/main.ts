@@ -2,8 +2,9 @@ import fs from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
+import { showInMusicPanel } from '../src/lib/lane'
 import {
   feedChunk,
   finalizeStream,
@@ -26,15 +27,21 @@ import {
 } from './d1-model'
 import { MOODS } from './d1-omni'
 import {
+  clearLaneOverride,
+  clearSfxDurations,
   closeDb,
   getAllTags,
   getDb,
+  getLaneOverrides,
   getPlayFrequencies,
+  getSfxDurations,
   getTags,
   getTagsMap,
   getTopPlayed,
   pruneMissingTracks,
   recordPlay,
+  setLaneOverride,
+  setSfxDuration,
   setTags,
 } from './database'
 import {
@@ -54,6 +61,7 @@ import {
   pauseStream,
   resumeStream,
   setAutoConnect,
+  setDiscordVerbose,
   setDiscordVolume,
   stopSfx,
   stopStream,
@@ -61,8 +69,11 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import { ffmpegStatus } from './discord-audio'
 import { downloadFile } from './download-file'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
+import { createLibrary } from './library'
+import { debugLogger, enableDebugLogging } from './logger'
 import { migrateFromJson } from './metadata-cache'
 import { createModelDownloads } from './model-downloads'
 import {
@@ -77,17 +88,13 @@ import {
 } from './model-paths'
 import { getMusicFiles, invalidateMusicLibrary } from './music-library'
 import { handleMusicRequest } from './music-protocol'
+import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
-import { createAudioIndexer } from './session/audio/indexer'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
-import { planStep } from './session/director'
 import { audioAvailable, embedderAvailable, loadEmbedder, RETRIEVAL_KEY } from './session/embedder'
-import { topK } from './session/embedding'
-import { createIndexer } from './session/indexer'
 import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
-import { DEFAULT_POLICY } from './session/policy'
-import { learnedPick } from './session/preferences'
+import { createSessionPass, type PassRequest } from './session/pass'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
@@ -126,7 +133,9 @@ const rankerDownloads = createModelDownloads({
       send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
     } else if (event.type === 'error') {
       rankerDownloading = false
-      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+      // The reason travels with the event: a button that silently returns to its
+      // resting state is indistinguishable from one that never ran.
+      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error', reason: event.error })
       console.error('[ranker] download failed:', event.error)
     }
   },
@@ -188,7 +197,13 @@ let mainWindow: BrowserWindow | null = null
 const handle = (channel: InvokeChannel, listener: Parameters<typeof ipcMain.handle>[1]) =>
   ipcMain.handle(channel, listener)
 
-const send = (channel: EventChannel, payload?: unknown) => mainWindow?.webContents.send(channel, payload)
+/** Set once the app is tearing down: sending then is how a quit becomes a crash. */
+let quitting = false
+
+const send = (channel: EventChannel, payload?: unknown) => {
+  if (quitting || !mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send(channel, payload)
+}
 
 const sttDownloads = createModelDownloads({
   download: downloadFile,
@@ -302,6 +317,9 @@ function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
     (done, total, current) => {
+      // Each analysed file changes the duration the lane rule reads, so a library
+      // built mid-scan is stale before the scan even finishes.
+      library.invalidate()
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
@@ -312,7 +330,13 @@ function launchScanner(folder: string, force = false) {
       } catch (e) {
         console.error('[library] prune failed:', e)
       }
+      // The analysis just changed every duration and energy, and the lane rule
+      // reads them: a library built mid-scan says "music" for an 18-second sting.
+      library.invalidate()
       send(EVENTS.scanComplete)
+      // A file the DM dropped in while the app was running lands here too: it has
+      // seconds and energy now, but no vector and no effect duration yet.
+      startBackgroundPasses()
     },
     force,
   )
@@ -324,6 +348,7 @@ setOnLibraryChanged(() => {
   if (librarySyncTimer) clearTimeout(librarySyncTimer)
   librarySyncTimer = setTimeout(() => {
     librarySyncTimer = null
+    library.invalidate()
     send(EVENTS.scanComplete)
   }, 500)
 })
@@ -338,9 +363,15 @@ function registerAppProtocol() {
 }
 
 function createWindow() {
+  // Playwright cannot run Electron headless — there is no headless Electron — so
+  // the closest thing is a window that is created but never shown. Chromium
+  // throttles occluded windows, which stalls timers and playback bookkeeping, so
+  // throttling is off for exactly that mode.
+  const hidden = process.env.DOTY_E2E_HIDE_WINDOW === '1'
   const iconPath = app.isPackaged ? join(process.resourcesPath, 'icon.icns') : join(__dirname, '../../build/icon.png')
 
   mainWindow = new BrowserWindow({
+    show: !hidden,
     width: 1200,
     height: 800,
     minWidth: 900,
@@ -352,6 +383,7 @@ function createWindow() {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      backgroundThrottling: !hidden,
     },
   })
 
@@ -361,9 +393,25 @@ function createWindow() {
     mainWindow.loadURL('app://doty/')
   }
 
+  // A recording that dies without `sttStop` must not leave the index paused for
+  // the rest of the process. Resume after the new document is up — not on
+  // navigation, which also fires during shutdown, after the database is closed.
+  mainWindow.webContents.on('render-process-gone', () => library.resume())
+  mainWindow.webContents.on('did-finish-load', () => library.resume())
+
   // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
   mainWindow.on('closed', () => {
     mainWindow = null
+  })
+
+  // Renderer errors used to exist only in DevTools; debug mode puts them in the
+  // same log file as the main process.
+  mainWindow.webContents.on('console-message', (event) => {
+    if (!debugLogger.isEnabled()) return
+    if (event.level !== 'warning' && event.level !== 'error') return
+    debugLogger.write(event.level === 'error' ? 'error' : 'warn', [
+      `[renderer] ${event.message} (${event.sourceId}:${event.lineNumber})`,
+    ])
   })
 }
 
@@ -385,6 +433,11 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Debug mode is a persisted choice; apply it before anything else logs.
+  const debugOn = store.get('debugMode', false) ?? false
+  enableDebugLogging(debugOn)
+  setDiscordVerbose(debugOn)
+
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
     const iconPath = join(__dirname, '../../build/icon.png')
@@ -456,10 +509,9 @@ app.whenReady().then(async () => {
   }
 
   const musicFolder = store.get('musicFolder', '') as string
-  if (musicFolder) {
-    launchScanner(musicFolder)
-    startBackgroundPasses(musicFolder)
-  }
+  if (musicFolder) launchScanner(musicFolder)
+  // Either folder is a source now, so either one is worth indexing at startup.
+  if (musicFolder || store.get('sfxFolder', '')) startBackgroundPasses()
 
   // One background download, once per machine. No prompt: the app is useless
   // without it, and 1.5 GB of silence during a session would be worse.
@@ -469,6 +521,8 @@ app.whenReady().then(async () => {
 })
 
 app.on('before-quit', () => {
+  // Before the database closes: nothing may emit status after that point.
+  quitting = true
   finalizeWavRecording()
   freeRecognizer()
   disposeRanker()
@@ -510,6 +564,8 @@ handle(INVOKE.sttStart, () => {
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
   recordingActive = true
+  // The index is minutes of model work; the transcript is the critical path.
+  library.pause()
   startWavRecording()
   startStream()
   return { ok: true }
@@ -518,6 +574,7 @@ handle(INVOKE.sttStop, () => {
   finalizeStream()
   finalizeWavRecording()
   recordingActive = false
+  library.resume()
   return { ok: true }
 })
 
@@ -581,10 +638,26 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   return { ok: true, path: to }
 })
 
+// A lane is a label: switching it writes one row and leaves the file where the
+// DM put it. Moving files is the action above, and it stays a separate one.
+handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
+  if (lane !== 'music' && lane !== 'sfx') return { ok: false }
+  const item = library.items().find((candidate) => candidate.key === key)
+  // Choosing the folder's own lane is not an override; writing one would pin the
+  // file forever and the classifier could never be improved.
+  if (item && item.origin === lane) library.clearLane(key)
+  else library.setLane(key, lane)
+  // Every panel and the director read the same label, so they all have to hear it.
+  send(EVENTS.sfxChanged)
+  send(EVENTS.scanComplete)
+  return { ok: true }
+})
+
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
   store.set('musicFolder', folderPath)
+  library.invalidate()
   launchScanner(folderPath)
-  startBackgroundPasses(folderPath)
+  startBackgroundPasses()
   send(EVENTS.musicFolderChanged, folderPath)
   return { ok: true }
 })
@@ -598,8 +671,9 @@ handle(INVOKE.pickMusicFolder, async () => {
   })
   if (!result.canceled && result.filePaths[0]) {
     store.set('musicFolder', result.filePaths[0])
+    library.invalidate()
     launchScanner(result.filePaths[0])
-    startBackgroundPasses(result.filePaths[0])
+    startBackgroundPasses()
     send(EVENTS.musicFolderChanged, result.filePaths[0])
     return result.filePaths[0]
   }
@@ -607,23 +681,51 @@ handle(INVOKE.pickMusicFolder, async () => {
 })
 
 handle(INVOKE.listMusic, () => {
-  const musicFolder = store.get('musicFolder', '') as string
-  if (!musicFolder) return []
-  return getMusicFiles(musicFolder)
+  // The lane decides what is offered, not the folder — but only a shelf that
+  // exists can hold what is hidden. With no effects folder, an effect stays in
+  // the music list or it disappears from the app entirely.
+  const hasSfxShelf = Boolean(store.get('sfxFolder', ''))
+  return library
+    .items()
+    .filter((item) => showInMusicPanel(item.lane, hasSfxShelf))
+    .map((item) => (item.origin === 'music' ? item.path : item.absolute))
 })
 
 handle(INVOKE.triggerScan, () => {
   const musicFolder = store.get('musicFolder', '') as string
   if (!musicFolder) return { ok: false }
+  // "Re-analyse" means the stored numbers are not trusted: the effect durations
+  // too, or a file whose seconds were measured wrongly stays misfiled.
+  clearSfxDurations()
+  library.invalidate()
   launchScanner(musicFolder, true)
   return { ok: true }
 })
 
 handle(INVOKE.getAllMetadata, () => {
   const all = getAllMetadata()
-  const withKind: Record<string, (typeof all)[string] & { audioKind?: AudioKind }> = {}
+  const kinds = library.kinds()
+  // One library read for both the lane map and the items that have no analysed
+  // row, so a metadata request costs one walk instead of two.
+  const items = library.items()
+  const lanes = new Map(items.map((item) => [item.key, item.lane]))
+  // `lane` is the resolved label, not the folder: the renderer must not re-derive
+  // it, or a badge would disagree with what search and the director use.
+  type Row = (typeof all)[string] & { audioKind?: AudioKind; lane?: 'music' | 'sfx' }
+  const withKind: Record<string, Row> = {}
   for (const [path, meta] of Object.entries(all)) {
-    withKind[path] = audioKinds[path] ? { ...meta, audioKind: audioKinds[path] } : meta
+    withKind[path] = {
+      ...meta,
+      ...(kinds[path] ? { audioKind: kinds[path] } : {}),
+      ...(lanes.get(path) ? { lane: lanes.get(path) } : {}),
+    }
+  }
+  // A cue that lives in the effects folder has no analysed row here, but its
+  // label is still what the ranker must obey. Facts are absent, not invented.
+  for (const item of items) {
+    if (item.lane !== 'music') continue
+    const key = item.origin === 'music' ? item.path : item.absolute
+    if (!withKind[key]) withKind[key] = { lane: item.lane } as Row
   }
   return withKind
 })
@@ -796,125 +898,14 @@ handle(INVOKE.rankerDownload, () => downloadRanker())
 
 const sessionStore = createSessionStore(getDb())
 
-let liveScene: Scene | null = null
-let lastChangeAt = 0
-let lastLoggedAt = 0
-/** One session pass at a time: two in flight would race the scene and the clock. */
-let sessionPipeline: Promise<unknown> = Promise.resolve()
+const sessionPass = createSessionPass({
+  evaluate: (state, candidates) => evaluateSession(state, candidates),
+  store: sessionStore,
+  now: () => Date.now(),
+})
 
-handle(
-  INVOKE.sessionEvaluate,
-  async (
-    _e,
-    request: {
-      state: string
-      candidates: string[]
-      paths: string[]
-      msUntilTrackEnd: number | null
-      autopilot: boolean
-      override: boolean
-      /** The DM's threshold from Settings; absent keeps the policy default. */
-      confidenceThreshold?: number
-    },
-  ) => {
-    const run = sessionPipeline.then(async () => {
-      const { tracks, moods } = await evaluateSession(request.state, request.candidates)
-      if (moods.length === 0) return { tracks, moods, plan: null }
+handle(INVOKE.sessionEvaluate, (_e, request: PassRequest) => sessionPass.run(request))
 
-      let best = 0
-      for (let i = 1; i < moods.length; i++) if (moods[i] > moods[best]) best = i
-      const now = Date.now()
-
-      // The margin the policy gates on: the runner-up is the strongest competitor.
-      let top = tracks.length > 0 ? tracks[0] : 0
-      let second = 0
-      for (let i = 1; i < tracks.length; i++) {
-        if (tracks[i] > top) {
-          second = top
-          top = tracks[i]
-        } else if (tracks[i] > second) {
-          second = tracks[i]
-        }
-      }
-
-      // Where the model cannot decide, prefer what the DM chose for this scene.
-      const learned = learnedPick({
-        probabilities: tracks,
-        paths: request.paths,
-        preferences: sessionStore.recentPreferences(200),
-        scene: liveScene?.mood ?? MOODS[best] ?? null,
-      })
-      // The learned pick changes *which* track, never the probability: rewriting
-      // the numbers would fake a confidence the model never had.
-      const pickIndex =
-        learned && learned.path ? request.paths.indexOf(learned.path) : tracks.indexOf(Math.max(...tracks))
-      const step = planStep({
-        previous: liveScene,
-        observation: {
-          mood: MOODS[best] ?? 'exploration',
-          intensity: 0.5,
-          moodProbability: moods[best] ?? 0,
-          trackProbability: tracks.length > 0 ? Math.max(...tracks) : 0,
-          secondTrackProbability: second,
-        },
-        now,
-        msUntilTrackEnd: request.msUntilTrackEnd,
-        msSinceLastChange: now - lastChangeAt,
-        autopilot: request.autopilot,
-        override: request.override,
-        // Settings must move the real gate, not just the label under it. The
-        // threshold is the cut-in bar; boundaries always pick the next track.
-        policy: {
-          ...DEFAULT_POLICY,
-          interruptMinProbability: request.confidenceThreshold ?? DEFAULT_POLICY.interruptMinProbability,
-        },
-      })
-
-      const sceneMoved = liveScene === null || step.scene.mood !== liveScene.mood
-      if (sceneMoved) {
-        sessionStore.recordScene({
-          session: 'live',
-          mood: step.scene.mood,
-          intensity: step.scene.intensity,
-          startedAt: step.scene.since,
-        })
-      }
-      // The clock gates the change cooldown, so it only moves when music would.
-      if (step.action.kind !== 'hold') lastChangeAt = now
-      liveScene = step.scene
-
-      // Holds are main's to log (throttled: one per half minute). Actions are logged
-      // by the renderer once it has actually executed them, so `autoActions` counts
-      // changes that happened rather than changes that were proposed.
-      if (step.action.kind === 'hold' && now - lastLoggedAt > 30_000) {
-        lastLoggedAt = now
-        sessionStore.recordDecision({
-          at: now,
-          kind: 'music',
-          action: step.action.kind,
-          reason: step.action.reason,
-          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
-          probability: best >= 0 ? (tracks[best] ?? 0) : 0,
-          mood: step.scene.mood,
-          source: 'auto',
-        })
-      }
-
-      return {
-        tracks,
-        moods,
-        plan: {
-          scene: step.scene.mood,
-          action: step.action.kind,
-          reason: step.action.reason,
-          track: pickIndex >= 0 ? (request.paths[pickIndex] ?? null) : null,
-        },
-      }
-    })
-    sessionPipeline = run.catch(() => {})
-    return run
-  },
-)
 handle(INVOKE.sessionDecision, (_e, row: Parameters<typeof sessionStore.recordDecision>[0]) => {
   sessionStore.recordDecision(row)
   return { ok: true }
@@ -925,108 +916,100 @@ handle(INVOKE.sessionPreference, (_e, row: Parameters<typeof sessionStore.record
 })
 handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
-// ── Embeddings: indexed in the background, used when they exist ───────────────
+// ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
-let embedding: { done: number; total: number } = { done: 0, total: 0 }
-let indexing = false
 
-/** Load the model and index whatever is missing, in batches, without blocking. */
-async function startIndexing(folder: string): Promise<void> {
-  if (indexing || !embedderAvailable(EMBEDDER_DIR)) return
-  indexing = true
-  try {
-    embedder ??= await loadEmbedder(EMBEDDER_DIR)
-    const allMetadata = getAllMetadata()
-    const allTags = getTagsMap()
-    const files = getMusicFiles(folder)
-    embedding = { done: 0, total: files.length }
-    const indexer = createIndexer({
-      paths: () => files,
-      store: sessionStore,
-      embed: (texts) => embedder!.embedDocuments(texts),
-      model: RETRIEVAL_KEY,
-      // Exactly the text the ranker judges, so a retrieved track is one the model
-      // was also shown. Two describers would drift and retrieve names the ranker
-      // has never heard of.
-      describe: (path) => describeTrack(path, allMetadata[path], allTags[path] ?? []),
-      batch: 8,
-      onProgress: (p) => {
-        embedding = p
-        send(EVENTS.embeddingProgress, p)
-      },
-    })
-    await indexer.run()
-  } catch (e) {
-    console.error('[embedding] indexing failed:', e)
-  } finally {
-    indexing = false
-  }
+async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedder>> | null> {
+  if (embedder) return embedder
+  if (!embedderAvailable(EMBEDDER_DIR)) return null
+  embedder = await loadEmbedder(EMBEDDER_DIR)
+  return embedder
 }
 
-/** Audio verdicts from the background pass; absent means "use duration". */
-let audioKinds: Record<string, AudioKind> = {}
-let audioIndexing = false
+const library = createLibrary({
+  folders: () => ({
+    music: store.get('musicFolder', '') as string,
+    sfx: store.get('sfxFolder', '') as string,
+  }),
+  musicFiles: (folder) => getMusicFiles(folder),
+  sfxItems: (folder) => listSfx(folder, getSfxDurations()),
+  facts: () => getAllMetadata(),
+  tags: () => getTagsMap(),
+  overrides: () => getLaneOverrides(),
+  setOverride: (key, lane) => setLaneOverride(key, lane),
+  clearOverride: (key) => clearLaneOverride(key),
+  embedder: () => loadEmbedderOnce(),
+  embedderAvailable: () => embedderAvailable(EMBEDDER_DIR),
+  audioAvailable: () => audioAvailable(EMBEDDER_DIR),
+  kindAnchors: (model) => loadKindAnchors(model),
+  // The decoder needs the real path. A relative one makes ffmpeg fail for every
+  // track, silently, because the audio indexer treats a failure as unclassified.
+  embedAudio: (absolute, durationSeconds) => embedTrackAudio(embedder!, absolute, clipWindow(durationSeconds)),
+  store: sessionStore,
+  onStatus: (status) => {
+    send(EVENTS.embeddingProgress, status)
+  },
+})
+
+/** The pending background pass, so three triggers collapse into one. */
+let passesTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
- * Minutes of work, so it runs in the background and resumes next launch. Audio
- * classification waits for the text pass: both need the embedder, and the audio
- * encoder is another ~190 MB resident. Called at startup and on a folder change,
- * which used to leave a newly selected library unindexed until the next launch.
+ * Effects are seconds long and never enter `tracks`, so their duration has to be
+ * measured separately: it is what lets the lane rule tell a 6 s door slam from a
+ * 3 min cue sitting in the same folder. One pass, cached, silent on failure.
  */
-function startBackgroundPasses(folder: string): void {
-  setTimeout(() => {
-    startIndexing(folder)
-      .catch((e) => console.error('[embedding] pass failed:', e))
-      .finally(() => startAudioKinds(folder).catch((e) => console.error('[audio-kind] pass failed:', e)))
+async function startSfxDurations(): Promise<void> {
+  const folder = store.get('sfxFolder', '') as string
+  if (!folder) return
+  const cached = getSfxDurations()
+  const missing = listSfx(folder).filter((item) => !cached[item.filename])
+  if (missing.length === 0) return
+  const { parseFile } = await import('music-metadata')
+  for (const item of missing) {
+    try {
+      const meta = await parseFile(item.filename, { duration: true })
+      const seconds = meta.format.duration
+      if (seconds) setSfxDuration(item.filename, seconds)
+    } catch {
+      /* unreadable: it keeps the folder's answer */
+    }
+  }
+  // The lanes were resolved with the old numbers.
+  library.invalidate()
+  send(EVENTS.sfxChanged)
+  send(EVENTS.scanComplete)
+}
+
+/**
+ * Minutes of work, so it runs in the background and resumes next launch. Called
+ * at startup, on a folder change, and whenever a scan settles — the last one is
+ * what makes a file dropped in during a session searchable without a relaunch.
+ */
+function startBackgroundPasses(): void {
+  if (passesTimer) clearTimeout(passesTimer)
+  passesTimer = setTimeout(() => {
+    passesTimer = null
+    void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
+    library
+      .ensureIndexed()
+      .then(() => {
+        const status = library.status()
+        if (!status.ready) {
+          console.log('[library] no embedding model installed; search falls back to text')
+          return
+        }
+        console.log(`[library] indexed ${status.indexed}/${status.total}`)
+        // The audio pass resolves lanes, and every panel reads them from main;
+        // without this signal the new labels wait for the next disk scan.
+        send(EVENTS.scanComplete)
+      })
+      .catch((e) => console.error('[library] index failed:', e))
   }, 3_000)
 }
 
-/**
- * One audio embedding per track, classified as music or effect. Duration decides
- * the clear cases; this fills the 20–45 s grey band where the folder name is the
- * only other evidence. Runs after the text pass, never on the playback path.
- */
-async function startAudioKinds(folder: string): Promise<void> {
-  if (audioIndexing || !audioAvailable(EMBEDDER_DIR)) return
-  audioIndexing = true
-  try {
-    embedder ??= await loadEmbedder(EMBEDDER_DIR)
-    const anchors = await loadKindAnchors(embedder)
-    if (!anchors) return
-    const metadata = getAllMetadata()
-    const files = getMusicFiles(folder)
-    const indexer = createAudioIndexer({
-      paths: () => files,
-      store: sessionStore,
-      // `getMusicFiles` is relative to the library root; the decoder needs the
-      // real path. Passing the relative one makes ffmpeg fail for every track,
-      // silently, because the indexer treats an embed failure as "unclassified".
-      embed: (path) => embedTrackAudio(embedder!, join(folder, path), clipWindow(metadata[path]?.duration)),
-      classify: (vector) => decideKindFor(vector, anchors).kind,
-    })
-    await indexer.run()
-    audioKinds = indexer.kinds
-    if (files.length > 0 && Object.keys(audioKinds).length === 0) {
-      console.warn('[audio-kind] no track could be decoded or embedded; using duration only')
-    }
-    console.log(
-      `[audio-kind] classified ${Object.keys(audioKinds).length} tracks (${
-        Object.entries(audioKinds).filter(([, kind]) => kind === 'sfx').length
-      } effects)`,
-    )
-    // Badges read `metaMap`, which the renderer refreshes on this event.
-    send(EVENTS.scanComplete)
-  } finally {
-    audioIndexing = false
-  }
-}
-
-handle(INVOKE.embeddingStatus, () => {
-  const folder = store.get('musicFolder', '') as string
-  const total = folder ? getMusicFiles(folder).length : 0
-  return { ready: embedder !== null, indexed: embedding.done, total }
-})
+handle(INVOKE.embeddingStatus, () => library.status())
 
 handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
   if (candidates.length === 0 || !state.trim()) return []
@@ -1038,19 +1021,28 @@ handle(INVOKE.sfxRank, async (_e, state: string, candidates: string[]) => {
   }
 })
 
-handle(INVOKE.similarTracks, async (_e, text: string, k: number) => {
-  if (!embedder || !text.trim()) return []
+handle(INVOKE.librarySearch, async (_e, text: string, lane: 'music' | 'sfx', k: number) => {
   try {
-    const query = await embedder.embedQuery(text)
-    const vectors = new Map<string, Float32Array>()
-    for (const path of getMusicFiles(store.get('musicFolder', '') as string)) {
-      const vector = sessionStore.getVector(path, RETRIEVAL_KEY)
-      if (vector) vectors.set(path, vector)
+    const result = await library.search(text, lane, Math.max(1, Math.min(k, 50)))
+    // `mode` travels with the results: the panel has to say when the answer came
+    // from the fallback, and only main knows which matcher ran.
+    return {
+      mode: result.mode,
+      items: result.items.map((item) => ({
+        key: item.key,
+        path: item.path,
+        lane: item.lane,
+        // The effects panel identifies its cards by absolute filename, the music
+        // panel by relative path; both need to find the same result.
+        absolute: item.absolute,
+        // Which path plays: a music-folder file is relative, anything else is
+        // only reachable by its absolute path.
+        origin: item.origin,
+      })),
     }
-    return topK(query, vectors, Math.max(1, Math.min(k, 50)))
   } catch (e) {
-    console.error('[embedding] query failed:', e)
-    return []
+    console.error('[library] search failed:', e)
+    return { mode: 'text' as const, items: [] }
   }
 })
 
@@ -1270,7 +1262,43 @@ handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
 
 // ── IPC: SFX ─────────────────────────────────────────────────────────────────
 
-handle(INVOKE.getSfxList, () => listSfx(store.get('sfxFolder', '') as string))
+handle(INVOKE.getSfxList, () => {
+  const known = new Map(
+    listSfx(store.get('sfxFolder', '') as string, getSfxDurations()).map((item) => [`sfx:${item.id}`, item]),
+  )
+  return library.items('sfx').map((item) => {
+    const found = known.get(item.key)
+    if (found) return { ...found, lane: item.lane }
+    // A file the DM filed as an effect but which lives in the music folder: show
+    // it in the effects shelf, addressed by its absolute path.
+    return {
+      // Its own id space: the effects panel is keyed by id, and a music-folder
+      // path could collide with an effect of the same name.
+      id: `music:${item.path}`,
+      filename: item.absolute,
+      category: 'from the music folder',
+      label: (item.path.split('/').pop() ?? item.path).replace(/\.[^.]+$/, ''),
+      description: '',
+      duration: 0,
+      source: 'custom' as const,
+      lane: item.lane,
+    }
+  })
+})
+
+handle(INVOKE.libraryLanes, () => {
+  const out: Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }> = {}
+  for (const item of library.items()) {
+    const entry = { key: item.key, lane: item.lane, origin: item.origin }
+    // Keyed by what each panel renders. A music-folder file is shown by relative
+    // path in the music panel and by absolute path if it appears in the effects
+    // shelf; an effects-folder file is always addressed absolutely. Never key by
+    // the relative id of an effect: the two folders share that name space.
+    if (item.origin === 'music') out[item.path] = entry
+    out[item.absolute] = entry
+  }
+  return out
+})
 
 handle(INVOKE.getSfxFolder, () => store.get('sfxFolder', ''))
 
@@ -1289,7 +1317,10 @@ handle(INVOKE.pickSfxFolder, async () => {
 
 handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
   store.set('sfxFolder', folderPath)
+  library.invalidate()
   send(EVENTS.sfxChanged)
+  // The effects folder is part of the library now: it needs vectors too.
+  startBackgroundPasses()
   return { ok: true }
 })
 
@@ -1333,4 +1364,48 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
   if (typeof config.recentlyPlayedMinutes === 'number')
     store.set('autopilotRecentlyPlayedMinutes', config.recentlyPlayedMinutes)
   return { ok: true }
+})
+
+// ── IPC: Debug ────────────────────────────────────────────────────────────────
+
+/** Facts a DM can paste from another Mac, without reading a single log line. */
+async function diagnostics(): Promise<string> {
+  const ffmpeg = await ffmpegStatus()
+  const discord = discordGetState()
+  return [
+    `Doty ${app.getVersion()} · Electron ${process.versions.electron} · ${process.getSystemVersion()} · ${process.arch}`,
+    `Profile: ${DOTY_HOME}`,
+    `Music folder: ${store.get('musicFolder', '') || '(none)'}`,
+    `SFX folder: ${store.get('sfxFolder', '') || '(none)'}`,
+    `Speech model: ${store.get('sttModel', DEFAULT_STT_MODEL)} (${isAnySttModelReady() ? 'ready' : 'not installed'})`,
+    `ffmpeg: ${ffmpeg.ok ? 'ok' : 'FAILED'} — ${ffmpeg.detail}`,
+    `ffmpeg path: ${ffmpeg.path}`,
+    `Discord: ${discord.status} / voice ${discord.voiceStatus}${discord.error ? ` — ${discord.error}` : ''}`,
+    `Log: ${debugLogger.path}`,
+  ].join('\n')
+}
+
+async function debugState() {
+  return {
+    enabled: store.get('debugMode', false) ?? false,
+    logPath: debugLogger.path,
+    log: debugLogger.tail(200),
+    diagnostics: await diagnostics(),
+  }
+}
+
+handle(INVOKE.debugGetState, () => debugState())
+
+handle(INVOKE.debugSetEnabled, async (_e, enabled: boolean) => {
+  const on = enabled === true
+  store.set('debugMode', on)
+  enableDebugLogging(on)
+  setDiscordVerbose(on)
+  return debugState()
+})
+
+handle(INVOKE.debugOpenLog, async () => {
+  debugLogger.ensure()
+  const error = await shell.openPath(debugLogger.path)
+  return error ? { ok: false, error } : { ok: true }
 })

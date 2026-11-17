@@ -14,7 +14,7 @@ vi.mock('./store', () => ({
   },
 }))
 
-import { deleteSession, getLastCueStartMs, loadSessionAsync } from './sessions'
+import { deleteSession, getLastCueStartMs, loadSessionAsync, renameSession } from './sessions'
 
 describe('getLastCueStartMs', () => {
   it('returns the start of the last cue, not its end', () => {
@@ -103,5 +103,16 @@ describe('deleteSession', () => {
 
   it('does nothing for non-existent file', () => {
     expect(() => deleteSession('/nonexistent/file.vtt')).not.toThrow()
+  })
+})
+
+describe('renameSession', () => {
+  it('keeps a dollar sign in the name as text, not a replacement pattern', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-session-'))
+    const file = path.join(dir, 's.vtt')
+    fs.writeFileSync(file, 'WEBVTT\nNOTE\nName: Old\nCreated: 2026-01-01\n\n')
+    renameSession(file, 'Tavern $& loot $1')
+    expect(fs.readFileSync(file, 'utf-8')).toContain('Name: Tavern $& loot $1')
+    fs.rmSync(dir, { recursive: true, force: true })
   })
 })

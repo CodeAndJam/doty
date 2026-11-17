@@ -41,10 +41,14 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Lint + Typecheck + Test + Build
-        run: |
-          pnpm lint
-          npx tsc --noEmit
-          npx tsc -p tsconfig.node.json --noEmit
-          pnpm test -- --coverage
-          pnpm run build
+      # One command, the same one a laptop runs: `pnpm check`.
+      - name: Check
+        run: pnpm check
+
+      - name: Build
+        run: pnpm run build
+
+      # The build staying green is not enough: the worker entries have to be
+      # where the app looks for them.
+      - name: Verify build output
+        run: pnpm verify:build

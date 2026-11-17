@@ -27,9 +27,8 @@ export interface DecisionInput {
   msUntilTrackEnd: number | null
   /** Milliseconds since the last automatic change. */
   msSinceLastChange: number
-  autopilot: boolean
-  /** The DM has taken playback by hand. */
-  override: boolean
+  /** The DM's switch for automatic music changes. */
+  musicEnabled: boolean
 }
 
 export interface PolicyConfig {
@@ -74,8 +73,7 @@ export const DEFAULT_POLICY: PolicyConfig = {
  * now wrong.
  */
 export function decideAction(input: DecisionInput, config: PolicyConfig = DEFAULT_POLICY): Action {
-  if (input.override) return { kind: 'hold', reason: 'the DM has taken playback' }
-  if (!input.autopilot) return { kind: 'hold', reason: 'autopilot is off' }
+  if (!input.musicEnabled) return { kind: 'hold', reason: 'automatic music changes are off' }
 
   const confident = input.probability >= config.boundaryMinProbability && input.trackRatio >= config.boundaryMinRatio
   const sceneShifted = input.categorical && input.probability >= config.boundaryCategoricalProbability

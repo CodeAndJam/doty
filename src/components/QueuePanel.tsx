@@ -53,7 +53,7 @@ function SortableQueueItem({
         {...attributes}
         {...listeners}
         className="w-5 h-5 flex items-center justify-center shrink-0 cursor-grab opacity-30 group-hover:opacity-70 transition-opacity"
-        style={{ color: '#6b4e15', touchAction: 'none' }}
+        style={{ color: '#a5813f', touchAction: 'none' }}
         title="Drag to reorder"
       >
         <DragHandleIcon />
@@ -63,9 +63,9 @@ function SortableQueueItem({
       <span
         className="w-5 text-center shrink-0"
         style={{
-          fontFamily: 'monospace',
-          fontSize: '10px',
-          color: isCurrent ? '#c8922a' : '#3a2e1a',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontSize: '11px',
+          color: isCurrent ? '#d9a441' : '#9d8b66',
         }}
       >
         {index + 1}
@@ -76,7 +76,7 @@ function SortableQueueItem({
         type="button"
         onClick={onPlay}
         className="w-6 h-6 flex items-center justify-center shrink-0"
-        style={{ color: isCurrent ? '#c8922a' : '#6b4e15' }}
+        style={{ color: isCurrent ? '#d9a441' : '#a5813f' }}
       >
         {isCurrent && isPlaying ? <PauseIcon /> : <PlayIcon />}
       </button>
@@ -88,7 +88,7 @@ function SortableQueueItem({
         style={{
           fontFamily: "'Crimson Text', serif",
           fontSize: '13px',
-          color: isCurrent ? '#e8d5a3' : '#8a7050',
+          color: isCurrent ? '#f2e6c9' : '#b9a683',
         }}
       >
         {trackName(filename)}
@@ -100,7 +100,7 @@ function SortableQueueItem({
         onClick={onRemove}
         className="w-5 h-5 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
         title="Remove from queue"
-        style={{ color: '#6b4e15' }}
+        style={{ color: '#a5813f' }}
       >
         <CloseIcon />
       </button>
@@ -158,13 +158,20 @@ export default function QueuePanel({
             fontFamily: "'Cinzel', serif",
             fontSize: '13px',
             letterSpacing: '0.2em',
-            color: '#6b4e15',
+            color: '#a5813f',
             textTransform: 'uppercase',
           }}
         >
           Queue
           {tracks.length > 0 && (
-            <span style={{ fontFamily: 'monospace', fontSize: '11px', marginLeft: '8px', color: '#3a2e1a' }}>
+            <span
+              style={{
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: '11px',
+                marginLeft: '8px',
+                color: '#9d8b66',
+              }}
+            >
               ({tracks.length} track{tracks.length !== 1 ? 's' : ''})
             </span>
           )}
@@ -177,8 +184,8 @@ export default function QueuePanel({
               className="px-2 py-0.5 hover:opacity-80 transition-opacity"
               style={{
                 fontSize: '11px',
-                fontFamily: 'monospace',
-                color: '#6b4e15',
+                fontFamily: "'IBM Plex Mono', monospace",
+                color: '#a5813f',
                 border: '1px solid rgba(200,146,42,0.2)',
               }}
             >
@@ -198,7 +205,7 @@ export default function QueuePanel({
             style={{
               fontFamily: "'Cinzel', serif",
               fontSize: '13px',
-              color: '#3a2e1a',
+              color: '#9d8b66',
               letterSpacing: '0.1em',
             }}
           >

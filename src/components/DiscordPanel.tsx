@@ -4,10 +4,10 @@ import type { DiscordGuild, DiscordState, DiscordVoiceChannel } from '../types'
 const inputStyle: React.CSSProperties = {
   width: '100%',
   background: '#080705',
-  border: '1px solid #2e2416',
+  border: '1px solid #3d2f1c',
   padding: '8px 12px',
   fontSize: '15px',
-  color: '#c8b07a',
+  color: '#e4d6b4',
   fontFamily: "'Crimson Text', serif",
   outline: 'none',
 }
@@ -16,7 +16,7 @@ const btnStyle: React.CSSProperties = {
   padding: '8px 14px',
   background: 'rgba(200,146,42,0.08)',
   border: '1px solid rgba(200,146,42,0.3)',
-  color: '#c8922a',
+  color: '#d9a441',
   fontSize: '16px',
   fontFamily: "'Cinzel', serif",
   letterSpacing: '0.1em',
@@ -32,7 +32,7 @@ function Label({ children }: { children: React.ReactNode }) {
         fontFamily: "'Cinzel', serif",
         fontSize: '15px',
         letterSpacing: '0.25em',
-        color: '#6b4e15',
+        color: '#a5813f',
         textTransform: 'uppercase',
         display: 'block',
         marginBottom: '8px',
@@ -171,12 +171,12 @@ export default function DiscordPanel() {
   const isInVoice = state.voiceStatus === 'connected' || state.voiceStatus === 'playing'
 
   const statusColor = isConnected
-    ? '#4a8a6a'
+    ? '#6dbf95'
     : state.status === 'error'
       ? '#ef4444'
       : state.status === 'connecting'
-        ? '#c8922a'
-        : '#3a2e1a'
+        ? '#d9a441'
+        : '#9d8b66'
   const statusShadow = isConnected
     ? '0 0 6px rgba(74,138,106,0.7)'
     : state.status === 'error'
@@ -190,7 +190,7 @@ export default function DiscordPanel() {
         ? 'Error'
         : 'Disconnected'
 
-  const voiceColor = isInVoice ? '#4a8a6a' : state.voiceStatus === 'joining' ? '#c8922a' : '#3a2e1a'
+  const voiceColor = isInVoice ? '#6dbf95' : state.voiceStatus === 'joining' ? '#d9a441' : '#9d8b66'
   const voiceShadow = isInVoice ? '0 0 6px rgba(74,138,106,0.7)' : '0 0 6px rgba(200,146,42,0.5)'
 
   return (
@@ -200,12 +200,14 @@ export default function DiscordPanel() {
         <Label>Discord Conduit</Label>
         <div
           className="flex items-center gap-3 mb-3"
-          style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+          style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}
         >
           <StatusDot color={statusColor} shadow={statusShadow} />
           <div className="flex-1 min-w-0">
-            <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>Bot Gateway</p>
-            <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>{statusLabel}</p>
+            <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>Bot Gateway</p>
+            <p style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+              {statusLabel}
+            </p>
           </div>
           {!isConnected ? (
             <button
@@ -247,7 +249,14 @@ export default function DiscordPanel() {
 
         {/* Error display */}
         {state.error && (
-          <p style={{ fontSize: '13px', color: '#ef4444', fontFamily: 'monospace', marginBottom: '8px' }}>
+          <p
+            style={{
+              fontSize: '13px',
+              color: '#ef4444',
+              fontFamily: "'IBM Plex Mono', monospace",
+              marginBottom: '8px',
+            }}
+          >
             {state.error}
           </p>
         )}
@@ -277,7 +286,7 @@ export default function DiscordPanel() {
                 Connect
               </button>
             </div>
-            <p style={{ fontSize: '12px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            <p style={{ fontSize: '12px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
               Token is encrypted and stored locally
             </p>
           </div>
@@ -292,12 +301,12 @@ export default function DiscordPanel() {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              color: '#3a2e1a',
+              color: '#9d8b66',
               fontSize: '12px',
-              fontFamily: 'monospace',
+              fontFamily: "'IBM Plex Mono', monospace",
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#c8922a')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#3a2e1a')}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#d9a441')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = '#9d8b66')}
           >
             clear saved token
           </button>
@@ -313,7 +322,7 @@ export default function DiscordPanel() {
               marginTop: '8px',
               cursor: 'pointer',
               fontSize: '13px',
-              color: '#6b4e15',
+              color: '#a5813f',
               fontFamily: "'Crimson Text', serif",
             }}
           >
@@ -324,7 +333,7 @@ export default function DiscordPanel() {
                 setAutoConnect(e.target.checked)
                 window.doty.discordSetAutoConnect(e.target.checked)
               }}
-              style={{ accentColor: '#c8922a' }}
+              style={{ accentColor: '#d9a441' }}
             />
             Auto-connect to last channel on startup
           </label>
@@ -340,11 +349,11 @@ export default function DiscordPanel() {
           {isInVoice && (
             <div
               className="flex items-center gap-3 mb-3"
-              style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}
+              style={{ background: '#080705', border: '1px solid #3d2f1c', padding: '10px 12px' }}
             >
               <StatusDot color={voiceColor} shadow={voiceShadow} />
               <div className="flex-1 min-w-0">
-                <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
                   {state.voiceStatus === 'playing' ? 'Streaming' : 'In Channel'}
                 </p>
               </div>
@@ -372,7 +381,7 @@ export default function DiscordPanel() {
               <p
                 style={{
                   fontSize: '13px',
-                  color: '#3a2e1a',
+                  color: '#9d8b66',
                   fontFamily: "'Crimson Text', serif",
                   marginBottom: '8px',
                 }}
@@ -438,13 +447,13 @@ export default function DiscordPanel() {
               step={0.01}
               value={volume}
               onChange={(e) => handleVolumeChange(Number(e.target.value))}
-              style={{ flex: 1, accentColor: '#c8922a' }}
+              style={{ flex: 1, accentColor: '#d9a441' }}
             />
             <span
               style={{
                 fontSize: '15px',
-                color: '#c8b07a',
-                fontFamily: 'monospace',
+                color: '#e4d6b4',
+                fontFamily: "'IBM Plex Mono', monospace",
                 minWidth: '36px',
                 textAlign: 'right',
               }}
@@ -452,7 +461,7 @@ export default function DiscordPanel() {
               {Math.round(volume * 100)}%
             </span>
           </div>
-          <p style={{ fontSize: '14px', color: '#3a2e1a', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+          <p style={{ fontSize: '14px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
             Independent from local playback volume
           </p>
         </div>

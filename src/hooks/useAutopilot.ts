@@ -2,7 +2,7 @@
  * useAutopilot — state machine for automatic music transitions and SFX triggers.
  *
  * Monitors recommendation confidence and automatically acts when the ranker
- * is highly confident, respecting cooldowns, pinned tracks, and manual overrides.
+ * is highly confident, respecting cooldowns, pinned tracks and the DM's per-channel switches.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -49,8 +49,6 @@ export interface UseAutopilotReturn {
   state: AutopilotState
   /** Current config */
   config: AutopilotConfig
-  /** Whether autopilot is enabled */
-  enabled: boolean
   /** Pending music transition (if any) — shows countdown UI */
   pendingTransition: PendingTransition | null
   /** Last auto-triggered SFX (for flash UI) */
@@ -82,8 +80,6 @@ export function useAutopilot(
   onAutoPlay: (track: string) => void,
   onAutoSfx: (sfxId: string, volume: number) => void,
   isSfxPlaying: boolean,
-  /** The DM has taken playback by hand: autopilot proposes nothing until resumed. */
-  override: boolean,
 ): UseAutopilotReturn {
   const [config, setConfigState] = useState<AutopilotConfig>(DEFAULT_AUTOPILOT_CONFIG)
   const [state, setState] = useState<AutopilotState>('idle')
@@ -154,18 +150,6 @@ export function useAutopilot(
     recentlyPlayedRef.current.set(track, Date.now())
   }, [])
 
-  // Taking the table by hand must kill a countdown already in flight, or it fires
-  // and replaces the track the DM just chose.
-  useEffect(() => {
-    if (!override) return
-    if (countdownTimerRef.current) {
-      clearInterval(countdownTimerRef.current)
-      countdownTimerRef.current = null
-    }
-    setPendingTransition(null)
-    setState('idle')
-  }, [override])
-
   const onRecommendation = useCallback(
     (topTrack: string, confidence: number) => {
       // Always track latest confidence/candidate for UI display
@@ -173,11 +157,7 @@ export function useAutopilot(
       setLastCandidate(topTrack)
 
       const cfg = configRef.current
-      if (override) {
-        addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'override active' })
-        return
-      }
-      if (!cfg.enabled || !cfg.musicEnabled) {
+      if (!cfg.musicEnabled) {
         addLogEntry({ channel: 'music', action: 'skip', candidate: topTrack, confidence, reason: 'autopilot disabled' })
         return
       }
@@ -312,7 +292,7 @@ export function useAutopilot(
         }
       }, 1000)
     },
-    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay, addLogEntry, override],
+    [state, currentTrack, currentTrackStartTime, pinnedTracks, onAutoPlay, addLogEntry],
   )
 
   // ── SFX auto-trigger ────────────────────────────────────────────────
@@ -320,7 +300,7 @@ export function useAutopilot(
   const onSfxRecommendation = useCallback(
     (sfxIds: string[]) => {
       const cfg = configRef.current
-      if (override || !cfg.enabled || !cfg.sfxEnabled) return
+      if (!cfg.sfxEnabled) return
       if (sfxIds.length === 0) return
 
       const now = Date.now()
@@ -352,7 +332,7 @@ export function useAutopilot(
         setLastAutoSfx((prev) => (prev?.timestamp === now ? null : prev))
       }, 2000)
     },
-    [isSfxPlaying, onAutoSfx, addLogEntry, override],
+    [isSfxPlaying, onAutoSfx, addLogEntry],
   )
 
   // Cleanup on unmount
@@ -367,7 +347,6 @@ export function useAutopilot(
   return {
     state,
     config,
-    enabled: config.enabled,
     pendingTransition,
     lastAutoSfx,
     lastConfidence,

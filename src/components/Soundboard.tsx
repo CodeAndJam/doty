@@ -6,9 +6,10 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { indexChipText } from '../lib/indexStatus'
 import { describeTrack } from '../lib/rankTracks'
 import { trackKindOf } from '../lib/trackKind'
-import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
+import type { DecisionLogEntry, IndexProgress, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
 import { BrowseIcon, ChevronLeft, ChevronRight, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
@@ -78,18 +79,17 @@ function CollapsedRail({
       >
         {label}
       </span>
-      {count > 0 && <span style={{ fontFamily: 'monospace', fontSize: '10px' }}>{count}</span>}
+      {count > 0 && <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px' }}>{count}</span>}
     </button>
   )
 }
 
 interface Props {
   recommendations: string[]
-  /** The DM is driving by hand; the ranker stays idle until they resume. */
-  override: boolean
-  onManualAction: () => void
-  onResumeAuto: () => void
+  /** The effects the column offers: the model's ranking, best first. */
   sfxRecommendations: string[]
+  /** The `sfxRecommendations` the model was sure enough about for autopilot to fire. */
+  sfxAutopilot: string[]
   lastConfidence: number
   /** TypeSafe choice confidence: how settled the pick is across the candidates. */
   lastChoiceConfidence: number
@@ -102,19 +102,21 @@ interface Props {
   lastRanker: RankerType
   /** Whether the decision model is loaded, loading, or failed. */
   rankerStatus: 'loading' | 'ready' | 'error'
+  /** How far the library index has got; null until the first status arrives. */
+  indexStatus: IndexProgress | null
   lastTranscriptSnippet: string
   musicFolder: string
   speakerDeviceId?: string
   settingsOpen: boolean
+  /** The header's master switch: with it off nothing changes on its own. */
+  autopilotEnabled: boolean
   onNoFolder: () => void
 }
 
 export default function Soundboard({
-  override,
-  onManualAction,
-  onResumeAuto,
   recommendations,
   sfxRecommendations,
+  sfxAutopilot,
   lastConfidence,
   lastChoiceConfidence,
   probabilities,
@@ -122,10 +124,12 @@ export default function Soundboard({
   sessionText,
   lastRanker,
   rankerStatus,
+  indexStatus,
   lastTranscriptSnippet,
   musicFolder,
   speakerDeviceId,
   settingsOpen,
+  autopilotEnabled,
   onNoFolder,
 }: Props) {
   // ── Music state ──────────────────────────────────────────────────────
@@ -256,7 +260,9 @@ export default function Soundboard({
     return unsub
   }, [])
 
-  // Load SFX list on mount and whenever the folder changes
+  // Load SFX list on mount and whenever the shelf can have changed. A scan and the
+  // audio pass re-resolve every lane, and a suggestion computed from the new shelf
+  // cannot render against the list from before it.
   useEffect(() => {
     const load = () =>
       window.doty
@@ -264,7 +270,12 @@ export default function Soundboard({
         .then(setAllSfx)
         .catch(() => setAllSfx([]))
     load()
-    return window.doty.onSfxChanged(load)
+    const offSfx = window.doty.onSfxChanged(load)
+    const offScan = window.doty.onScanComplete(load)
+    return () => {
+      offSfx()
+      offScan()
+    }
   }, [])
 
   // Load SFX tags on mount
@@ -306,7 +317,6 @@ export default function Soundboard({
   }
 
   function recordSkip(track: string) {
-    onManualAction()
     window.doty
       .sessionDecision({
         at: Date.now(),
@@ -373,10 +383,9 @@ export default function Soundboard({
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
-    // An automatic change is not the DM taking over: latching override here would
-    // switch the director off on its own first cut.
+    // An automatic change is not a label: only the DM's own pick is what they
+    // chose for this moment.
     if (source === 'auto') return
-    onManualAction()
     // Every manual pick is a label: what the DM chose for this moment.
     window.doty
       .sessionPreference({ at: Date.now(), segment: sessionText, track: filename, scene, source: 'manual' })
@@ -429,7 +438,6 @@ export default function Soundboard({
     const track = queue.tracks[index]
     if (!track) return
     recordPreference(track)
-    onManualAction()
     queue.setCurrentIndex(index)
     if (playing === track) {
       // Same track — toggle pause/resume (matches the pause icon in the queue)
@@ -444,7 +452,6 @@ export default function Soundboard({
   function handlePlaySfx(sfxId: string, label: string, filename: string, loop?: boolean) {
     sfxPlayer.play(sfxId, label, filename, loop)
     window.doty.recordPlay(sfxId, 'sfx').catch(() => {})
-    onManualAction()
   }
 
   function toggleSfxPin(sfxId: string) {
@@ -500,7 +507,6 @@ export default function Soundboard({
       }
     },
     sfxPlayer.channels.length > 0,
-    override,
   )
 
   // Reload autopilot config when Settings modal closes
@@ -515,13 +521,13 @@ export default function Soundboard({
   // The director: main owns the scene and the policy, this only executes the plan.
   // Player timing lives in refs so the effect does not re-run every quarter second.
   const playerRef = useRef({ currentTime, duration })
-  const autopilotRef = useRef(autopilot.enabled)
+  const autopilotRef = useRef(autopilot.config.musicEnabled)
   useEffect(() => {
     playerRef.current = { currentTime, duration }
   }, [currentTime, duration])
   useEffect(() => {
-    autopilotRef.current = autopilot.enabled
-  }, [autopilot.enabled])
+    autopilotRef.current = autopilot.config.musicEnabled
+  }, [autopilot.config.musicEnabled])
 
   /** Crossing into the last 21 s of a track is its own trigger: silence at the table
    *  must not mean the boundary goes unplanned. */
@@ -552,8 +558,7 @@ export default function Soundboard({
         candidates: candidates.map((f) => describeTrack(f, metaMap[f], tagsMap[f] || [])),
         paths: candidates,
         msUntilTrackEnd: remaining,
-        autopilot: autopilotRef.current,
-        override,
+        musicEnabled: autopilotEnabled && autopilotRef.current,
         confidenceThreshold: autopilot.config.confidenceThreshold,
       })
       .then(({ tracks, plan }) => {
@@ -617,12 +622,12 @@ export default function Soundboard({
     candidates,
     lastRanker,
     sessionText,
-    override,
     nearEnd,
     refreshReport,
     metaMap,
     tagsMap,
     autopilot.config.confidenceThreshold,
+    autopilotEnabled,
   ])
 
   // Feed confidence to autopilot when recommendations change.
@@ -634,6 +639,7 @@ export default function Soundboard({
   onSfxRecommendationRef.current = autopilot.onSfxRecommendation
 
   useEffect(() => {
+    if (!autopilotEnabled) return
     if (recommendations.length === 0 || lastConfidence <= 0) return
     // The director owns music when the model is loaded: it changes at boundaries
     // and cuts in only on a categorical scene change. Feeding the legacy
@@ -641,14 +647,16 @@ export default function Soundboard({
     // replace a track mid-phrase.
     if (lastRanker === 'model') return
     onRecommendationRef.current(recommendations[0], lastConfidence)
-  }, [recommendations, lastConfidence, lastRanker])
+  }, [recommendations, lastConfidence, lastRanker, autopilotEnabled])
 
-  // Feed SFX recommendations to autopilot
+  // Feed SFX recommendations to autopilot. Only the confident ones: the column
+  // may offer five, but autopilot plays a sound nobody asked for.
   useEffect(() => {
-    if (sfxRecommendations.length > 0) {
-      onSfxRecommendationRef.current(sfxRecommendations)
+    if (!autopilotEnabled) return
+    if (sfxAutopilot.length > 0) {
+      onSfxRecommendationRef.current(sfxAutopilot)
     }
-  }, [sfxRecommendations])
+  }, [sfxAutopilot, autopilotEnabled])
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
@@ -740,7 +748,7 @@ export default function Soundboard({
 
   // ── Empty state helper ───────────────────────────────────────────────
 
-  const emptyState = (msg: string, sub?: string, color = '#6b4e15') => (
+  const emptyState = (msg: string, sub?: string, color = '#a5813f') => (
     <div className="flex-1 flex flex-col items-center justify-center relative" style={{ minHeight: '120px' }}>
       <p
         style={{ fontFamily: "'Cinzel', serif", fontSize: '13px', color, letterSpacing: '0.15em', textAlign: 'center' }}
@@ -754,7 +762,7 @@ export default function Soundboard({
           style={{
             marginTop: '8px',
             fontSize: '13px',
-            color: '#c8922a',
+            color: '#d9a441',
             fontFamily: "'Cinzel', serif",
             letterSpacing: '0.1em',
             opacity: 0.7,
@@ -777,8 +785,8 @@ export default function Soundboard({
           {!showMusic && (
             <CollapsedRail
               label="Music"
-              color="#c8922a"
-              borderColor="#2e2416"
+              color="#d9a441"
+              borderColor="#3d2f1c"
               icon={<MusicNoteIcon />}
               count={pinned.length + suggestions.length}
               onExpand={() => setShowMusic(true)}
@@ -790,19 +798,19 @@ export default function Soundboard({
               data-testid="autopilot-countdown"
               style={{ border: '1px solid rgba(200,146,42,0.45)', background: 'rgba(200,146,42,0.06)' }}
             >
-              <span style={{ fontSize: '11px', color: '#c8922a', fontFamily: 'monospace' }}>
+              <span style={{ fontSize: '11px', color: '#d9a441', fontFamily: "'IBM Plex Mono', monospace" }}>
                 autopilot switches in {autopilot.pendingTransition.countdown}s
               </span>
-              <span className="flex-1 min-w-0 truncate" style={{ fontSize: '11px', color: '#8a7050' }}>
+              <span className="flex-1 min-w-0 truncate" style={{ fontSize: '11px', color: '#b9a683' }}>
                 {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
               </span>
               <button
                 type="button"
                 onClick={autopilot.cancelTransition}
                 style={{
-                  fontSize: '10px',
-                  fontFamily: 'monospace',
-                  color: '#6b4e15',
+                  fontSize: '11px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#a5813f',
                   border: '1px solid rgba(107,78,21,0.4)',
                   padding: '0 4px',
                 }}
@@ -813,46 +821,46 @@ export default function Soundboard({
           )}
 
           {/* Music column header */}
-          <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
-            <button type="button" className="flex items-center gap-1.5" onClick={() => setShowMusic((v) => !v)}>
+          <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-3 shrink-0`}>
+            <button type="button" className="flex items-center gap-2" onClick={() => setShowMusic((v) => !v)}>
               <MusicNoteIcon />
               <span
                 style={{
                   fontFamily: "'Cinzel', serif",
-                  fontSize: '13px',
-                  letterSpacing: '0.2em',
+                  fontSize: '14px',
+                  letterSpacing: '0.18em',
                   textTransform: 'uppercase',
-                  color: '#c8922a',
+                  color: '#d9a441',
                 }}
               >
                 Music
               </span>
-              {autopilot.enabled && autopilot.config.musicEnabled && (
+              {autopilotEnabled && autopilot.config.musicEnabled && (
                 <span
                   data-testid="autopilot-chip"
                   title={`At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(
                     autopilot.config.confidenceThreshold * 100,
                   )}% with a clear margin.`}
                   style={{
-                    fontSize: '9px',
-                    color: autopilot.state === 'idle' ? '#6b4e15' : '#c8922a',
+                    fontSize: '11px',
+                    color: autopilot.state === 'idle' ? '#a5813f' : '#d9a441',
                     border: `1px solid ${autopilot.state === 'idle' ? 'rgba(107,78,21,0.4)' : 'rgba(200,146,42,0.5)'}`,
                     padding: '1px 4px',
-                    fontFamily: 'monospace',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     letterSpacing: '0.1em',
                   }}
                 >
                   AUTO · when sure
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+              <span style={{ color: '#9d8b66', marginLeft: '2px' }}>
                 <ChevronLeft />
               </span>
             </button>
             {showMusic && (
               <div className="flex items-center gap-2">
                 {hasTracks && (
-                  <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                  <span style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
                     {pinned.length > 0 ? `${pinned.length} pinned` : ''}
                     {pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}
                     {suggestions.length > 0
@@ -866,9 +874,10 @@ export default function Soundboard({
                   <button
                     type="button"
                     onClick={() => setBrowsing(true)}
-                    className="p-1 hover:opacity-80 transition-opacity"
+                    className="p-1.5 hover:opacity-100 transition-opacity"
                     title="Browse all tracks"
-                    style={{ border: '1px solid #2e2416' }}
+                    aria-label="Browse all tracks"
+                    style={{ border: '1px solid #7a6138', color: '#b9a683' }}
                   >
                     <BrowseIcon />
                   </button>
@@ -888,9 +897,9 @@ export default function Soundboard({
                 fontFamily: "'Crimson Text', serif",
               }}
             >
-              <span style={{ color: '#c8b07a' }}>
+              <span style={{ color: '#e4d6b4' }}>
                 Switching to{' '}
-                <span style={{ color: '#c8922a' }}>
+                <span style={{ color: '#d9a441' }}>
                   {autopilot.pendingTransition.track.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')}
                 </span>{' '}
                 in {autopilot.pendingTransition.countdown}s…
@@ -900,8 +909,8 @@ export default function Soundboard({
                 onClick={autopilot.cancelTransition}
                 style={{
                   fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: '#c8922a',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#d9a441',
                   border: '1px solid rgba(200,146,42,0.3)',
                   padding: '2px 8px',
                   background: 'rgba(200,146,42,0.1)',
@@ -920,19 +929,9 @@ export default function Soundboard({
               <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
                 {/* Pinned section */}
                 {pinned.length > 0 && (
-                  <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
+                  <div className="flex items-center gap-2 shrink-0 mt-1" style={{ height: '28px' }}>
                     <PinIcon filled />
-                    <span
-                      style={{
-                        fontFamily: "'Cinzel', serif",
-                        fontSize: '11px',
-                        letterSpacing: '0.2em',
-                        color: '#6b4e15',
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      Pinned
-                    </span>
+                    <span className="label-caps">Pinned</span>
                     <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
                   </div>
                 )}
@@ -960,21 +959,16 @@ export default function Soundboard({
 
                 {/* Suggestions section */}
                 {suggestions.length > 0 && (
-                  <div className="flex items-center gap-2 shrink-0" style={{ height: '20px' }}>
-                    <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
-                    <span
-                      style={{
-                        fontFamily: "'Cinzel', serif",
-                        fontSize: '11px',
-                        letterSpacing: '0.2em',
-                        color: '#3a2e1a',
-                        textTransform: 'uppercase',
-                      }}
-                    >
+                  <div
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 shrink-0 mt-1 mb-1"
+                    style={{ minHeight: '28px' }}
+                  >
+                    <span style={{ fontSize: '11px', color: '#9d8b66' }}>&#x2B21;</span>
+                    <span className="label-caps">
                       Suggestions
                       {lastRanker === 'model' && lastConfidence >= HIGHLIGHT_CONFIDENCE && (
                         <span
-                          style={{ color: '#c8922a', fontSize: '9px', fontFamily: 'monospace' }}
+                          style={{ color: '#d9a441', fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace" }}
                           title={`Above ${Math.round(HIGHLIGHT_CONFIDENCE * 100)}% the suggestion is called out. Autopilot only acts above its own threshold.`}
                         >
                           {' '}
@@ -987,11 +981,11 @@ export default function Soundboard({
                       <span
                         data-testid="ranker-badge"
                         style={{
-                          fontSize: '9px',
-                          fontFamily: 'monospace',
+                          fontSize: '11px',
+                          fontFamily: "'IBM Plex Mono', monospace",
                           padding: '0 4px',
                           border: `1px solid ${lastRanker === 'model' ? 'rgba(200,146,42,0.35)' : 'rgba(107,78,21,0.25)'}`,
-                          color: lastRanker === 'model' ? '#c8922a' : '#6b4e15',
+                          color: lastRanker === 'model' ? '#d9a441' : '#a5813f',
                           letterSpacing: '0.05em',
                         }}
                         title={`Ranked by ${lastRanker}${lastChoiceConfidence > 0 ? ` — confidence ${(lastChoiceConfidence * 100).toFixed(1)}% (how settled the choice is; each card shows its own probability)` : ''}`}
@@ -1011,7 +1005,7 @@ export default function Soundboard({
                     {scene && (
                       <span
                         data-testid="session-scene"
-                        style={{ fontSize: '9px', fontFamily: 'monospace', color: '#4a3a20' }}
+                        style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#96825f' }}
                         title="The scene the director currently holds, after hysteresis"
                       >
                         scene · {scene}
@@ -1020,44 +1014,43 @@ export default function Soundboard({
                     {report && (report.autoActions > 0 || report.manualPicks > 0) && (
                       <span
                         data-testid="session-report"
-                        style={{ fontSize: '9px', fontFamily: 'monospace', color: '#4a3a20' }}
+                        style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#96825f' }}
                         title="Automatic changes, manual picks, and the share of acted-on decisions the DM replaced"
                       >
                         auto {report.autoActions} · manual {report.manualPicks} · override{' '}
                         {Math.round(report.overrideRate * 100)}%
                       </span>
                     )}
-                    {override && (
-                      <button
-                        type="button"
-                        onClick={onResumeAuto}
-                        title="Playback is yours until you resume automatic suggestions"
+                    {indexChipText(indexStatus) && (
+                      <span
+                        data-testid="index-chip"
                         style={{
-                          fontSize: '9px',
-                          fontFamily: 'monospace',
+                          fontSize: '11px',
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          color: indexStatus?.paused ? '#b06a2a' : '#96825f',
+                          border: '1px solid rgba(46,36,22,0.6)',
                           padding: '0 4px',
-                          border: '1px solid rgba(74,138,106,0.45)',
-                          color: '#4a8a6a',
-                          letterSpacing: '0.05em',
                         }}
+                        title="The library is being embedded in the background; recording pauses it"
                       >
-                        RESUME AUTO
-                      </button>
+                        {indexChipText(indexStatus)}
+                      </span>
                     )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
                     {/* Decision log toggle */}
                     <button
                       type="button"
                       onClick={() => setShowDecisionLog((v) => !v)}
-                      className="opacity-40 hover:opacity-100 transition-opacity"
+                      className="opacity-80 hover:opacity-100 transition-opacity"
                       title="Toggle decision log (beta)"
+                      aria-pressed={showDecisionLog}
                       style={{
-                        fontSize: '9px',
-                        fontFamily: 'monospace',
-                        color: showDecisionLog ? '#c8922a' : '#6b4e15',
-                        border: `1px solid ${showDecisionLog ? 'rgba(200,146,42,0.4)' : 'rgba(107,78,21,0.2)'}`,
-                        padding: '0 4px',
-                        lineHeight: '16px',
+                        fontSize: '11px',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        color: showDecisionLog ? '#d9a441' : '#b9a683',
+                        border: `1px solid ${showDecisionLog ? 'rgba(217,164,65,0.5)' : '#7a6138'}`,
+                        padding: '1px 6px',
+                        lineHeight: '18px',
                       }}
                     >
                       LOG
@@ -1077,7 +1070,7 @@ export default function Soundboard({
                     tags={tagsMap[f] || []}
                     allTags={allTags}
                     probability={lastRanker === 'model' ? probabilities[f] : undefined}
-                    kind={trackKindOf(f, metaMap[f]) === 'sfx' ? 'sfx' : 'music'}
+                    kind={(metaMap[f]?.lane ?? trackKindOf(f, metaMap[f])) === 'sfx' ? 'sfx' : 'music'}
                     onMoveTo={(target) => {
                       window.doty.moveTrack(f, target).then((r) => {
                         if (r.ok) setMovedAway((prev) => [...prev, f])
@@ -1097,22 +1090,12 @@ export default function Soundboard({
                 {considered.length > 0 && (
                   <div className="shrink-0 mt-1" data-testid="considered-list">
                     <div className="flex items-center gap-2" style={{ height: '18px' }}>
-                      <span
-                        style={{
-                          fontFamily: "'Cinzel', serif",
-                          fontSize: '10px',
-                          letterSpacing: '0.2em',
-                          color: '#2e2416',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        also considered · {candidates.length} ranked
-                      </span>
-                      <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.35)' }} />
+                      <span className="label-caps">also considered · {candidates.length} ranked</span>
+                      <div className="flex-1 h-px" style={{ background: 'rgba(122,97,56,0.25)' }} />
                     </div>
                     <div className="overflow-y-auto" style={{ maxHeight: '168px' }}>
                       {considered.map((f) => (
-                        <div key={`alt-${f}`} className="mb-1" style={{ opacity: 0.55 }}>
+                        <div key={`alt-${f}`} className="mb-1 opacity-80">
                           <TrackCard
                             filename={f}
                             isPlaying={playing === f}
@@ -1153,7 +1136,7 @@ export default function Soundboard({
           {!showSfx && (
             <CollapsedRail
               label="SFX"
-              color="#4a8a6a"
+              color="#6dbf95"
               borderColor="rgba(74,138,106,0.3)"
               icon={<SfxIcon />}
               count={sfxPinned.length + sfxSuggestions.length}
@@ -1161,8 +1144,8 @@ export default function Soundboard({
             />
           )}
           {/* SFX column header */}
-          <div className={`${showSfx ? 'flex' : 'hidden'} items-center justify-between mb-2 shrink-0`}>
-            <button type="button" className="flex items-center gap-1.5" onClick={() => setShowSfx((v) => !v)}>
+          <div className={`${showSfx ? 'flex' : 'hidden'} items-center justify-between mb-3 shrink-0`}>
+            <button type="button" className="flex items-center gap-2" onClick={() => setShowSfx((v) => !v)}>
               <SfxIcon />
               <span
                 style={{
@@ -1170,19 +1153,19 @@ export default function Soundboard({
                   fontSize: '13px',
                   letterSpacing: '0.2em',
                   textTransform: 'uppercase',
-                  color: '#4a8a6a',
+                  color: '#6dbf95',
                 }}
               >
                 SFX
               </span>
-              {autopilot.enabled && autopilot.config.sfxEnabled && (
+              {autopilot.config.sfxEnabled && (
                 <span
                   style={{
-                    fontSize: '9px',
-                    color: autopilot.lastAutoSfx ? '#4a8a6a' : '#2a5a3a',
+                    fontSize: '11px',
+                    color: autopilot.lastAutoSfx ? '#6dbf95' : '#3f7d5c',
                     border: `1px solid ${autopilot.lastAutoSfx ? 'rgba(74,138,106,0.5)' : 'rgba(74,138,106,0.3)'}`,
                     padding: '1px 4px',
-                    fontFamily: 'monospace',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     letterSpacing: '0.1em',
                     transition: 'all 0.3s ease',
                   }}
@@ -1190,14 +1173,14 @@ export default function Soundboard({
                   AUTO
                 </span>
               )}
-              <span style={{ color: '#3a2e1a', marginLeft: '2px' }}>
+              <span style={{ color: '#9d8b66', marginLeft: '2px' }}>
                 <ChevronRight />
               </span>
             </button>
             {showSfx && (
               <div className="flex items-center gap-2">
                 {allSfx.length > 0 && (
-                  <span style={{ fontSize: '11px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                  <span style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
                     {sfxPinned.length > 0 ? `${sfxPinned.length} pinned` : ''}
                     {sfxPinned.length > 0 && hasActiveSfx ? ' / ' : ''}
                     {hasActiveSfx ? `${sfxPlayer.channels.length} active` : ''}
@@ -1209,7 +1192,7 @@ export default function Soundboard({
                     onClick={sfxPlayer.stopAll}
                     className="p-1 hover:opacity-80 transition-opacity"
                     title="Stop all effects"
-                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#4a8a6a' }}
+                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#6dbf95' }}
                   >
                     <StopIcon />
                   </button>
@@ -1220,7 +1203,7 @@ export default function Soundboard({
                     onClick={() => setBrowsingSfx(true)}
                     className="p-1 hover:opacity-80 transition-opacity"
                     title="Browse all effects"
-                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#4a8a6a' }}
+                    style={{ border: '1px solid rgba(74,138,106,0.3)', color: '#6dbf95' }}
                   >
                     <BrowseIcon />
                   </button>
@@ -1247,7 +1230,7 @@ export default function Soundboard({
                           color: '#a8d5b8',
                         }}
                       >
-                        {ch.looping && <span style={{ fontSize: '8px', color: '#4a8a6a' }}>&#x21BB;</span>}
+                        {ch.looping && <span style={{ fontSize: '8px', color: '#6dbf95' }}>&#x21BB;</span>}
                         <span className="truncate" style={{ maxWidth: '80px' }}>
                           {ch.label}
                         </span>
@@ -1255,7 +1238,7 @@ export default function Soundboard({
                           type="button"
                           onClick={() => sfxPlayer.stop(ch.id)}
                           className="w-3 h-3 flex items-center justify-center hover:opacity-80"
-                          style={{ color: '#4a8a6a' }}
+                          style={{ color: '#6dbf95' }}
                         >
                           <svg
                             className="w-2.5 h-2.5"
@@ -1277,9 +1260,9 @@ export default function Soundboard({
               <div className="flex items-center gap-2 mb-2 shrink-0">
                 <span
                   style={{
-                    fontSize: '10px',
-                    fontFamily: 'monospace',
-                    color: '#3a2e1a',
+                    fontSize: '11px',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    color: '#9d8b66',
                     textTransform: 'uppercase',
                     letterSpacing: '0.1em',
                   }}
@@ -1293,14 +1276,14 @@ export default function Soundboard({
                   value={Math.round(sfxPlayer.masterVolume * 100)}
                   onChange={(e) => sfxPlayer.setMasterVolume(Number(e.target.value) / 100)}
                   className="flex-1"
-                  style={{ accentColor: '#4a8a6a', height: '2px' }}
+                  style={{ accentColor: '#6dbf95' }}
                   aria-label="SFX master volume"
                 />
                 <span
                   style={{
-                    fontSize: '10px',
-                    fontFamily: 'monospace',
-                    color: '#3a2e1a',
+                    fontSize: '11px',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    color: '#9d8b66',
                     minWidth: '28px',
                     textAlign: 'right',
                   }}
@@ -1311,27 +1294,17 @@ export default function Soundboard({
 
               {/* SFX content — scrollable */}
               {allSfx.length === 0 ? (
-                emptyState('No sound effects available', undefined, '#4a8a6a')
+                emptyState('No sound effects available', undefined, '#6dbf95')
               ) : !hasSfx ? (
-                emptyState('No pinned or suggested effects', undefined, '#4a8a6a')
+                emptyState('No pinned or suggested effects', undefined, '#6dbf95')
               ) : (
                 <div className="flex-1 min-h-0 overflow-y-auto">
                   {/* Pinned SFX */}
                   {pinnedSfxItems.length > 0 && (
                     <>
-                      <div className="flex items-center gap-2 shrink-0 mb-1" style={{ height: '20px' }}>
+                      <div className="flex items-center gap-2 shrink-0 mb-1 mt-1" style={{ height: '28px' }}>
                         <PinIcon filled />
-                        <span
-                          style={{
-                            fontFamily: "'Cinzel', serif",
-                            fontSize: '11px',
-                            letterSpacing: '0.2em',
-                            color: '#4a8a6a',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          Pinned
-                        </span>
+                        <span className="label-caps">Pinned</span>
                         <div className="flex-1 h-px" style={{ background: 'rgba(74,138,106,0.15)' }} />
                       </div>
                       <div className="grid grid-cols-2 gap-1 mb-2">{pinnedSfxItems.map(renderSfxCard)}</div>
@@ -1341,20 +1314,10 @@ export default function Soundboard({
                   {/* Suggested SFX */}
                   {sfxSuggestions.length > 0 && (
                     <>
-                      <div className="flex items-center gap-2 shrink-0 mb-1" style={{ height: '20px' }}>
-                        <span style={{ fontSize: '10px', color: '#3a2e1a' }}>&#x2B21;</span>
-                        <span
-                          style={{
-                            fontFamily: "'Cinzel', serif",
-                            fontSize: '11px',
-                            letterSpacing: '0.2em',
-                            color: '#3a2e1a',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          Suggested
-                        </span>
-                        <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
+                      <div className="flex items-center gap-2 shrink-0 mb-1 mt-1" style={{ height: '28px' }}>
+                        <span style={{ fontSize: '11px', color: '#9d8b66' }}>&#x2B21;</span>
+                        <span className="label-caps">Suggested</span>
+                        <div className="flex-1 h-px" style={{ background: 'rgba(122,97,56,0.25)' }} />
                       </div>
                       <div className="grid grid-cols-2 gap-1">{sfxSuggestions.map(renderSfxCard)}</div>
                     </>

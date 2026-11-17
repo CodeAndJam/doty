@@ -7,8 +7,7 @@ const base = {
   now,
   msUntilTrackEnd: 15_000,
   msSinceLastChange: 600_000,
-  autopilot: true,
-  override: false,
+  musicEnabled: true,
 }
 
 const peaceful = {
@@ -89,9 +88,9 @@ describe('planStep', () => {
     expect(step.action.kind).toBe('play-now')
   })
 
-  it('keeps playing while the DM has taken over', () => {
-    const step = planStep({ ...base, previous: null, observation: peaceful, override: true })
+  it('keeps playing while automatic music changes are off', () => {
+    const step = planStep({ ...base, previous: null, observation: peaceful, musicEnabled: false })
     expect(step.action.kind).toBe('hold')
-    expect(step.action.reason).toMatch(/DM|playback/i)
+    expect(step.action.reason).toMatch(/automatic/i)
   })
 })

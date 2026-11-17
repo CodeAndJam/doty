@@ -49,19 +49,29 @@ contextBridge.exposeInMainWorld('doty', {
     candidates: string[]
     paths: string[]
     msUntilTrackEnd: number | null
-    autopilot: boolean
-    override: boolean
+    musicEnabled: boolean
   }) => invoke(INVOKE.sessionEvaluate, request),
   sessionDecision: (row: unknown) => invoke(INVOKE.sessionDecision, row),
   sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
-  similarTracks: (text: string, k: number) => invoke(INVOKE.similarTracks, text, k) as Promise<string[]>,
+  libraryLanes: () =>
+    invoke(INVOKE.libraryLanes) as Promise<
+      Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>
+    >,
+  librarySearch: (text: string, lane: 'music' | 'sfx', k: number) =>
+    invoke(INVOKE.librarySearch, text, lane, k) as Promise<{
+      mode: 'semantic' | 'text'
+      items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string; origin: 'music' | 'sfx' }>
+    }>,
   sfxRank: (state: string, candidates: string[]) => invoke(INVOKE.sfxRank, state, candidates) as Promise<number[]>,
   moveTrack: (path: string, target: 'music' | 'sfx') =>
     invoke(INVOKE.moveTrack, path, target) as Promise<{ ok: boolean; reason?: string; path?: string }>,
-  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => subscribe(EVENTS.embeddingProgress, cb),
-  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
+  /** Label a track without touching the disk: a lane is a label, not a folder. */
+  setLane: (key: string, lane: 'music' | 'sfx') => invoke(INVOKE.setLane, key, lane) as Promise<{ ok: boolean }>,
+  onEmbeddingProgress: (cb: (p: import('../src/types').IndexProgress) => void) =>
+    subscribe(EVENTS.embeddingProgress, cb),
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string; reason?: string }) => void) =>
     subscribe(EVENTS.rankerDownloadProgress, cb),
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),
@@ -131,6 +141,11 @@ contextBridge.exposeInMainWorld('doty', {
   // Autopilot (#12)
   getAutopilotConfig: () => invoke(INVOKE.getAutopilotConfig),
   setAutopilotConfig: (config: Record<string, unknown>) => invoke(INVOKE.setAutopilotConfig, config),
+
+  // Debug
+  debugGetState: () => invoke(INVOKE.debugGetState),
+  debugSetEnabled: (enabled: boolean) => invoke(INVOKE.debugSetEnabled, enabled),
+  debugOpenLog: () => invoke(INVOKE.debugOpenLog),
 
   // Discord
   discordConnect: (token?: string) => invoke(INVOKE.discordConnect, token),

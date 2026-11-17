@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
-import { confidentSfx } from '../lib/sfxRank'
+import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
+import { confidentSfx, mergeSfxCandidates, rankSfxCandidates } from '../lib/sfxRank'
+import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
 import Soundboard from './Soundboard'
@@ -25,8 +27,17 @@ export default function MainLayout() {
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   /** The transcript window the director reads: wider than the UI snippet. */
   const [sessionText, setSessionText] = useState('')
+  const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
+  const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
+  /** The subset the model was sure enough about for autopilot to play unasked. */
+  const [sfxAutopilot, setSfxAutopilot] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  /**
+   * The master switch, persisted: Doty changes nothing on its own until the DM
+   * turns this on, and it stays on (or off) across relaunches.
+   */
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(
     () => localStorage.getItem(MIC_STORAGE_KEY) ?? undefined,
@@ -36,7 +47,6 @@ export default function MainLayout() {
   )
   const [dmPrompt, setDmPrompt] = useState('')
   const [rankerCached, setRankerCached] = useState<boolean | null>(null)
-  const [override, setOverride] = useState(false)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
@@ -89,6 +99,8 @@ export default function MainLayout() {
     }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** What the last recommendation was based on, for the two cadence gates. */
+  const lastRunRef = useRef({ at: 0, words: 0 })
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const recommendCountRef = useRef(recommendCount)
@@ -112,10 +124,11 @@ export default function MainLayout() {
     sfxRecommendCountRef.current = sfxRecommendCount
   }, [sfxRecommendCount])
 
-  // Load recommendation count from settings on mount
+  // Load recommendation count and the autopilot master switch on mount
   useEffect(() => {
     window.doty.getRecommendationCount().then(setRecommendCount)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
+    window.doty.getAutopilotConfig().then((cfg) => setAutopilotEnabled(cfg.enabled))
   }, [])
 
   // Load sessions and restore last active session on mount
@@ -188,8 +201,6 @@ export default function MainLayout() {
   const showRankerMissing = rankerCached === false && modelStatus !== 'ready'
 
   const runRecommendation = useCallback(async () => {
-    // Override: the DM is driving by hand, so the ranker stays idle.
-    if (override) return
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
     if (files.length === 0) {
@@ -212,7 +223,8 @@ export default function MainLayout() {
     setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(recentTranscript)
-  }, [override])
+    lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
+  }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     const sfxList = await window.doty.getSfxList()
@@ -225,14 +237,28 @@ export default function MainLayout() {
     const playFrequencies = await window.doty.getPlayFrequencies('sfx')
     const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
     console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
-    const results = heuristicSfxRecommend(text, sfxList, sfxRecommendCountRef.current, tagsMap, playFrequencies)
-    console.log('[sfx-recommend] results:', results.length, results)
-    setSfxRecommendations(results)
+    const count = sfxRecommendCountRef.current
+    const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
 
-    // The model decides when a sound is worth firing; the keyword shortlist only
-    // narrows what it chooses between. A missing model leaves the heuristic list.
-    if (!text.trim()) return
-    const descriptions = results.map((id) => {
+    // Keywords cannot answer a concept: "air" is in no mood profile and no label,
+    // so the heuristic falls back to history and offers a monster roar. The index
+    // can answer it — the same one the search box uses — so both lists go to the
+    // model, which is the only thing that can tell which of them fits the scene.
+    const hits = text.trim() ? await window.doty.librarySearch(text, 'sfx', count).catch(() => null) : null
+    const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
+    const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
+    const candidates = mergeSfxCandidates(nearest, results, count)
+    console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
+    setSfxRecommendations(candidates)
+
+    // The model decides when a sound is worth firing; the shortlist only narrows
+    // what it chooses between. A missing model leaves the shortlist and nothing
+    // for autopilot.
+    if (!text.trim()) {
+      setSfxAutopilot([])
+      return
+    }
+    const descriptions = candidates.map((id) => {
       const sfx = sfxList.find((s) => s.id === id)
       const tags = (tagsMap[id] ?? []).join(', ')
       return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
@@ -241,9 +267,11 @@ export default function MainLayout() {
     window.doty
       .sfxRank(text, descriptions)
       .then((probabilities) => {
-        const confident = confidentSfx(results, probabilities)
-        // Nothing clears the bar: silence is the right answer, not the second best.
-        setSfxRecommendations(confident.map((c) => c.path))
+        // The column shows the model's ranking — nothing fires from it, so a
+        // second-best suggestion costs the DM one glance. Autopilot is the part
+        // that must be sure: it plays a sound nobody asked for.
+        setSfxRecommendations(rankSfxCandidates(candidates, probabilities, count))
+        setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
       })
       .catch(() => {})
   }, [])
@@ -294,13 +322,43 @@ export default function MainLayout() {
       setTranscripts((prev) => [...prev, { text, elapsedMs }])
       setInterimText('') // Clear interim when final arrives
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
-      // Debounce STT-triggered recommendations — run via Web Worker, not main process
+      // Debounce STT-triggered recommendations, then apply the cadence gates:
+      // three new words, and two seconds since the last answer. A request that is
+      // only too early is retried when the interval allows, not dropped, or a
+      // long uninterrupted sentence would never refresh.
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
-      recommendDebounceRef.current = setTimeout(runRecommendation, 1500)
+      const maybeRecommend = () => {
+        const wordsSince = countWords(transcriptBufferRef.current) - lastRunRef.current.words
+        const msSince = Date.now() - lastRunRef.current.at
+        if (!shouldRecommend(wordsSince, msSince)) {
+          const wait = waitBeforeRecommending(msSince)
+          if (wordsSince >= MIN_NEW_WORDS && wait > 0) {
+            recommendDebounceRef.current = setTimeout(maybeRecommend, wait)
+          }
+          return
+        }
+        void runRecommendation()
+      }
+      recommendDebounceRef.current = setTimeout(maybeRecommend, 1500)
       // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
       // autopilot needs low latency for reactive SFX triggers (see #43)
       runSfxRecommendation()
     })
+
+    // The index runs in the background for minutes; one subscription feeds the
+    // browser chip and Settings without either polling. Subscribe before the
+    // fetch, or an event during the round trip is overwritten by the snapshot.
+    let sawIndexEvent = false
+    const unsubIndex = window.doty.onEmbeddingProgress((status) => {
+      sawIndexEvent = true
+      setIndexStatus(status)
+    })
+    window.doty
+      .embeddingStatus()
+      .then((status) => {
+        if (!sawIndexEvent) setIndexStatus(status)
+      })
+      .catch(() => {})
 
     const unsubSttStatus = window.doty.onSttStatus((status) => {
       if (status === 'crashed' || status === 'error') {
@@ -364,6 +422,7 @@ export default function MainLayout() {
     return () => {
       unsubTranscript()
       unsubSttStatus()
+      unsubIndex()
       unsubInterim()
       unsubModelSwitch()
       unsubParagraphBreak()
@@ -415,6 +474,7 @@ export default function MainLayout() {
         const res = await window.doty.sttStart()
         if (!res.ok) {
           stop()
+          setSettingsSection('transcription')
           setShowSettings(true)
           return
         }
@@ -452,7 +512,8 @@ export default function MainLayout() {
           <button
             type="button"
             onClick={toggleRecording}
-            className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+            aria-pressed={recording}
+            className="flex items-center gap-2 px-2.5 py-1.5 transition-all hover:opacity-90"
             style={{
               border: `1px solid ${recording ? 'rgba(239,68,68,0.3)' : sttReady === false ? 'rgba(200,146,42,0.3)' : 'rgba(74,138,106,0.3)'}`,
               background: recording ? 'rgba(239,68,68,0.06)' : 'transparent',
@@ -468,7 +529,7 @@ export default function MainLayout() {
             <div
               className="w-1.5 h-1.5 rounded-full"
               style={{
-                background: recording ? '#ef4444' : sttReady === false ? '#c8922a' : '#4a8a6a',
+                background: recording ? '#ef4444' : sttReady === false ? '#d9a441' : '#6dbf95',
                 boxShadow: recording
                   ? '0 0 6px rgba(239,68,68,0.8)'
                   : sttReady === false
@@ -483,12 +544,12 @@ export default function MainLayout() {
                   asrStatus === 'crashed'
                     ? '#f59e0b'
                     : sttReady === false
-                      ? '#c8922a'
+                      ? '#d9a441'
                       : recording
                         ? asrStatus === 'loading'
-                          ? '#c8922a'
+                          ? '#d9a441'
                           : '#ef4444'
-                        : '#4a8a6a',
+                        : '#6dbf95',
                 fontSize: '11px',
               }}
             >
@@ -506,7 +567,10 @@ export default function MainLayout() {
           {(sttDownload || sttDownloadError) && (
             <button
               type="button"
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                setSettingsSection('transcription')
+                setShowSettings(true)
+              }}
               className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
               style={{ border: '1px solid rgba(200,146,42,0.3)' }}
               title={
@@ -515,7 +579,7 @@ export default function MainLayout() {
                   : 'Downloading speech model — the rest of Doty stays usable'
               }
             >
-              <span style={{ color: '#c8922a', fontSize: '11px', fontFamily: 'monospace' }}>
+              <span style={{ color: '#d9a441', fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace" }}>
                 {sttDownloadError ? 'Model failed — retry in Settings' : `Model ${sttDownload?.percent ?? 0}%`}
               </span>
             </button>
@@ -525,21 +589,56 @@ export default function MainLayout() {
               className="px-2 py-1"
               style={{
                 border: '1px solid rgba(200,146,42,0.3)',
-                color: '#c8922a',
+                color: '#d9a441',
                 fontSize: '11px',
-                fontFamily: 'monospace',
+                fontFamily: "'IBM Plex Mono', monospace",
               }}
               title="The ranker model is not installed. Recommendations use heuristics until it is."
             >
               Ranker warming up
             </span>
           )}
+          {/* The master switch. Off until the DM asks for it: suggestions are
+              always offered, but nothing changes on its own. */}
+          <button
+            type="button"
+            data-testid="autopilot-toggle"
+            aria-pressed={autopilotEnabled}
+            onClick={() => {
+              const next = !autopilotEnabled
+              setAutopilotEnabled(next)
+              window.doty.setAutopilotConfig({ enabled: next }).catch(() => {})
+            }}
+            className="flex items-center gap-2 px-2.5 py-1.5 transition-all hover:opacity-90"
+            style={{
+              border: `1px solid ${autopilotEnabled ? 'rgba(217,164,65,0.5)' : '#7a6138'}`,
+              color: autopilotEnabled ? '#d9a441' : '#9d8b66',
+              fontSize: '11px',
+              fontFamily: "'IBM Plex Mono', monospace",
+              letterSpacing: '0.1em',
+            }}
+            title={
+              autopilotEnabled
+                ? 'Autopilot is on: music and SFX change on their own at a track boundary when the pick is clear'
+                : 'Autopilot is off: Doty suggests, but what plays stays in your hands'
+            }
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background: autopilotEnabled ? '#d9a441' : '#9d8b66',
+                boxShadow: autopilotEnabled ? '0 0 6px rgba(200,146,42,0.8)' : 'none',
+              }}
+            />
+            AUTOPILOT {autopilotEnabled ? 'ON' : 'OFF'}
+          </button>
           <button
             type="button"
             onClick={() => setShowTranscript((v) => !v)}
-            className="p-1 opacity-40 hover:opacity-100 transition-opacity"
+            className="p-1.5 opacity-70 hover:opacity-100 transition-opacity"
             title={showTranscript ? 'Hide transcript' : 'Show transcript'}
-            style={{ color: '#6b4e15' }}
+            aria-label={showTranscript ? 'Hide transcript' : 'Show transcript'}
+            style={{ color: '#a5813f' }}
           >
             {showTranscript ? <EyeOffIcon /> : <EyeIcon />}
           </button>
@@ -548,7 +647,7 @@ export default function MainLayout() {
         {/* Title */}
         <h1
           className="text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2"
-          style={{ fontFamily: "'Cinzel', serif", color: '#c8922a', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
+          style={{ fontFamily: "'Cinzel', serif", color: '#d9a441', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
         >
           Doty
         </h1>
@@ -556,9 +655,13 @@ export default function MainLayout() {
         {/* Settings button */}
         <button
           type="button"
-          onClick={() => setShowSettings(true)}
-          className="relative p-1.5 transition-all group"
-          style={{ color: '#6b4e15' }}
+          onClick={() => {
+            setSettingsSection('library')
+            setShowSettings(true)
+          }}
+          className="relative p-2 transition-all group"
+          aria-label="Open settings"
+          style={{ color: '#a5813f' }}
         >
           <GearIcon
             className="w-4 h-4 transition-all group-hover:rotate-45 group-hover:text-accent"
@@ -571,7 +674,7 @@ export default function MainLayout() {
       <div className="flex flex-1 gap-4 px-6 pb-6 overflow-hidden">
         {/* Left: Transcript (hidden entirely when collapsed) */}
         {showTranscript && (
-          <div className="flex flex-col shrink-0 gap-2 w-72">
+          <div className="flex flex-col shrink-0 gap-2 w-[22rem]">
             <Transcript
               segments={transcripts}
               recording={recording}
@@ -581,11 +684,14 @@ export default function MainLayout() {
               sessions={sessions}
               activeSession={activeSession}
               sessionStartTime={sessionStartTime}
-              onNewSession={async () => {
-                const s = await window.doty.sessionCreate()
+              onNewSession={async (name: string) => {
+                const s = await window.doty.sessionCreate(name)
                 setSessions((prev) => [s, ...prev])
                 setActiveSession(s.file)
                 setTranscripts([])
+                // Main restarts its own clock for the new file; the header must
+                // restart with it, or the take keeps counting from the old one.
+                if (recording) setSessionStartTime(Date.now())
               }}
               onSwitchSession={async (file) => {
                 setActiveSession(file)
@@ -654,13 +760,16 @@ export default function MainLayout() {
               value={dmPrompt}
               onChange={(e) => handleDmChange(e.target.value)}
               placeholder="Describe the mood or scene…"
-              className="flex-1 bg-transparent outline-none text-sm w-full"
+              aria-label="Describe the mood or scene"
+              className="flex-1 bg-transparent outline-none w-full"
               style={{
                 fontFamily: "'Crimson Text', serif",
-                fontSize: '15px',
-                color: '#c8922a',
-                border: '1px solid #2e2416',
-                padding: '8px 12px',
+                fontSize: '16px',
+                color: '#e4d6b4',
+                background: '#100e0a',
+                border: '1px solid #3d2f1c',
+                borderRadius: '3px',
+                padding: '10px 14px',
               }}
             />
           </div>
@@ -668,24 +777,21 @@ export default function MainLayout() {
           <div className="flex-1 overflow-hidden">
             <Soundboard
               rankerStatus={modelStatus}
-              override={override}
-              onManualAction={() => setOverride(true)}
-              onResumeAuto={() => {
-                setOverride(false)
-                runRecommendation()
-              }}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
+              sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
               lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}
               candidates={candidates}
               sessionText={sessionText}
+              indexStatus={indexStatus}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               settingsOpen={showSettings}
+              autopilotEnabled={autopilotEnabled}
               onNoFolder={() => setShowSettings(true)}
             />
           </div>
@@ -695,6 +801,7 @@ export default function MainLayout() {
       {/* Settings modal */}
       {showSettings && (
         <Settings
+          initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
           onFolderChange={setMusicFolder}
           onMicChange={(id) => {

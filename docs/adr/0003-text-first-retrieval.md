@@ -62,3 +62,16 @@ ambience cues (a campfire sounds like an effect), and audio–audio similarity i
 strong (0.92–0.96) while audio↔text is weak (~0.65 to both queries). That is why
 it does not reorder retrieval: the cross-modal alignment is the fragile part.
 See `test-results/audio-sfx.md`.
+
+## Update (2026-11-17) — retrieval is now the search default
+
+“Let the vector ordering decide” stays rejected for *recommendation*: the model judges which track
+fits the moment, and cosine only decides what enters the candidate list. Browse search is a
+different question — findability, not judgement — so the library's `search` answers semantically
+when every track on the lane has a vector, and falls back to text when the index is incomplete or
+the model is not installed. Exact name/tag matches stay pinned ahead of the ordering, because a
+match is a fact and not an opinion.
+
+The SFX index is built from names, categories and tags, never from the audio encoder: the
+cross-modal alignment above (~0.65) is too weak to be a default. Folders remain in `describeTrack`
+as scene taxonomy even though the lane is a label — the path still names the DM's own vocabulary.

@@ -330,10 +330,18 @@ def main() -> int:
         import tarfile
 
         archive = out / "d1-omni-text-v1.tar.gz"
+        # The weights are LFM Open License v1.0: the notice travels with them, under
+        # a name that says whose licence it is once extracted beside the graph.
+        members = [
+            ("d1-omni-text.onnx", "d1-omni-text.onnx"),
+            ("d1-omni-text-manifest.json", "d1-omni-text-manifest.json"),
+            ("d1-omni-src/tokenizer.json", "d1-omni-src/tokenizer.json"),
+            ("d1-omni-src/tokenizer_config.json", "d1-omni-src/tokenizer_config.json"),
+            ("d1-omni-src/LICENSE", "d1-omni-LICENSE.txt"),
+        ]
         with tarfile.open(archive, "w:gz") as tar:
-            for name in ("d1-omni-text.onnx", "d1-omni-text-manifest.json",
-                         "d1-omni-src/tokenizer.json", "d1-omni-src/tokenizer_config.json"):
-                tar.add(out / name, arcname=name)
+            for path, arcname in members:
+                tar.add(out / path, arcname=arcname)
         digest = sha256(archive)
         log(f"archive: {archive} ({archive.stat().st_size} bytes)")
         log(f"sha256:  {digest}")

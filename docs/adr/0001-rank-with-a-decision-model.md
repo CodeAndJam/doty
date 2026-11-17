@@ -42,6 +42,9 @@ Status: accepted
   tokens, so the track description is a budget, not a paragraph.
 - An override by hand silences the ranker rather than competing with it — there is no track to
   resume from, and a recommendation nobody would act on is a wasted pass.
+  **Superseded (2026-11-17):** the DM's picks are labels, not a mode. Suggestions keep being
+  produced; only automatic *changes* are gated, per channel, and a manual pick can no longer leave
+  the director off without an obvious way back.
 - The LFM Open License v1.0 on the weights requires a separate agreement with Liquid AI for
   commercial use by an organisation with US$10M or more in annual revenue. Doty is open source, so
   this is recorded, not blocking.

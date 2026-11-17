@@ -16,6 +16,18 @@ export interface ScanProgress {
   current: string
 }
 
+/** How far the library index has got: two phases, and why it may be stopped. */
+export interface IndexProgress {
+  ready: boolean
+  phase: 'idle' | 'text' | 'audio'
+  paused: boolean
+  /** Items with a text vector, over the whole library. */
+  indexed: number
+  total: number
+  phaseDone: number
+  phaseTotal: number
+}
+
 export interface TrackMeta {
   bpm: number
   bpmConfidence: number
@@ -25,6 +37,8 @@ export interface TrackMeta {
   energy: number
   /** Audio-embedding verdict, filled by the background pass when it has run. */
   audioKind?: 'music' | 'sfx' | 'uncertain'
+  /** The resolved lane label, which may differ from the folder the file is in. */
+  lane?: 'music' | 'sfx'
   /** dBFS; optional because payloads written before the energy fix lack it. */
   loudness?: number
   analysisVersion?: number
@@ -76,6 +90,8 @@ export interface QueueState {
 
 export interface SfxMeta {
   id: string
+  /** The resolved lane label; an effect can be labelled as a cue and vice versa. */
+  lane?: 'music' | 'sfx'
   filename: string
   category: string
   label: string
@@ -168,6 +184,16 @@ export interface DiscordState {
 
 export type MicPermission = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
 
+/** What the Advanced tab needs to explain a machine that misbehaves. */
+export interface DebugState {
+  enabled: boolean
+  logPath: string
+  /** Recent log lines, oldest first; empty until debug mode writes something. */
+  log: string
+  /** Versions, paths and the checks that explain "connected but silent". */
+  diagnostics: string
+}
+
 export interface DotyAPI {
   // Microphone Permission
   micCheckPermission: () => Promise<MicPermission>
@@ -219,8 +245,7 @@ export interface DotyAPI {
     /** The same candidates as file paths, in the same order. */
     paths: string[]
     msUntilTrackEnd: number | null
-    autopilot: boolean
-    override: boolean
+    musicEnabled: boolean
     /** The DM's threshold from Settings; absent keeps the policy default. */
     confidenceThreshold?: number
   }) => Promise<{
@@ -246,21 +271,38 @@ export interface DotyAPI {
     /** `reject` records a skip, so history can tell a choice from a dismissal. */
     source: 'auto' | 'manual' | 'reject'
   }) => Promise<unknown>
-  embeddingStatus: () => Promise<{ ready: boolean; indexed: number; total: number }>
-  /** Vector matches from the whole library, empty when nothing is indexed yet. */
-  similarTracks: (text: string, k: number) => Promise<string[]>
+  embeddingStatus: () => Promise<IndexProgress>
+  /**
+   * The lane of every item, keyed by the path each panel renders (relative for a
+   * music-folder file, absolute for an effects-folder file).
+   */
+  libraryLanes: () => Promise<Record<string, { key: string; lane: 'music' | 'sfx'; origin: 'music' | 'sfx' }>>
+  /**
+   * Search one lane. Semantic when every track on that lane is embedded; `mode`
+   * says which matcher answered, so the panel can show the fallback.
+   */
+  librarySearch: (
+    text: string,
+    lane: 'music' | 'sfx',
+    k: number,
+  ) => Promise<{
+    mode: 'semantic' | 'text'
+    items: Array<{ key: string; path: string; lane: 'music' | 'sfx'; absolute: string; origin: 'music' | 'sfx' }>
+  }>
   /** Probabilities for each SFX description, in the order given. */
   sfxRank: (state: string, candidates: string[]) => Promise<number[]>
   /** Move one file between the music and effects libraries, on request. */
   moveTrack: (path: string, target: 'music' | 'sfx') => Promise<{ ok: boolean; reason?: string; path?: string }>
-  onEmbeddingProgress: (cb: (p: { done: number; total: number }) => void) => () => void
+  /** Label a track without touching the disk: a lane is a label, not a folder. */
+  setLane: (key: string, lane: 'music' | 'sfx') => Promise<{ ok: boolean }>
+  onEmbeddingProgress: (cb: (p: IndexProgress) => void) => () => void
   sessionReport: (since: number) => Promise<{
     decisions: number
     autoActions: number
     manualPicks: number
     overrideRate: number
   }>
-  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => () => void
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string; reason?: string }) => void) => () => void
   onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
@@ -327,6 +369,11 @@ export interface DotyAPI {
   // Autopilot (#12)
   getAutopilotConfig: () => Promise<import('./lib/autopilot').AutopilotConfig>
   setAutopilotConfig: (config: Partial<import('./lib/autopilot').AutopilotConfig>) => Promise<{ ok: boolean }>
+
+  // Debug
+  debugGetState: () => Promise<DebugState>
+  debugSetEnabled: (enabled: boolean) => Promise<DebugState>
+  debugOpenLog: () => Promise<{ ok: boolean; error?: string }>
 
   // Discord
   discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>

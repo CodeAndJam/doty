@@ -13,6 +13,7 @@ interface StoreData {
   sttModel?: string // 'parakeet' | 'whisper-medium' | 'whisper-large-v3'
   sttLanguage?: string // 'auto' | 'pt' | 'en' | ... — avoids per-utterance language detection
   sttOnboardingSkipped?: boolean // user chose to set up speech recognition later
+  debugMode?: boolean // verbose logs to ~/.doty/logs/doty.log, for another Mac
   discordToken?: string // encrypted via safeStorage
   discordVolume?: number // 0..1, independent of local volume
   discordAutoConnect?: boolean // auto-connect to last channel on startup
@@ -20,7 +21,8 @@ interface StoreData {
   discordLastChannelId?: string // last joined channel
   // Sessions / models
   lastSession?: string
-  // Autopilot (#12)
+  // Autopilot (#12). The master switch is on the header and off by default; the
+  // per-channel switches sit under it and only matter while it is on.
   autopilotEnabled?: boolean
   autopilotMusicEnabled?: boolean
   autopilotSfxEnabled?: boolean

@@ -431,34 +431,30 @@ function defaultSfxRecommendations(
   count: number,
 ): string[] {
   const sfxIds = new Set(sfxList.map((s) => s.id))
-  const byFrequency = Object.entries(playFrequencies)
+  // History leads, but it is a boost, not the whole answer: the column keeps the
+  // size the DM configured even when they have only ever played one effect.
+  const result = Object.entries(playFrequencies)
     .filter(([id]) => sfxIds.has(id))
     .sort(([, a], [, b]) => b - a)
     .map(([id]) => id)
+    .slice(0, count)
 
-  if (byFrequency.length > 0) {
-    return byFrequency.slice(0, count)
+  const categories = new Set(
+    result.map((id) => sfxList.find((s) => s.id === id)?.category).filter((c): c is string => !!c),
+  )
+
+  // Then one from each category, so the suggestions are not all the same kind.
+  for (const sfx of sfxList) {
+    if (result.length >= count) return result
+    if (result.includes(sfx.id) || categories.has(sfx.category)) continue
+    categories.add(sfx.category)
+    result.push(sfx.id)
   }
 
-  // No play history — return a category-diverse sample so the column isn't empty
-  const seen = new Set<string>()
-  const result: string[] = []
-
-  // First pass: pick one from each category for diversity
+  // Then fill the rest of the column.
   for (const sfx of sfxList) {
-    if (!seen.has(sfx.category)) {
-      seen.add(sfx.category)
-      result.push(sfx.id)
-      if (result.length >= count) return result
-    }
-  }
-
-  // Second pass: fill remaining slots
-  for (const sfx of sfxList) {
-    if (!result.includes(sfx.id)) {
-      result.push(sfx.id)
-      if (result.length >= count) return result
-    }
+    if (result.length >= count) break
+    if (!result.includes(sfx.id)) result.push(sfx.id)
   }
 
   return result

@@ -7,7 +7,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 const spawn = vi.hoisted(() => vi.fn())
 const binary = '/Applications/Doty.app/Contents/Resources/app.asar.unpacked/node_modules/ffmpeg-static/ffmpeg'
 
-vi.mock('node:child_process', () => ({ spawn }))
+// execFile is only reached by `ffmpegStatus`; mocked so the module loads.
+vi.mock('node:child_process', () => ({ spawn, execFile: vi.fn() }))
 vi.mock('./ffmpeg', () => ({ ffmpegBinary: () => binary }))
 
 import { createMusicResource, createSfxResource } from './discord-audio'

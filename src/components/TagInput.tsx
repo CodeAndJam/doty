@@ -69,7 +69,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
         className="flex flex-wrap items-center gap-1 px-1.5 py-1 min-h-[28px]"
         style={{
           background: 'rgba(15,13,9,0.8)',
-          border: '1px solid #2e2416',
+          border: '1px solid #3d2f1c',
         }}
         onClick={() => inputRef.current?.focus()}
         onKeyDown={(e) => {
@@ -85,8 +85,8 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
               background: 'rgba(200,146,42,0.15)',
               border: '1px solid rgba(200,146,42,0.3)',
               fontSize: '11px',
-              fontFamily: 'monospace',
-              color: '#c8922a',
+              fontFamily: "'IBM Plex Mono', monospace",
+              color: '#d9a441',
               lineHeight: '18px',
             }}
           >
@@ -98,7 +98,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
                 removeTag(tag)
               }}
               className="ml-0.5 hover:opacity-100 opacity-60"
-              style={{ fontSize: '13px', color: '#c8922a', lineHeight: 1 }}
+              style={{ fontSize: '13px', color: '#d9a441', lineHeight: 1 }}
             >
               x
             </button>
@@ -115,8 +115,8 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           className="flex-1 min-w-[60px] bg-transparent outline-none"
           style={{
             fontSize: '11px',
-            fontFamily: 'monospace',
-            color: '#8a7050',
+            fontFamily: "'IBM Plex Mono', monospace",
+            color: '#b9a683',
           }}
         />
       </div>
@@ -133,8 +133,8 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
               left: dropdownPos.left,
               width: dropdownPos.width,
               zIndex: 9999,
-              background: '#0f0d09',
-              border: '1px solid #2e2416',
+              background: '#100e0a',
+              border: '1px solid #3d2f1c',
               borderTop: 'none',
               maxHeight: '120px',
               overflowY: 'auto',
@@ -148,8 +148,8 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
                 className="block w-full text-left px-2 py-1 hover:bg-[rgba(200,146,42,0.1)]"
                 style={{
                   fontSize: '11px',
-                  fontFamily: 'monospace',
-                  color: '#8a7050',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#b9a683',
                 }}
                 onMouseDown={(e) => {
                   e.preventDefault()

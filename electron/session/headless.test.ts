@@ -68,8 +68,7 @@ describe.skipIf(!ready)('headless ranker run', () => {
         sameScene: false,
         categorical: false,
         msSinceLastChange: 600_000,
-        autopilot: true,
-        override: false,
+        musicEnabled: true,
       }
       const atBoundary = decideAction({ ...base, msUntilTrackEnd: 15_000 }, DEFAULT_POLICY)
       const midTrack = decideAction({ ...base, msUntilTrackEnd: 200_000 }, DEFAULT_POLICY)

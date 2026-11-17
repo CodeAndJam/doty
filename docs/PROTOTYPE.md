@@ -12,8 +12,8 @@ pnpm dev
 
 The ranker and embedder are already in `~/.doty/models`, so no release is needed
 on this machine. The 1.2 MB VAD model downloads once in the background if it is
-missing. A fresh machine would need `models-v1`
-published first; that is a distribution task, not a prototype task.
+missing, and the 1.4 GB decision model comes from the `models-v1` release on
+first launch.
 
 ## Before the session (2 minutes)
 
@@ -68,9 +68,9 @@ time  ranker  action  track  confidence  reason  transcript
   categorical transitions rarer than they should be.
 - Recall is ~85%: one in seven times your pick is not among the twenty the model
   sees. Semantic retrieval is indexed but not yet merged into that twenty.
-- SFX vs music is decided by duration and genre, with the audio-embedding verdict
-  filling only the 20–45 s band where duration cannot. A long campfire or rain
-  loop sounds like an effect to the model, so it is never demoted on that alone.
+- SFX vs music is decided by the audio embedding at every duration; duration and
+  genre are only the fallback before a file is indexed. A long campfire or rain
+  loop is read as an effect because that is what it sounds like.
 - Speech recognition now gates live audio with Silero VAD when the model file is
   present: a loud music bed, noise and silence produce no decoding at all. What
   still needs a real recording is vocal music crossing the gate and overlapping
