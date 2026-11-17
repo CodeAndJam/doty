@@ -91,11 +91,13 @@ function fileNamed(h: Harness, name: string): string | undefined {
 /** The row the session list paints as active (it is the open dropdown's accent). */
 async function activeRow(page: Page): Promise<string[]> {
   await page.getByTestId('session-list-toggle').click()
-  const names = await page.locator('[data-session-dropdown] button.flex-1').evaluateAll((els) =>
-    els
-      .filter((el) => getComputedStyle(el).color === ACTIVE)
-      .map((el) => (el.textContent ?? '').trim()),
-  )
+  const names = await page
+    .locator('[data-session-dropdown] button.flex-1')
+    .evaluateAll(
+      (els, active) =>
+        els.filter((el) => getComputedStyle(el).color === active).map((el) => (el.textContent ?? '').trim()),
+      ACTIVE,
+    )
   await page.getByTestId('session-list-toggle').click()
   return names
 }
@@ -225,10 +227,12 @@ test('an in-progress rename does not follow the DM to another session', async ()
     const alphaFile = fileNamed(h, 'Session Alpha')!
     const alphaBefore = fs.readFileSync(alphaFile, 'utf-8')
 
-    // Start renaming Beta, then switch to Alpha. Opening the list blurs the
-    // field, which saves to Beta; Alpha must be untouched either way.
+    // Start renaming Beta, then switch to Alpha. Leaving the field blurs it (and
+    // saves to Beta), so the switch can never apply it to Alpha.
     await name.click()
     await input.fill('Draft For Beta')
+    await input.press('Tab')
+    await expect(input).toHaveCount(0)
     await page.getByTestId('session-list-toggle').click()
     await page.getByRole('button', { name: 'Session Alpha', exact: true }).click()
 

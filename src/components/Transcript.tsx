@@ -84,6 +84,12 @@ export default function Transcript({
     setCreating(false)
   }, [activeSession])
 
+  /** Save the current edit; used by Enter, blur and the chevron beside it. */
+  function commitName() {
+    if (activeSession && nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
+    setEditingName(false)
+  }
+
   function finishCreate(name: string) {
     setCreating(false)
     onNewSession(name.trim() || defaultSessionName())
@@ -245,10 +251,7 @@ export default function Transcript({
               value={nameValue}
               onChange={(e) => setNameValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
-                  setEditingName(false)
-                }
+                if (e.key === 'Enter') commitName()
                 // An edit that exists already: Escape puts it back, and gives the
                 // keyboard back to the title it came from.
                 if (e.key === 'Escape') {
@@ -256,10 +259,7 @@ export default function Transcript({
                   nameButtonRef.current?.focus()
                 }
               }}
-              onBlur={() => {
-                if (nameValue.trim()) onRenameSession(activeSession, nameValue.trim())
-                setEditingName(false)
-              }}
+              onBlur={commitName}
             />
           ) : (
             <button
@@ -295,7 +295,16 @@ export default function Transcript({
           <button
             type="button"
             data-testid="session-list-toggle"
-            onClick={() => setShowDropdown(!showDropdown)}
+            // mousedown, not click: committing the rename on blur swaps this
+            // input for a button, and the click that follows would land on a
+            // node that no longer exists — one dead click after every rename.
+            onMouseDown={(e) => {
+              if (editingName) {
+                e.preventDefault()
+                commitName()
+              }
+              setShowDropdown((open) => !open)
+            }}
             title="Switch session"
             aria-label="Switch session"
             style={{ fontSize: '10px', color: '#6b4e15', background: 'none', border: 'none' }}
