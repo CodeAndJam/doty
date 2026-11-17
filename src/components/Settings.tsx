@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { confidenceLabel } from '../lib/autopilot'
-import type { ScanProgress } from '../types'
+import { indexSummary } from '../lib/indexStatus'
+import type { IndexProgress, ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -105,6 +106,7 @@ export default function Settings({
   const [autopilotSfx, setAutopilotSfx] = useState(true)
   const [sttModel, setSttModel] = useState('parakeet')
   const [sttLanguage, setSttLanguage] = useState('auto')
+  const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [_sttModelStatus, setSttModelStatus] = useState<Record<string, boolean>>({})
   const [sttModelList, setSttModelList] = useState<
     Array<{
@@ -154,6 +156,13 @@ export default function Settings({
     window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
     window.doty.getSttModelList().then(setSttModelList)
+    // Same subscription the browser chip uses: one source, two surfaces.
+    window.doty
+      .embeddingStatus()
+      .then(setIndexStatus)
+      .catch(() => {})
+    const unsubIndex = window.doty.onEmbeddingProgress(setIndexStatus)
+
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotThreshold(cfg.confidenceThreshold)
       setAutopilotCrossfade(cfg.crossfadeDuration)
@@ -224,6 +233,7 @@ export default function Settings({
       .catch(() => {})
 
     return () => {
+      unsubIndex()
       unsubProgress()
       unsubComplete()
       unsubWhisper()
@@ -535,6 +545,12 @@ export default function Settings({
                 {scanDone ? `Analysis complete${lastScanTime ? ` · ${lastScanTime}` : ''}` : 'Awaiting analysis...'}
               </div>
             )}
+            <p
+              data-testid="index-summary"
+              style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace', marginTop: '6px' }}
+            >
+              {indexSummary(indexStatus)}
+            </p>
           </div>
         )}
 

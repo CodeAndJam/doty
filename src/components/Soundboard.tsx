@@ -6,9 +6,10 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { indexChipText } from '../lib/indexStatus'
 import { describeTrack } from '../lib/rankTracks'
 import { trackKindOf } from '../lib/trackKind'
-import type { DecisionLogEntry, SfxMeta, TrackMeta } from '../types'
+import type { DecisionLogEntry, IndexProgress, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
 import { BrowseIcon, ChevronLeft, ChevronRight, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
@@ -98,6 +99,8 @@ interface Props {
   lastRanker: RankerType
   /** Whether the decision model is loaded, loading, or failed. */
   rankerStatus: 'loading' | 'ready' | 'error'
+  /** How far the library index has got; null until the first status arrives. */
+  indexStatus: IndexProgress | null
   lastTranscriptSnippet: string
   musicFolder: string
   speakerDeviceId?: string
@@ -115,6 +118,7 @@ export default function Soundboard({
   sessionText,
   lastRanker,
   rankerStatus,
+  indexStatus,
   lastTranscriptSnippet,
   musicFolder,
   speakerDeviceId,
@@ -1011,6 +1015,21 @@ export default function Soundboard({
                       >
                         auto {report.autoActions} · manual {report.manualPicks} · override{' '}
                         {Math.round(report.overrideRate * 100)}%
+                      </span>
+                    )}
+                    {indexChipText(indexStatus) && (
+                      <span
+                        data-testid="index-chip"
+                        style={{
+                          fontSize: '9px',
+                          fontFamily: 'monospace',
+                          color: indexStatus?.paused ? '#b06a2a' : '#4a3a20',
+                          border: '1px solid rgba(46,36,22,0.6)',
+                          padding: '0 4px',
+                        }}
+                        title="The library is being embedded in the background; recording pauses it"
+                      >
+                        {indexChipText(indexStatus)}
                       </span>
                     )}
                     <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />

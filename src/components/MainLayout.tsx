@@ -3,6 +3,7 @@ import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { confidentSfx } from '../lib/sfxRank'
+import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
 import Soundboard from './Soundboard'
@@ -25,6 +26,7 @@ export default function MainLayout() {
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
   /** The transcript window the director reads: wider than the UI snippet. */
   const [sessionText, setSessionText] = useState('')
+  const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -299,6 +301,14 @@ export default function MainLayout() {
       runSfxRecommendation()
     })
 
+    // The index runs in the background for minutes; one subscription feeds the
+    // browser chip and Settings without either polling.
+    window.doty
+      .embeddingStatus()
+      .then(setIndexStatus)
+      .catch(() => {})
+    const unsubIndex = window.doty.onEmbeddingProgress(setIndexStatus)
+
     const unsubSttStatus = window.doty.onSttStatus((status) => {
       if (status === 'crashed' || status === 'error') {
         setAsrStatus('crashed')
@@ -361,6 +371,7 @@ export default function MainLayout() {
     return () => {
       unsubTranscript()
       unsubSttStatus()
+      unsubIndex()
       unsubInterim()
       unsubModelSwitch()
       unsubParagraphBreak()
@@ -672,6 +683,7 @@ export default function MainLayout() {
               probabilities={probabilities}
               candidates={candidates}
               sessionText={sessionText}
+              indexStatus={indexStatus}
               lastRanker={lastRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}

@@ -32,6 +32,7 @@ function renderBoard() {
       sessionText=""
       lastRanker={null}
       rankerStatus="ready"
+      indexStatus={null}
       lastTranscriptSnippet=""
       musicFolder="/music"
       settingsOpen={false}
