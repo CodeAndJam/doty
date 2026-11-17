@@ -82,11 +82,6 @@ be read back.
 
 ## Deliberately out of scope
 
-- Audio embeddings **outside the 20–45 s grey band**. The mel contract is now
-  validated against the reference extractor and the encoder runs, but a campfire
-  or rain loop genuinely sounds like an effect to the model: its confident
-  mistakes are all long ambience cues. Duration decides those; the audio verdict
-  only fills the band duration cannot answer.
 - Automatic file moves: moving a DM's library is a human decision. The badge and
   the one-click move are the product.
 - Cloud, telemetry, and per-user accounts.

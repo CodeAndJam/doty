@@ -84,7 +84,8 @@ export interface LibraryDeps {
 
 export interface Library {
   items(lane?: Lane): LibraryItem[]
-  search(text: string, lane: Lane, k: number): Promise<SearchResult>
+  /** Search the items that live in `origin`, whatever lane they are labelled. */
+  search(text: string, origin: Lane, k: number): Promise<SearchResult>
   status(): IndexStatus
   ensureIndexed(): Promise<void>
   pause(): void
@@ -134,12 +135,12 @@ export function createLibrary(deps: LibraryDeps): Library {
         override: overrides[key] ?? null,
         duration: meta?.duration,
         genre: meta?.genre,
-        audio: meta?.audioKind,
+        audio: meta?.audioKind ?? kinds[key],
       })
       // shortcut: effects have no measured duration yet (B2), so a name-only
       // verdict must not move them off the shelf they were put on. Remove this
       // once the scanner measures effect durations.
-      const nameOnly = folderLane === 'sfx' && !meta?.duration && !meta?.audioKind
+      const nameOnly = folderLane === 'sfx' && !meta?.duration && !meta?.audioKind && !kinds[key]
       const lane = nameOnly && decision.source === 'classifier' ? 'sfx' : decision.lane
       const source = lane === decision.lane ? decision.source : 'folder'
       out.push({
@@ -274,6 +275,8 @@ export function createLibrary(deps: LibraryDeps): Library {
           })
           await audio.run()
           kinds = audio.kinds
+          // The lanes cached so far were resolved without these verdicts.
+          cached = null
         }
       }
     } finally {
@@ -289,13 +292,16 @@ export function createLibrary(deps: LibraryDeps): Library {
     }
   }
 
-  async function search(text: string, lane: Lane, k: number): Promise<SearchResult> {
-    const pool = items(lane)
+  async function search(text: string, origin: Lane, k: number): Promise<SearchResult> {
+    // The DM is looking at a folder, and the lane is only a label on each file:
+    // an effect that lives in the music folder has to be found there, because
+    // until it is moved that folder is the only place it exists.
+    const pool = items().filter((item) => item.origin === origin)
     const query = text.trim()
     if (!query) return { items: [], mode: 'text' }
 
     const embedder = await deps.embedder()
-    // Semantic only when it can answer for every track on this lane: a partial
+    // Semantic only when it can answer for every track in the folder: a partial
     // index hides tracks silently, which is worse than answering by name.
     const fullyIndexed =
       embedder !== null &&

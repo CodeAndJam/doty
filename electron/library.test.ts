@@ -143,6 +143,21 @@ describe('library', () => {
     expect(result.items.map((item) => item.key)).toEqual(['Tavern/tavern.mp3'])
   })
 
+  it('finds an effect that lives in the music folder', async () => {
+    // The lane only says where a sound belongs; the DM searched the folder they
+    // have open, and that is the only place this file exists until it is moved.
+    const { library } = harness({
+      musicFiles: () => ['Tavern/tavern.mp3', 'Walking/Night/Weather - Light Wind.mp3'],
+      facts: () => ({
+        'Tavern/tavern.mp3': { duration: 200, genre: 'Music' } as never,
+        'Walking/Night/Weather - Light Wind.mp3': { duration: 76, genre: 'Sound Effects' } as never,
+      }),
+    })
+    expect(library.items('music').map((item) => item.key)).toEqual(['Tavern/tavern.mp3'])
+    const result = await library.search('wind', 'music', 5)
+    expect(result.items.map((item) => item.key)).toContain('Walking/Night/Weather - Light Wind.mp3')
+  })
+
   it('answers semantically once the lane is fully embedded', async () => {
     const { library, vectors } = harness()
     vectors.set(`Tavern/tavern.mp3|${RETRIEVAL_KEY}`, vector(1, 0))
@@ -163,6 +178,23 @@ describe('library', () => {
     expect(vectors.size).toBe(3)
     expect(phases).toContain('text')
     expect(library.status()).toMatchObject({ phase: 'idle', indexed: 3, total: 3 })
+  })
+
+  it('feeds the audio verdict into the lane, and rebuilds after the pass', async () => {
+    const { library } = harness({
+      musicFiles: () => ['Misc/loop.mp3'],
+      facts: () => ({ 'Misc/loop.mp3': { duration: 30 } as never }),
+      audioAvailable: () => true,
+      kindAnchors: async () => ({ music: vector(1, 0), sfx: vector(0, 1) }),
+      embedAudio: async () => vector(0, 1),
+    })
+    // Before the pass duration decides nothing and the folder is all there is.
+    expect(library.items().find((item) => item.key === 'Misc/loop.mp3')).toMatchObject({ lane: 'music' })
+    await library.ensureIndexed()
+    expect(library.items().find((item) => item.key === 'Misc/loop.mp3')).toMatchObject({
+      lane: 'sfx',
+      laneSource: 'classifier',
+    })
   })
 
   it('exposes the resolved lane for every item, both folders', () => {

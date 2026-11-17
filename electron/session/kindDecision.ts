@@ -1,18 +1,16 @@
 /**
- * Deciding music-or-effect from embeddings, and planning the move.
+ * Deciding music-or-effect from embeddings.
  *
- * The classifier we ship today uses duration: seconds is an effect, minutes is a
- * cue. That is reliable but blunt — a 30-second loop is `unknown`, and a sting
- * that runs 40 seconds is misread. EmbeddingGemma 2 puts text and audio in one
- * space, so the honest version asks two questions of the audio and compares:
+ * The question this asks is binary: does the sound identify as music, or does it
+ * identify as everything else — an effect, an ambience loop, a weather bed? Two
+ * text descriptions are embedded into the same space as the track, and whichever
+ * is nearer wins. Duration is not part of this decision; it is only the fallback
+ * for a file the audio pass has not reached yet.
  *
- *     "a background music track for a scene"   vs
- *     "a short sound effect: a door, a hit, a roar"
- *
- * Whichever the sound sits nearer to wins — but only if the margin is real. The
- * rule below is deliberately conservative: an unsettled answer stays `uncertain`
- * and the file keeps its place, because silently moving a DM's cue into the
- * effects shelf is worse than leaving it where they put it.
+ * The music description is deliberately a *cue* ("melody and rhythm"), while the
+ * other side names environmental audio and says "no melody". On the real library
+ * that contrast is what pulls a rain loop away from the score without dragging
+ * composed cues with it.
  */
 
 import { cosine } from './embedding'
@@ -21,8 +19,8 @@ export type AudioKind = 'music' | 'sfx' | 'uncertain'
 
 /** The two descriptions an audio vector is compared against, in one shared space. */
 export const KIND_QUERIES: Record<Exclude<AudioKind, 'uncertain'>, string> = {
-  music: 'a background music track for a roleplaying scene',
-  sfx: 'a short sound effect: a door, a sword hit, a monster roar',
+  music: 'instrumental background music for a fantasy scene, a score with melody and rhythm',
+  sfx: 'sound effects and environmental audio: rain, wind, fire, footsteps, a door, a monster, no melody',
 }
 
 /** The two text vectors the queries above produce. */
@@ -31,8 +29,13 @@ export interface KindAnchors {
   sfx: Float32Array
 }
 
-/** How far apart the two scores must be before a move is justified. */
-export const KIND_MARGIN = 0.03
+/**
+ * How much the music description must win by before a sound is called a cue.
+ * Zero is the natural boundary: nearer one description or the other. A negative
+ * value would buy music more room; it is a knob for real session data, not a
+ * guess to tune per library.
+ */
+export const MUSIC_THRESHOLD = 0
 
 export interface KindDecision {
   kind: AudioKind
@@ -51,25 +54,29 @@ export function kindScores(track: Float32Array, anchors: KindAnchors): { music: 
  * dimension is refused outright: comparing it would produce a confident score
  * that means nothing.
  */
-export function decideKindFor(track: Float32Array, anchors: KindAnchors, margin = KIND_MARGIN): KindDecision {
+export function decideKindFor(track: Float32Array, anchors: KindAnchors): KindDecision {
   if (track.length !== anchors.music.length || track.length !== anchors.sfx.length) {
     return { kind: 'uncertain', margin: 0, reason: 'the audio vector and the queries are not comparable' }
   }
   const { music, sfx } = kindScores(track, anchors)
-  return decideKind(music, sfx, margin)
+  return decideKind(music, sfx)
 }
 
-export function decideKind(musicScore: number, sfxScore: number, margin = KIND_MARGIN): KindDecision {
-  const gap = Math.abs(musicScore - sfxScore)
-  if (!Number.isFinite(gap)) return { kind: 'uncertain', margin: 0, reason: 'no usable audio embedding' }
-  if (gap < margin) {
-    return { kind: 'uncertain', margin: gap, reason: 'the sound sits between an effect and a cue' }
+export function decideKind(musicScore: number, sfxScore: number, threshold = MUSIC_THRESHOLD): KindDecision {
+  if (!Number.isFinite(musicScore) || !Number.isFinite(sfxScore)) {
+    return { kind: 'uncertain', margin: 0, reason: 'no usable audio embedding' }
   }
-  const kind: AudioKind = musicScore > sfxScore ? 'music' : 'sfx'
+  // A zero vector scores zero against every query. That is missing evidence, not
+  // a cue, so it must not take the music side by default.
+  if (musicScore === 0 && sfxScore === 0) {
+    return { kind: 'uncertain', margin: 0, reason: 'no usable audio embedding' }
+  }
+  const gap = musicScore - sfxScore
+  const kind: AudioKind = gap >= threshold ? 'music' : 'sfx'
   return {
     kind,
-    margin: gap,
-    reason: kind === 'music' ? 'closer to a cue than to an effect' : 'closer to an effect than to a cue',
+    margin: Math.abs(gap),
+    reason: kind === 'music' ? 'nearer a music cue than an effect' : 'nearer an effect than a music cue',
   }
 }
 

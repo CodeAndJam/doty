@@ -217,6 +217,7 @@ export default function Settings({
   const [rankerInstalled, setRankerInstalled] = useState<boolean | null>(null)
   const [rankerLanguageCovered, setRankerLanguageCovered] = useState(true)
   const [rankerProgress, setRankerProgress] = useState<number | null>(null)
+  const [rankerDownloadError, setRankerDownloadError] = useState<string | null>(null)
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
 
   const refreshTrackCount = useCallback(async () => {
@@ -306,7 +307,11 @@ export default function Settings({
 
     const unsubRanker = window.doty.onRankerDownloadProgress((p) => {
       setRankerProgress(p.status === 'downloading' ? p.percent : null)
-      if (p.status === 'done') setRankerInstalled(true)
+      if (p.status === 'done') {
+        setRankerInstalled(true)
+        setRankerDownloadError(null)
+      }
+      if (p.status === 'error') setRankerDownloadError(p.reason ?? 'download failed')
     })
 
     window.doty.micCheckPermission().then((status: string) => {
@@ -1136,7 +1141,10 @@ export default function Settings({
                   ) : rankerInstalled === false ? (
                     <button
                       type="button"
-                      onClick={() => window.doty.rankerDownload()}
+                      onClick={() => {
+                        setRankerDownloadError(null)
+                        window.doty.rankerDownload()
+                      }}
                       title="Downloads once, in the background. Keyword matching covers you until it lands."
                       style={{
                         fontSize: '11px',
@@ -1149,16 +1157,28 @@ export default function Settings({
                         flexShrink: 0,
                       }}
                     >
-                      download 1.5 GB
+                      download 1.4 GB
                     </button>
                   ) : (
                     !rankerIsReady && (
                       <span style={{ fontSize: '13px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
-                        1.5 GB
+                        1.4 GB
                       </span>
                     )
                   )}
                 </div>
+                {rankerDownloadError && (
+                  <p
+                    style={{
+                      fontSize: '11px',
+                      color: '#e07a5f',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      marginTop: '4px',
+                    }}
+                  >
+                    Download failed: {rankerDownloadError}
+                  </p>
+                )}
                 <p
                   style={{
                     fontSize: '11px',

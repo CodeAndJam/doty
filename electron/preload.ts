@@ -71,7 +71,7 @@ contextBridge.exposeInMainWorld('doty', {
   setLane: (key: string, lane: 'music' | 'sfx') => invoke(INVOKE.setLane, key, lane) as Promise<{ ok: boolean }>,
   onEmbeddingProgress: (cb: (p: import('../src/types').IndexProgress) => void) =>
     subscribe(EVENTS.embeddingProgress, cb),
-  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) =>
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string; reason?: string }) => void) =>
     subscribe(EVENTS.rankerDownloadProgress, cb),
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),

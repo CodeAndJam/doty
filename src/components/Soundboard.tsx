@@ -256,7 +256,9 @@ export default function Soundboard({
     return unsub
   }, [])
 
-  // Load SFX list on mount and whenever the folder changes
+  // Load SFX list on mount and whenever the shelf can have changed. A scan and the
+  // audio pass re-resolve every lane, and a suggestion computed from the new shelf
+  // cannot render against the list from before it.
   useEffect(() => {
     const load = () =>
       window.doty
@@ -264,7 +266,12 @@ export default function Soundboard({
         .then(setAllSfx)
         .catch(() => setAllSfx([]))
     load()
-    return window.doty.onSfxChanged(load)
+    const offSfx = window.doty.onSfxChanged(load)
+    const offScan = window.doty.onScanComplete(load)
+    return () => {
+      offSfx()
+      offScan()
+    }
   }, [])
 
   // Load SFX tags on mount

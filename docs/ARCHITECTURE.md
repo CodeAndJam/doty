@@ -174,7 +174,7 @@ flowchart TD
   ITEMS --> AUD[audio pass<br/>ffmpeg clip → mel → audio encoder]
 
   TXT --> VEC[(track_vectors<br/>key, model, dim)]
-  AUD --> KIND[classify vs two anchors<br/>margin 0.03]
+  AUD --> KIND[classify vs two anchors<br/>music vs not]
   KIND --> VEC
 
   Q[search text] --> EMBED[embedQuery]
@@ -186,7 +186,7 @@ flowchart TD
   LOWER --> RES2[items + mode: text]
 
   VEC --> TOPK
-  KIND -->|20–45 s band| LANES
+  KIND -->|audio verdict| LANES
   DESC -->|name, tags| LOWER
 ```
 
@@ -199,11 +199,13 @@ Lane resolution, in isolation:
 ```mermaid
 flowchart LR
   O{DM override?} -->|yes| OL[label it]
-  O -->|no| C{duration ≤ 20 s or ≥ 45 s?}
-  C -->|yes| CL[classifier wins]
-  C -->|no| A{audio verdict<br/>confident?}
-  A -->|yes| CL
-  A -->|no| N{name says sfx/music?}
+  O -->|no| A{audio verdict?}
+  A -->|yes| CL[classifier wins]
+  A -->|no| G{genre says effects?}
+  G -->|yes| CL
+  G -->|no| C{duration ≤ 20 s or ≥ 45 s?}
+  C -->|yes| CL
+  C -->|no| N{name says sfx/music?}
   N -->|yes| CL
   N -->|no| F[folder it came from]
 ```
@@ -287,8 +289,8 @@ Nothing here may stop playback or hide the suggestions.
 |---|---|---|
 | Decision model | recommendations are heuristic | ranker status, per-option probabilities absent |
 | Embedding model | search by name/tag; recommendations by keywords | `ready: false`, search `mode: 'text'` |
-| Index incomplete | text search on that lane | `text search — index 12/43` |
-| Audio verdict | duration decides | badge falls back to the lane label |
+| Index incomplete | text search over the folder | `text search — index 12/43` |
+| Audio verdict | duration, genre and the name decide | badge falls back to that guess |
 | VAD model | RMS gate in the STT worker | none; transcript still arrives |
 | STT model | no transcript; DM can type a prompt | onboarding / model status |
 
