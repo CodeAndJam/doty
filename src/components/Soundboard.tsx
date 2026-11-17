@@ -105,6 +105,8 @@ interface Props {
   musicFolder: string
   speakerDeviceId?: string
   settingsOpen: boolean
+  /** The header's master switch: with it off nothing changes on its own. */
+  autopilotEnabled: boolean
   onNoFolder: () => void
 }
 
@@ -123,6 +125,7 @@ export default function Soundboard({
   musicFolder,
   speakerDeviceId,
   settingsOpen,
+  autopilotEnabled,
   onNoFolder,
 }: Props) {
   // ── Music state ──────────────────────────────────────────────────────
@@ -544,7 +547,7 @@ export default function Soundboard({
         candidates: candidates.map((f) => describeTrack(f, metaMap[f], tagsMap[f] || [])),
         paths: candidates,
         msUntilTrackEnd: remaining,
-        musicEnabled: autopilotRef.current,
+        musicEnabled: autopilotEnabled && autopilotRef.current,
         confidenceThreshold: autopilot.config.confidenceThreshold,
       })
       .then(({ tracks, plan }) => {
@@ -613,6 +616,7 @@ export default function Soundboard({
     metaMap,
     tagsMap,
     autopilot.config.confidenceThreshold,
+    autopilotEnabled,
   ])
 
   // Feed confidence to autopilot when recommendations change.
@@ -624,6 +628,7 @@ export default function Soundboard({
   onSfxRecommendationRef.current = autopilot.onSfxRecommendation
 
   useEffect(() => {
+    if (!autopilotEnabled) return
     if (recommendations.length === 0 || lastConfidence <= 0) return
     // The director owns music when the model is loaded: it changes at boundaries
     // and cuts in only on a categorical scene change. Feeding the legacy
@@ -631,14 +636,15 @@ export default function Soundboard({
     // replace a track mid-phrase.
     if (lastRanker === 'model') return
     onRecommendationRef.current(recommendations[0], lastConfidence)
-  }, [recommendations, lastConfidence, lastRanker])
+  }, [recommendations, lastConfidence, lastRanker, autopilotEnabled])
 
   // Feed SFX recommendations to autopilot
   useEffect(() => {
+    if (!autopilotEnabled) return
     if (sfxRecommendations.length > 0) {
       onSfxRecommendationRef.current(sfxRecommendations)
     }
-  }, [sfxRecommendations])
+  }, [sfxRecommendations, autopilotEnabled])
 
   // Merge autopilot decision log entries into the visible log
   useEffect(() => {
@@ -817,7 +823,7 @@ export default function Soundboard({
               >
                 Music
               </span>
-              {autopilot.config.musicEnabled && (
+              {autopilotEnabled && autopilot.config.musicEnabled && (
                 <span
                   data-testid="autopilot-chip"
                   title={`At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(

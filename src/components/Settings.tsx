@@ -115,6 +115,7 @@ export default function Settings({
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const [autopilotThreshold, setAutopilotThreshold] = useState(0.9)
   const [autopilotCrossfade, setAutopilotCrossfade] = useState(3)
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [autopilotMusic, setAutopilotMusic] = useState(true)
   const [autopilotSfx, setAutopilotSfx] = useState(true)
   const [sttModel, setSttModel] = useState('parakeet')
@@ -264,6 +265,7 @@ export default function Settings({
     window.doty.getAutopilotConfig().then((cfg) => {
       setAutopilotThreshold(cfg.confidenceThreshold)
       setAutopilotCrossfade(cfg.crossfadeDuration)
+      setAutopilotEnabled(cfg.enabled)
       setAutopilotMusic(cfg.musicEnabled)
       setAutopilotSfx(cfg.sfxEnabled)
     })
@@ -1202,12 +1204,13 @@ export default function Settings({
                         fontFamily: 'monospace',
                       }}
                     >
-                      ALWAYS ON
+                      {autopilotEnabled ? 'MASTER ON' : 'MASTER OFF'}
                     </span>
                   </div>
                 </div>
                 <p style={{ fontSize: '12px', color: '#3a2e1a', fontFamily: 'monospace', marginBottom: '8px' }}>
-                  Music and SFX follow the table on their own. Switch a channel off to keep it in your hands.
+                  The master switch is in the header, off until you turn it on. While it is off nothing changes on its
+                  own; these switches decide what it may touch once it is on.
                 </p>
 
                 <div className="space-y-3">

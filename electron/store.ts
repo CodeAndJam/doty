@@ -21,8 +21,8 @@ interface StoreData {
   discordLastChannelId?: string // last joined channel
   // Sessions / models
   lastSession?: string
-  // Autopilot (#12). The master switch is gone: the per-channel switches are the
-  // only gates, so a profile that had autopilot off is migrated at startup.
+  // Autopilot (#12). The master switch is on the header and off by default; the
+  // per-channel switches sit under it and only matter while it is on.
   autopilotEnabled?: boolean
   autopilotMusicEnabled?: boolean
   autopilotSfxEnabled?: boolean
@@ -46,11 +46,7 @@ function read(): StoreData {
   }
 }
 
-/** Switches that no longer exist. Written once by an older build, then removed. */
-const RETIRED_KEYS = ['autopilotEnabled'] as const
-
 function write(data: StoreData): void {
-  for (const key of RETIRED_KEYS) delete data[key]
   fs.mkdirSync(join(storePath, '..'), { recursive: true })
   // Atomic replace: a crash mid-write must not truncate the existing config.
   const tmpPath = `${storePath}.tmp`

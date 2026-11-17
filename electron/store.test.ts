@@ -24,17 +24,19 @@ afterAll(() => {
   fs.rmSync(mock.dir, { recursive: true, force: true })
 })
 
-describe('retired config keys', () => {
-  it('drops autopilotEnabled on the next write and keeps everything else', () => {
-    const file = `${mock.dir}/config.json`
-    // What an older build left behind.
-    fs.writeFileSync(file, JSON.stringify({ autopilotEnabled: false, autopilotConfidenceThreshold: 0.8 }))
+describe('autopilot master switch', () => {
+  it('is absent until asked for, so the app reads it as off', () => {
+    expect(store.get('autopilotEnabled', false)).toBe(false)
+  })
 
+  it('survives later writes, so the DM choice outlives the app', () => {
+    const file = `${mock.dir}/config.json`
+
+    store.set('autopilotEnabled', true)
     store.set('recommendationCount', 7)
 
     const raw = JSON.parse(fs.readFileSync(file, 'utf-8'))
-    expect(raw.autopilotEnabled).toBeUndefined()
+    expect(raw.autopilotEnabled).toBe(true)
     expect(raw.recommendationCount).toBe(7)
-    expect(raw.autopilotConfidenceThreshold).toBe(0.8)
   })
 })

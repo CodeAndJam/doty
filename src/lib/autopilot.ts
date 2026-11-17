@@ -6,6 +6,11 @@
  */
 
 export interface AutopilotConfig {
+  /**
+   * The master switch, on the header. Off by default: nothing changes on its own
+   * until the DM asks for it, and the choice survives a relaunch.
+   */
+  enabled: boolean
   /** Whether music auto-transitions are enabled (default: true) */
   musicEnabled: boolean
   /** Whether SFX auto-triggers are enabled (default: true) */
@@ -33,6 +38,7 @@ export interface AutopilotConfig {
 }
 
 export const DEFAULT_AUTOPILOT_CONFIG: AutopilotConfig = {
+  enabled: false,
   musicEnabled: true,
   sfxEnabled: true,
   confidenceThreshold: 0.9,

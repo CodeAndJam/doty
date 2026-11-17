@@ -1308,6 +1308,7 @@ handle(INVOKE.setSfxRecommendationCount, (_e, count: number) => {
 // ── IPC: Autopilot (#12) ──────────────────────────────────────────────────────
 
 handle(INVOKE.getAutopilotConfig, () => ({
+  enabled: store.get('autopilotEnabled', false),
   musicEnabled: store.get('autopilotMusicEnabled', true),
   sfxEnabled: store.get('autopilotSfxEnabled', true),
   confidenceThreshold: store.get('autopilotConfidenceThreshold', 0.9),
@@ -1321,6 +1322,7 @@ handle(INVOKE.getAutopilotConfig, () => ({
 }))
 
 handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
+  if (typeof config.enabled === 'boolean') store.set('autopilotEnabled', config.enabled)
   if (typeof config.musicEnabled === 'boolean') store.set('autopilotMusicEnabled', config.musicEnabled)
   if (typeof config.sfxEnabled === 'boolean') store.set('autopilotSfxEnabled', config.sfxEnabled)
   if (typeof config.confidenceThreshold === 'number')

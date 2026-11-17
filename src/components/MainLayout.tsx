@@ -31,6 +31,11 @@ export default function MainLayout() {
   const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
+  /**
+   * The master switch, persisted: Doty changes nothing on its own until the DM
+   * turns this on, and it stays on (or off) across relaunches.
+   */
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
   const [micDeviceId, setMicDeviceId] = useState<string | undefined>(
     () => localStorage.getItem(MIC_STORAGE_KEY) ?? undefined,
@@ -117,10 +122,11 @@ export default function MainLayout() {
     sfxRecommendCountRef.current = sfxRecommendCount
   }, [sfxRecommendCount])
 
-  // Load recommendation count from settings on mount
+  // Load recommendation count and the autopilot master switch on mount
   useEffect(() => {
     window.doty.getRecommendationCount().then(setRecommendCount)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
+    window.doty.getAutopilotConfig().then((cfg) => setAutopilotEnabled(cfg.enabled))
   }, [])
 
   // Load sessions and restore last active session on mount
@@ -573,6 +579,40 @@ export default function MainLayout() {
               Ranker warming up
             </span>
           )}
+          {/* The master switch. Off until the DM asks for it: suggestions are
+              always offered, but nothing changes on its own. */}
+          <button
+            type="button"
+            data-testid="autopilot-toggle"
+            aria-pressed={autopilotEnabled}
+            onClick={() => {
+              const next = !autopilotEnabled
+              setAutopilotEnabled(next)
+              window.doty.setAutopilotConfig({ enabled: next }).catch(() => {})
+            }}
+            className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
+            style={{
+              border: `1px solid ${autopilotEnabled ? 'rgba(200,146,42,0.5)' : '#2e2416'}`,
+              color: autopilotEnabled ? '#c8922a' : '#3a2e1a',
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              letterSpacing: '0.1em',
+            }}
+            title={
+              autopilotEnabled
+                ? 'Autopilot is on: music and SFX change on their own at a track boundary when the pick is clear'
+                : 'Autopilot is off: Doty suggests, but what plays stays in your hands'
+            }
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background: autopilotEnabled ? '#c8922a' : '#3a2e1a',
+                boxShadow: autopilotEnabled ? '0 0 6px rgba(200,146,42,0.8)' : 'none',
+              }}
+            />
+            AUTOPILOT {autopilotEnabled ? 'ON' : 'OFF'}
+          </button>
           <button
             type="button"
             onClick={() => setShowTranscript((v) => !v)}
@@ -726,6 +766,7 @@ export default function MainLayout() {
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               settingsOpen={showSettings}
+              autopilotEnabled={autopilotEnabled}
               onNoFolder={() => setShowSettings(true)}
             />
           </div>

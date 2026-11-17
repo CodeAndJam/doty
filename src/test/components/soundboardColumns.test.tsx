@@ -36,6 +36,7 @@ function renderBoard() {
       lastTranscriptSnippet=""
       musicFolder="/music"
       settingsOpen={false}
+      autopilotEnabled={false}
       onNoFolder={() => {}}
     />,
   )
