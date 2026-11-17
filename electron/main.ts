@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import {
   feedChunk,
@@ -59,6 +59,7 @@ import {
   pauseStream,
   resumeStream,
   setAutoConnect,
+  setDiscordVerbose,
   setDiscordVolume,
   stopSfx,
   stopStream,
@@ -66,9 +67,11 @@ import {
   streamTrack,
   tryAutoConnect,
 } from './discord'
+import { ffmpegStatus } from './discord-audio'
 import { downloadFile } from './download-file'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
 import { createLibrary } from './library'
+import { debugLogger, enableDebugLogging } from './logger'
 import { migrateFromJson } from './metadata-cache'
 import { createModelDownloads } from './model-downloads'
 import {
@@ -83,6 +86,7 @@ import {
 } from './model-paths'
 import { getMusicFiles, invalidateMusicLibrary } from './music-library'
 import { handleMusicRequest } from './music-protocol'
+import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
@@ -378,6 +382,16 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  // Renderer errors used to exist only in DevTools; debug mode puts them in the
+  // same log file as the main process.
+  mainWindow.webContents.on('console-message', (event) => {
+    if (!debugLogger.isEnabled()) return
+    if (event.level !== 'warning' && event.level !== 'error') return
+    debugLogger.write(event.level === 'error' ? 'error' : 'warn', [
+      `[renderer] ${event.message} (${event.sourceId}:${event.lineNumber})`,
+    ])
+  })
 }
 
 function registerMusicProtocol() {
@@ -398,6 +412,11 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Debug mode is a persisted choice; apply it before anything else logs.
+  const debugOn = store.get('debugMode', false) ?? false
+  enableDebugLogging(debugOn)
+  setDiscordVerbose(debugOn)
+
   // Set dock icon in dev mode (in production it comes from the .app bundle)
   if (process.platform === 'darwin' && app.dock) {
     const iconPath = join(__dirname, '../../build/icon.png')
@@ -1298,4 +1317,48 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
   if (typeof config.recentlyPlayedMinutes === 'number')
     store.set('autopilotRecentlyPlayedMinutes', config.recentlyPlayedMinutes)
   return { ok: true }
+})
+
+// ── IPC: Debug ────────────────────────────────────────────────────────────────
+
+/** Facts a DM can paste from another Mac, without reading a single log line. */
+async function diagnostics(): Promise<string> {
+  const ffmpeg = await ffmpegStatus()
+  const discord = discordGetState()
+  return [
+    `Doty ${app.getVersion()} · Electron ${process.versions.electron} · ${process.getSystemVersion()} · ${process.arch}`,
+    `Profile: ${DOTY_HOME}`,
+    `Music folder: ${store.get('musicFolder', '') || '(none)'}`,
+    `SFX folder: ${store.get('sfxFolder', '') || '(none)'}`,
+    `Speech model: ${store.get('sttModel', DEFAULT_STT_MODEL)} (${isAnySttModelReady() ? 'ready' : 'not installed'})`,
+    `ffmpeg: ${ffmpeg.ok ? 'ok' : 'FAILED'} — ${ffmpeg.detail}`,
+    `ffmpeg path: ${ffmpeg.path}`,
+    `Discord: ${discord.status} / voice ${discord.voiceStatus}${discord.error ? ` — ${discord.error}` : ''}`,
+    `Log: ${debugLogger.path}`,
+  ].join('\n')
+}
+
+async function debugState() {
+  return {
+    enabled: store.get('debugMode', false) ?? false,
+    logPath: debugLogger.path,
+    log: debugLogger.tail(200),
+    diagnostics: await diagnostics(),
+  }
+}
+
+handle(INVOKE.debugGetState, () => debugState())
+
+handle(INVOKE.debugSetEnabled, async (_e, enabled: boolean) => {
+  const on = enabled === true
+  store.set('debugMode', on)
+  enableDebugLogging(on)
+  setDiscordVerbose(on)
+  return debugState()
+})
+
+handle(INVOKE.debugOpenLog, async () => {
+  debugLogger.ensure()
+  const error = await shell.openPath(debugLogger.path)
+  return error ? { ok: false, error } : { ok: true }
 })

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
-import type { IndexProgress, ScanProgress } from '../types'
+import type { DebugState, IndexProgress, ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
 
 const LANGUAGE_LABELS: Record<string, string> = {
@@ -77,13 +77,14 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-export type SectionId = 'audio' | 'library' | 'transcription' | 'director'
+export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'advanced'
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'audio', label: 'Audio' },
   { id: 'library', label: 'Library' },
   { id: 'transcription', label: 'Transcription' },
   { id: 'director', label: 'Director' },
+  { id: 'advanced', label: 'Advanced' },
 ]
 
 export default function Settings({
@@ -120,8 +121,18 @@ export default function Settings({
   const [sttLanguage, setSttLanguage] = useState('auto')
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [section, setSection] = useState<SectionId>(initialSection)
+  const [debugState, setDebugState] = useState<DebugState | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
   const openerRef = useRef<Element | null>(null)
+
+  const refreshDebug = useCallback(async () => {
+    setDebugState(await window.doty.debugGetState())
+  }, [])
+
+  // Read the machine's state when the group is opened, not on every render.
+  useEffect(() => {
+    if (section === 'advanced') void refreshDebug()
+  }, [section, refreshDebug])
 
   // A modal should take focus and give it back; otherwise the DM tabs into the
   // player behind the backdrop.
@@ -374,6 +385,14 @@ export default function Settings({
   function handleSpeakerChange(deviceId: string) {
     setSelectedSpeaker(deviceId)
     onSpeakerChange(deviceId || null)
+  }
+
+  async function toggleDebug() {
+    setDebugState(await window.doty.debugSetEnabled(!(debugState?.enabled ?? false)))
+  }
+
+  function copyDiagnostics() {
+    if (debugState?.diagnostics) navigator.clipboard.writeText(debugState.diagnostics)
   }
 
   const scanPercent =
@@ -1314,6 +1333,134 @@ export default function Settings({
                 </div>
               </div>
             </div>
+          </div>
+
+          <div
+            role="tabpanel"
+            id={`settings-panel-advanced`}
+            aria-labelledby={`settings-tab-advanced`}
+            hidden={section !== 'advanced'}
+          >
+            {/* Debug mode */}
+            <div className="mb-5">
+              <Label>Debug Mode</Label>
+              <div style={{ background: '#080705', border: '1px solid #2e2416', padding: '10px 12px' }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p style={{ fontSize: '15px', color: '#c8b07a', fontFamily: "'Crimson Text', serif" }}>
+                      Capture diagnostics
+                    </p>
+                    <p style={{ fontSize: '13px', color: '#3a2e1a', fontFamily: 'monospace' }}>
+                      Verbose logs go to a file on this Mac. Nothing is uploaded.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={debugState?.enabled ?? false}
+                    onClick={toggleDebug}
+                    className="flex items-center gap-2 shrink-0"
+                    style={{
+                      fontSize: '12px',
+                      fontFamily: 'monospace',
+                      color: debugState?.enabled ? '#c8922a' : '#3a2e1a',
+                    }}
+                  >
+                    <span
+                      className="w-3 h-3 border"
+                      style={{
+                        borderColor: debugState?.enabled ? '#c8922a' : '#3a2e1a',
+                        background: debugState?.enabled ? '#c8922a' : 'transparent',
+                      }}
+                    />
+                    {debugState?.enabled ? 'On' : 'Off'}
+                  </button>
+                </div>
+                {debugState?.enabled && (
+                  <div className="mt-3">
+                    <p style={{ fontSize: '12px', color: '#6b4e15', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                      {debugState.logPath}
+                    </p>
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        type="button"
+                        onClick={() => window.doty.debugOpenLog()}
+                        style={btnStyle}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                      >
+                        Open log
+                      </button>
+                      <button
+                        type="button"
+                        onClick={refreshDebug}
+                        style={btnStyle}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* What this machine reports */}
+            <div className="mb-5">
+              <div className="flex items-center justify-between mb-2">
+                <Label>This Machine</Label>
+                <button
+                  type="button"
+                  onClick={copyDiagnostics}
+                  style={btnStyle}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.15)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.08)')}
+                >
+                  Copy
+                </button>
+              </div>
+              <pre
+                data-testid="debug-diagnostics"
+                style={{
+                  background: '#080705',
+                  border: '1px solid #2e2416',
+                  padding: '10px 12px',
+                  fontSize: '12px',
+                  lineHeight: 1.6,
+                  color: '#c8b07a',
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {debugState?.diagnostics ?? 'Reading…'}
+              </pre>
+            </div>
+
+            {debugState?.enabled && (
+              <div className="mb-5">
+                <Label>Recent Log</Label>
+                <pre
+                  data-testid="debug-log"
+                  style={{
+                    background: '#080705',
+                    border: '1px solid #2e2416',
+                    padding: '10px 12px',
+                    maxHeight: '220px',
+                    overflow: 'auto',
+                    fontSize: '11px',
+                    lineHeight: 1.5,
+                    color: '#8a744a',
+                    fontFamily: 'monospace',
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {debugState.log || 'No entries yet.'}
+                </pre>
+              </div>
+            )}
           </div>
         </div>
       </div>

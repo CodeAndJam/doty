@@ -184,6 +184,16 @@ export interface DiscordState {
 
 export type MicPermission = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
 
+/** What the Advanced tab needs to explain a machine that misbehaves. */
+export interface DebugState {
+  enabled: boolean
+  logPath: string
+  /** Recent log lines, oldest first; empty until debug mode writes something. */
+  log: string
+  /** Versions, paths and the checks that explain "connected but silent". */
+  diagnostics: string
+}
+
 export interface DotyAPI {
   // Microphone Permission
   micCheckPermission: () => Promise<MicPermission>
@@ -359,6 +369,11 @@ export interface DotyAPI {
   // Autopilot (#12)
   getAutopilotConfig: () => Promise<import('./lib/autopilot').AutopilotConfig>
   setAutopilotConfig: (config: Partial<import('./lib/autopilot').AutopilotConfig>) => Promise<{ ok: boolean }>
+
+  // Debug
+  debugGetState: () => Promise<DebugState>
+  debugSetEnabled: (enabled: boolean) => Promise<DebugState>
+  debugOpenLog: () => Promise<{ ok: boolean; error?: string }>
 
   // Discord
   discordConnect: (token?: string) => Promise<{ ok: boolean; error?: string }>
