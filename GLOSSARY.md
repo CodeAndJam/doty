@@ -32,8 +32,8 @@ _Avoid_: suggestion, playlist
 
 **Lane**:
 Which shelf a file belongs on: the score, or the effects. A label, not a folder — resolved from the
-DM's switch, then the classifier (duration, audio verdict, name), then the folder the file came
-from. Folders are only sources, and one folder may hold both lanes.
+DM's switch, then the classifier (audio verdict first, then duration/genre/name), then the folder
+the file came from. Folders are only sources, and one folder may hold both lanes.
 _Avoid_: kind, type, category (the effects folder's own subfolder), library
 
 **Override** — retired as a mode:

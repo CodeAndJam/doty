@@ -174,7 +174,7 @@ flowchart TD
   ITEMS --> AUD[audio pass<br/>ffmpeg clip → mel → audio encoder]
 
   TXT --> VEC[(track_vectors<br/>key, model, dim)]
-  AUD --> KIND[classify vs two anchors<br/>margin 0.03]
+  AUD --> KIND[classify vs two anchors<br/>music vs not]
   KIND --> VEC
 
   Q[search text] --> EMBED[embedQuery]
@@ -186,7 +186,7 @@ flowchart TD
   LOWER --> RES2[items + mode: text]
 
   VEC --> TOPK
-  KIND -->|20–45 s band| LANES
+  KIND -->|audio verdict| LANES
   DESC -->|name, tags| LOWER
 ```
 
