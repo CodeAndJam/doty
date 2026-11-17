@@ -25,6 +25,29 @@ describe('classifyTrack', () => {
     expect(classifyTrack({ path: 'Unknown/thunder.mp3', genre: 'Music' })).toBe('unknown')
   })
 
+  it('lets an explicit effects genre outrank a long duration', () => {
+    // Rain and wind loops run for minutes; the library tags them as effects and
+    // the duration rule used to overrule that and call them cues.
+    expect(
+      classifyTrack({ path: 'Walking/Night/Weather - Heavy Rain.mp3', duration: 73, genre: 'Sound Effects' }),
+    ).toBe('sfx')
+    expect(
+      classifyTrack({
+        path: 'Exploration/Dungeon/Natural World - Landslide Near and Far.mp3',
+        duration: 54,
+        genre: 'Sound Effects',
+      }),
+    ).toBe('sfx')
+  })
+
+  it('does not let the tagger default "Music" outrank duration', () => {
+    expect(classifyTrack({ path: 'Weather - Heavy Rain.mp3', duration: 73, genre: 'Music' })).toBe('music')
+  })
+
+  it('does not treat a long cue in a SFX folder as an effect', () => {
+    expect(classifyTrack({ path: 'SFX/Ambush Theme.mp3', duration: 184 })).toBe('music')
+  })
+
   it('leaves a middling clip unknown rather than guessing', () => {
     expect(classifyTrack({ path: 'Misc/track 7.mp3', duration: 30 })).toBe('unknown')
   })

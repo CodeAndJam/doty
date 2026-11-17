@@ -199,8 +199,10 @@ Lane resolution, in isolation:
 ```mermaid
 flowchart LR
   O{DM override?} -->|yes| OL[label it]
-  O -->|no| C{duration ≤ 20 s or ≥ 45 s?}
-  C -->|yes| CL[classifier wins]
+  O -->|no| G{genre says effects?}
+  G -->|yes| CL[classifier wins]
+  G -->|no| C{duration ≤ 20 s or ≥ 45 s?}
+  C -->|yes| CL
   C -->|no| A{audio verdict<br/>confident?}
   A -->|yes| CL
   A -->|no| N{name says sfx/music?}

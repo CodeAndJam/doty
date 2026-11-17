@@ -133,7 +133,9 @@ const rankerDownloads = createModelDownloads({
       send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
     } else if (event.type === 'error') {
       rankerDownloading = false
-      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
+      // The reason travels with the event: a button that silently returns to its
+      // resting state is indistinguishable from one that never ran.
+      send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error', reason: event.error })
       console.error('[ranker] download failed:', event.error)
     }
   },

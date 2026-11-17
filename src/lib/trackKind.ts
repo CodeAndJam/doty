@@ -50,8 +50,13 @@ export function classifyTrack(input: TrackKindInput): TrackKind {
   // best: only a *specific* genre word counts as evidence below.
   const path = input.path.replace(/\\/g, '/')
 
-  const namedSfx = SFX_WORDS.test(path) || SFX_WORDS.test(genre)
+  const namedSfx = SFX_WORDS.test(path)
   const namedMusic = MUSIC_WORDS.test(genre) && !/^music$/i.test(genre)
+
+  // A file the library itself tags as an effect stays one however long it runs:
+  // rain, wind and fire loops are minutes long and still effects. Only the genre
+  // is this strong — a folder named "SFX" can hold a cue.
+  if (SFX_WORDS.test(genre)) return 'sfx'
 
   const seconds = typeof input.duration === 'number' && input.duration > 0 ? input.duration : null
 

@@ -93,11 +93,12 @@
 - [ ] Ranker: label the rows. Add real narration moments to
       `test-fixtures/ranker/transcripts.json`, run `pnpm ranker:rows`, label in the
       browser, save `labels.json`. `precision @ ≥0.9` is what sets RANK_SWITCH_FLOOR.
-- [ ] Ranker: upload `d1-omni-text-v1.tar.gz` (written to `~/.doty/models` by
-      `scripts/export-d1-omni.py --pack`) to a `models-v1` release, and confirm
-      the sha256 in `electron/d1-model.ts` matches it. Until then the background
-      fetch 404s and the app stays on keyword matching. The LFM licence note
-      belongs on that download.
+- [x] Ranker: `models-v1` is published with `d1-omni-text-v1.tar.gz`, and the app's
+      download button installs it (verified end to end on a throwaway profile:
+      1.4 GB fetched, graph sha256 matches the manifest, licence extracted). The
+      archive now carries the LFM licence, which changes its hash — repack with
+      `scripts/export-d1-omni.py --pack` and update `RANKER_SHA256` whenever the
+      export changes.
 - [x] Ranker: the session loop is wired. The player repeats the current cue by
       default (`loopMode` single), so a boundary is a genuine choice rather than a
       deadline. Autopilot changes cue at 0.40 with a 1.5x margin, or 0.30 on a

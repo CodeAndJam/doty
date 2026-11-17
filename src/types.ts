@@ -302,7 +302,7 @@ export interface DotyAPI {
     manualPicks: number
     overrideRate: number
   }>
-  onRankerDownloadProgress: (cb: (p: { percent: number; status: string }) => void) => () => void
+  onRankerDownloadProgress: (cb: (p: { percent: number; status: string; reason?: string }) => void) => () => void
   onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>

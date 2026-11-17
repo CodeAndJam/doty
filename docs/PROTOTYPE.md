@@ -12,8 +12,8 @@ pnpm dev
 
 The ranker and embedder are already in `~/.doty/models`, so no release is needed
 on this machine. The 1.2 MB VAD model downloads once in the background if it is
-missing. A fresh machine would need `models-v1`
-published first; that is a distribution task, not a prototype task.
+missing, and the 1.4 GB decision model comes from the `models-v1` release on
+first launch.
 
 ## Before the session (2 minutes)
 

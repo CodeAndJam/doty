@@ -165,6 +165,23 @@ describe('library', () => {
     expect(library.status()).toMatchObject({ phase: 'idle', indexed: 3, total: 3 })
   })
 
+  it('feeds the audio verdict into the lane, and rebuilds after the pass', async () => {
+    const { library } = harness({
+      musicFiles: () => ['Misc/loop.mp3'],
+      facts: () => ({ 'Misc/loop.mp3': { duration: 30 } as never }),
+      audioAvailable: () => true,
+      kindAnchors: async () => ({ music: vector(1, 0), sfx: vector(0, 1) }),
+      embedAudio: async () => vector(0, 1),
+    })
+    // Before the pass duration decides nothing and the folder is all there is.
+    expect(library.items().find((item) => item.key === 'Misc/loop.mp3')).toMatchObject({ lane: 'music' })
+    await library.ensureIndexed()
+    expect(library.items().find((item) => item.key === 'Misc/loop.mp3')).toMatchObject({
+      lane: 'sfx',
+      laneSource: 'classifier',
+    })
+  })
+
   it('exposes the resolved lane for every item, both folders', () => {
     const { library } = harness({ overrides: () => ({ 'sfx:Door/door slam.wav': 'music' }) })
     const byKey = new Map(library.items().map((item) => [item.key, item.lane]))

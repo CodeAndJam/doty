@@ -134,12 +134,12 @@ export function createLibrary(deps: LibraryDeps): Library {
         override: overrides[key] ?? null,
         duration: meta?.duration,
         genre: meta?.genre,
-        audio: meta?.audioKind,
+        audio: meta?.audioKind ?? kinds[key],
       })
       // shortcut: effects have no measured duration yet (B2), so a name-only
       // verdict must not move them off the shelf they were put on. Remove this
       // once the scanner measures effect durations.
-      const nameOnly = folderLane === 'sfx' && !meta?.duration && !meta?.audioKind
+      const nameOnly = folderLane === 'sfx' && !meta?.duration && !meta?.audioKind && !kinds[key]
       const lane = nameOnly && decision.source === 'classifier' ? 'sfx' : decision.lane
       const source = lane === decision.lane ? decision.source : 'folder'
       out.push({
@@ -274,6 +274,8 @@ export function createLibrary(deps: LibraryDeps): Library {
           })
           await audio.run()
           kinds = audio.kinds
+          // The lanes cached so far were resolved without these verdicts.
+          cached = null
         }
       }
     } finally {
