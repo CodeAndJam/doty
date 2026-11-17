@@ -157,13 +157,10 @@ test('searching a name narrows the music shelf, clearing restores it, and the re
     await page.keyboard.press('Escape')
     await expect(badges).toHaveCount(0)
     await expect(page.getByRole('slider', { name: 'Seek' })).toBeVisible({ timeout: 15_000 })
-    // Synthetic enter, not a real hover: on an unfocused Electron window the
-    // pointer move does not always reach the renderer, and this only needs the
-    // tooltip the player shows for its current track.
-    await page.mouse.move(0, 0)
-    const info = page.getByRole('button', { name: 'Track info' })
-    await info.dispatchEvent('mouseover')
-    await expect(info.locator('xpath=..')).toContainText('Spooky - Desna')
+    // The transport names what it is playing, no hover needed since the console
+    // rewrite dropped the tooltip button this used to reach for. The queue lists
+    // the same title, so the first match is the transport.
+    await expect(page.getByTitle('Spooky - Desna').first()).toBeVisible()
   } finally {
     if (app) await gracefulClose(app)
     cleanup(h)
