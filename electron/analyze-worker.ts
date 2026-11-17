@@ -7,7 +7,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import { parentPort, workerData } from 'node:worker_threads'
-import { ANALYSIS_VERSION } from './analyzer'
+import { ANALYSIS_VERSION } from './analysis-version'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 let ffmpegPath: string = require('ffmpeg-static')

@@ -1,4 +1,9 @@
-import { join } from 'node:path'
+import fs from 'node:fs'
+import { dirname, join } from 'node:path'
+import { ANALYSIS_VERSION } from './analysis-version'
+
+export { ANALYSIS_VERSION }
+
 import { Worker } from 'node:worker_threads'
 
 /**
@@ -6,7 +11,6 @@ import { Worker } from 'node:worker_threads'
  * Cached rows carry the version that produced them, so a formula fix (the energy
  * clamp was one) re-analyses the library instead of trusting stale numbers.
  */
-export const ANALYSIS_VERSION = 2
 
 export interface TrackMetadata {
   bpm: number
@@ -37,7 +41,22 @@ export interface TrackMetadata {
 
 // In dev: worker is built to out/main/analyze-worker.js
 // In prod: same location relative to __dirname
-const WORKER_PATH = join(__dirname, 'analyze-worker.js')
+/**
+ * The worker sits beside the main entry, but this module can be emitted into a
+ * `chunks/` directory when the bundler shares it. Walk up until it is found
+ * rather than assuming, or every track fails analysis with MODULE_NOT_FOUND.
+ */
+function workerPath(): string {
+  let dir = __dirname
+  for (let depth = 0; depth < 3; depth++) {
+    const candidate = join(dir, 'analyze-worker.js')
+    if (fs.existsSync(candidate)) return candidate
+    dir = dirname(dir)
+  }
+  return join(__dirname, 'analyze-worker.js')
+}
+
+const WORKER_PATH = workerPath()
 
 export function analyzeFile(filePath: string): Promise<TrackMetadata> {
   return new Promise((resolve, reject) => {

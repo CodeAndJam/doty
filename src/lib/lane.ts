@@ -54,3 +54,14 @@ export function resolveLane(facts: LaneFacts): LaneDecision {
   if (kind !== 'unknown') return { lane: kind, source: 'classifier', kind }
   return { lane: facts.folderLane ?? 'music', source: 'folder', kind }
 }
+
+/**
+ * Is this item visible in the music browser?
+ *
+ * A lane only moves a track out of the music list when there is somewhere else
+ * for it to go. With no effects folder configured, hiding an effect removes it
+ * from the app entirely — the DM can see the file in Finder but not in Doty.
+ */
+export function showInMusicPanel(lane: Lane, hasSfxShelf: boolean): boolean {
+  return lane === 'music' || !hasSfxShelf
+}

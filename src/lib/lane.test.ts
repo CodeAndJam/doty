@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveLane } from './lane'
+import { resolveLane, showInMusicPanel } from './lane'
 
 describe('resolveLane', () => {
   it('lets the DM override everything', () => {
@@ -35,5 +35,13 @@ describe('resolveLane', () => {
       lane: 'music',
       source: 'folder',
     })
+  })
+})
+
+describe('showInMusicPanel', () => {
+  it('hides an effect only when there is an effects shelf to hold it', () => {
+    expect(showInMusicPanel('sfx', true)).toBe(false)
+    expect(showInMusicPanel('sfx', false)).toBe(true)
+    expect(showInMusicPanel('music', true)).toBe(true)
   })
 })

@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
+import { showInMusicPanel } from '../src/lib/lane'
 import {
   feedChunk,
   finalizeStream,
@@ -319,6 +320,9 @@ function launchScanner(folder: string, force = false) {
       } catch (e) {
         console.error('[library] prune failed:', e)
       }
+      // The analysis just changed every duration and energy, and the lane rule
+      // reads them: a library built mid-scan says "music" for an 18-second sting.
+      library.invalidate()
       send(EVENTS.scanComplete)
     },
     force,
