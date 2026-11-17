@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
@@ -50,6 +50,8 @@ interface Props {
   rankerStatus: 'loading' | 'ready' | 'error'
   recommendCount: number
   onRecommendCountChange: (count: number) => void
+  /** Which group to open on; the transcript failures open Transcription. */
+  initialSection?: SectionId
 }
 
 interface AudioDevice {
@@ -94,6 +96,7 @@ export default function Settings({
   rankerStatus,
   recommendCount,
   onRecommendCountChange,
+  initialSection = 'library',
 }: Props) {
   const [folder, setFolder] = useState('')
   const [trackCount, setTrackCount] = useState(0)
@@ -116,22 +119,55 @@ export default function Settings({
   const [sttModel, setSttModel] = useState('parakeet')
   const [sttLanguage, setSttLanguage] = useState('auto')
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
-  const [section, setSection] = useState<SectionId>('library')
+  const [section, setSection] = useState<SectionId>(initialSection)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const openerRef = useRef<Element | null>(null)
+
+  // A modal should take focus and give it back; otherwise the DM tabs into the
+  // player behind the backdrop.
+  useEffect(() => {
+    openerRef.current = document.activeElement
+    dialogRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')?.focus()
+    return () => {
+      if (openerRef.current instanceof HTMLElement) openerRef.current.focus()
+    }
+  }, [])
 
   /** One rail: a column on a wide window, a wrapped tab row on a narrow one. */
   const settingsNav = () => (
     <div
       role="tablist"
       aria-label="Settings sections"
+      aria-orientation="vertical"
       className="flex md:flex-col flex-wrap gap-1 shrink-0 p-4 md:w-44 md:border-r"
       style={{ borderColor: '#2e2416' }}
+      onKeyDown={(e) => {
+        const at = SECTIONS.findIndex((item) => item.id === section)
+        const step =
+          e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' || e.key === 'ArrowLeft' ? -1 : 0
+        const target =
+          e.key === 'Home'
+            ? 0
+            : e.key === 'End'
+              ? SECTIONS.length - 1
+              : step
+                ? (at + step + SECTIONS.length) % SECTIONS.length
+                : -1
+        if (target < 0) return
+        e.preventDefault()
+        setSection(SECTIONS[target].id)
+        document.getElementById(`settings-tab-${SECTIONS[target].id}`)?.focus()
+      }}
     >
       {SECTIONS.map((item) => (
         <button
           key={item.id}
           type="button"
           role="tab"
+          id={`settings-tab-${item.id}`}
           aria-selected={section === item.id}
+          aria-controls={`settings-panel-${item.id}`}
+          tabIndex={section === item.id ? 0 : -1}
           data-testid={`settings-section-${item.id}`}
           onClick={() => setSection(item.id)}
           className="text-left px-2 py-1.5 transition-colors"
@@ -397,8 +433,18 @@ export default function Settings({
       <div
         className="relative flex flex-col md:flex-row w-full max-w-3xl max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.stopPropagation()}
+        // The overlay's window listener never sees a keydown from inside the
+        // dialog, so Escape has to be handled here or the only way out is a mouse.
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            onClose()
+          }
+        }}
         role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+        ref={dialogRef}
         style={{
           background: 'linear-gradient(160deg, #0f0d09, #080705)',
           border: '1px solid #2e2416',
@@ -406,7 +452,13 @@ export default function Settings({
         }}
       >
         {settingsNav()}
-        <div data-testid="settings-content" className="flex-1 min-w-0 overflow-y-auto px-7 py-6">
+        <div
+          data-testid="settings-content"
+          role="tabpanel"
+          id={`settings-panel-${section}`}
+          aria-labelledby={`settings-tab-${section}`}
+          className="flex-1 min-w-0 overflow-y-auto px-7 py-6"
+        >
           {/* Corner ornaments */}
           <div
             className="absolute top-0 left-0 w-4 h-4"
@@ -772,7 +824,7 @@ export default function Settings({
               </div>
             </>
           )}
-          {section === 'director' && (
+          {section === 'library' && (
             <>
               {/* SFX recommendation count */}
               <div className="mb-5">
@@ -1141,14 +1193,13 @@ export default function Settings({
               />
             </>
           )}
-          {section === 'director' && (
-            <>
-              {/* Discord integration */}
-              <div className="mb-6">
-                <DiscordPanel />
-              </div>
-            </>
-          )}
+          {/* Mounted whatever the group: an open token field keeps what was typed. */}
+          <div className={section === 'director' ? '' : 'hidden'}>
+            {/* Discord integration */}
+            <div className="mb-6">
+              <DiscordPanel />
+            </div>
+          </div>
           {section === 'director' && (
             <>
               {/* Divider before future features */}

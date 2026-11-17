@@ -28,6 +28,7 @@ export default function MainLayout() {
   /** The transcript window the director reads: wider than the UI snippet. */
   const [sessionText, setSessionText] = useState('')
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
+  const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
   const [musicFolder, setMusicFolder] = useState('')
@@ -449,6 +450,7 @@ export default function MainLayout() {
         const res = await window.doty.sttStart()
         if (!res.ok) {
           stop()
+          setSettingsSection('transcription')
           setShowSettings(true)
           return
         }
@@ -540,7 +542,10 @@ export default function MainLayout() {
           {(sttDownload || sttDownloadError) && (
             <button
               type="button"
-              onClick={() => setShowSettings(true)}
+              onClick={() => {
+                setSettingsSection('transcription')
+                setShowSettings(true)
+              }}
               className="flex items-center gap-2 px-2 py-1 transition-all hover:opacity-80"
               style={{ border: '1px solid rgba(200,146,42,0.3)' }}
               title={
@@ -590,7 +595,10 @@ export default function MainLayout() {
         {/* Settings button */}
         <button
           type="button"
-          onClick={() => setShowSettings(true)}
+          onClick={() => {
+            setSettingsSection('library')
+            setShowSettings(true)
+          }}
           className="relative p-1.5 transition-all group"
           style={{ color: '#6b4e15' }}
         >
@@ -727,6 +735,7 @@ export default function MainLayout() {
       {/* Settings modal */}
       {showSettings && (
         <Settings
+          initialSection={settingsSection}
           onClose={() => setShowSettings(false)}
           onFolderChange={setMusicFolder}
           onMicChange={(id) => {
