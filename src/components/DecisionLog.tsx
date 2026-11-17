@@ -56,19 +56,19 @@ export default function DecisionLog({ entries, onClose }: Props) {
         padding: '6px 8px',
         maxHeight: '200px',
         overflowY: 'auto',
-        fontSize: '10px',
-        fontFamily: 'monospace',
-        color: '#8a7a5a',
+        fontSize: '11px',
+        fontFamily: "'IBM Plex Mono', monospace",
+        color: '#b9a683',
         lineHeight: '1.5',
       }}
     >
       <div className="flex items-center justify-between mb-1">
-        <span style={{ color: '#c8922a', fontSize: '9px', letterSpacing: '0.05em' }}>DECISION LOG (beta)</span>
+        <span style={{ color: '#d9a441', fontSize: '11px', letterSpacing: '0.05em' }}>DECISION LOG (beta)</span>
         <span className="flex items-center gap-2">
           <button
             type="button"
             onClick={copy}
-            style={{ color: copied ? '#4a9' : '#6b4e15', fontSize: '9px' }}
+            style={{ color: copied ? '#4a9' : '#a5813f', fontSize: '11px' }}
             title="Copy the log as tab-separated text, for feedback"
           >
             {copied ? 'copied' : 'copy'}
@@ -76,14 +76,14 @@ export default function DecisionLog({ entries, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            style={{ color: '#6b4e15', fontSize: '10px', padding: '0 2px' }}
+            style={{ color: '#a5813f', fontSize: '11px', padding: '0 2px' }}
             title="Close decision log"
           >
             x
           </button>
         </span>
       </div>
-      {entries.length === 0 && <div style={{ color: '#5a4a30', fontStyle: 'italic' }}>No decisions yet</div>}
+      {entries.length === 0 && <div style={{ color: '#a89573', fontStyle: 'italic' }}>No decisions yet</div>}
       {entries.map((e, i) => (
         <div
           key={`${e.timestamp}-${i}`}
@@ -93,8 +93,8 @@ export default function DecisionLog({ entries, onClose }: Props) {
             marginTop: i > 0 ? '2px' : undefined,
           }}
         >
-          <span style={{ color: '#5a4a30' }}>{formatTime(e.timestamp)}</span>{' '}
-          {e.ranker && <span style={{ color: e.ranker === 'model' ? '#c8922a' : '#6b4e15' }}>[{e.ranker}]</span>}
+          <span style={{ color: '#a89573' }}>{formatTime(e.timestamp)}</span>{' '}
+          {e.ranker && <span style={{ color: e.ranker === 'model' ? '#d9a441' : '#a5813f' }}>[{e.ranker}]</span>}
           {e.action && (
             <span
               style={{
@@ -105,21 +105,21 @@ export default function DecisionLog({ entries, onClose }: Props) {
                       ? '#c44'
                       : e.action === 'pending'
                         ? '#ca2'
-                        : '#6b4e15',
+                        : '#a5813f',
               }}
             >
               {' '}
               {e.action}
             </span>
           )}{' '}
-          <span style={{ color: '#a89060' }}>{shortFilename(e.topTrack)}</span>
-          {e.confidence > 0 && <span style={{ color: '#5a4a30' }}> {(e.confidence * 100).toFixed(0)}%</span>}
-          {e.reason && <span style={{ color: '#4a3a20' }}> — {e.reason}</span>}
+          <span style={{ color: '#c4b08c' }}>{shortFilename(e.topTrack)}</span>
+          {e.confidence > 0 && <span style={{ color: '#a89573' }}> {(e.confidence * 100).toFixed(0)}%</span>}
+          {e.reason && <span style={{ color: '#96825f' }}> — {e.reason}</span>}
           {e.transcriptSnippet && (
             <div
               style={{
-                color: '#3a3020',
-                fontSize: '9px',
+                color: '#9d8b66',
+                fontSize: '11px',
                 marginLeft: '8px',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',

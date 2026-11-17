@@ -181,8 +181,8 @@ export default function Transcript({
     <div
       className="flex-1 overflow-hidden flex flex-col relative"
       style={{
-        background: 'linear-gradient(160deg, #0f0d09, #080705)',
-        border: '1px solid #2e2416',
+        background: 'linear-gradient(160deg, #100e0a, #080705)',
+        border: '1px solid #3d2f1c',
         boxShadow: 'inset 0 1px 0 rgba(200,146,42,0.06), 0 0 20px rgba(0,0,0,0.5)',
       }}
     >
@@ -204,215 +204,181 @@ export default function Transcript({
         style={{ borderBottom: '1px solid rgba(200,146,42,0.4)', borderRight: '1px solid rgba(200,146,42,0.4)' }}
       />
 
-      {/* Header */}
-      <div
-        className="flex items-center justify-between px-4 pt-3 pb-2 shrink-0"
-        style={{ borderBottom: '1px solid rgba(46,36,22,0.8)' }}
-      >
-        <div className="relative flex items-center gap-1" data-session-dropdown>
-          {creating ? (
-            <input
-              ref={nameInputRef}
-              data-testid="session-name-input"
-              aria-label="Name for the new session"
-              className="bg-transparent outline-none"
-              style={{
-                fontFamily: "'Cinzel', serif",
-                fontSize: '13px',
-                letterSpacing: '0.15em',
-                color: '#c8b07a',
-                textTransform: 'uppercase',
-                width: '160px',
-                borderBottom: '1px solid rgba(200,146,42,0.4)',
-              }}
-              value={createValue}
-              onChange={(e) => setCreateValue(e.target.value)}
-              onKeyDown={(e) => {
-                // Both keys name it: a session is never left uncreated.
-                if (e.key === 'Enter' || e.key === 'Escape') finishCreate(createValue)
-              }}
-              onBlur={() => finishCreate(createValue)}
-            />
-          ) : editingName && activeSession ? (
-            <input
-              ref={nameInputRef}
-              data-testid="session-name-input"
-              aria-label="Session name"
-              className="bg-transparent outline-none"
-              style={{
-                fontFamily: "'Cinzel', serif",
-                fontSize: '13px',
-                letterSpacing: '0.15em',
-                color: '#c8b07a',
-                textTransform: 'uppercase',
-                width: '160px',
-                borderBottom: '1px solid rgba(200,146,42,0.4)',
-              }}
-              value={nameValue}
-              onChange={(e) => setNameValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitName()
-                // An edit that exists already: Escape puts it back, and gives the
-                // keyboard back to the title it came from.
-                if (e.key === 'Escape') {
-                  setEditingName(false)
-                  nameButtonRef.current?.focus()
-                }
-              }}
-              onBlur={commitName}
-            />
-          ) : (
+      {/* Header: the session name owns the first line, its metadata the second.
+          They used to share one line with five controls and wrapped mid-word. */}
+      <div className="shrink-0" style={{ borderBottom: '1px solid rgba(61,47,28,0.9)' }}>
+        <div className="flex items-center justify-between gap-2 px-4 pt-3">
+          <div className="relative flex min-w-0 items-center gap-1" data-session-dropdown>
+            {creating ? (
+              <input
+                ref={nameInputRef}
+                data-testid="session-name-input"
+                aria-label="Name for the new session"
+                className="bg-transparent outline-none"
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '13px',
+                  letterSpacing: '0.15em',
+                  color: '#e4d6b4',
+                  textTransform: 'uppercase',
+                  width: '160px',
+                  borderBottom: '1px solid rgba(217,164,65,0.4)',
+                }}
+                value={createValue}
+                onChange={(e) => setCreateValue(e.target.value)}
+                onKeyDown={(e) => {
+                  // Both keys name it: a session is never left uncreated.
+                  if (e.key === 'Enter' || e.key === 'Escape') finishCreate(createValue)
+                }}
+                onBlur={() => finishCreate(createValue)}
+              />
+            ) : editingName && activeSession ? (
+              <input
+                ref={nameInputRef}
+                data-testid="session-name-input"
+                aria-label="Session name"
+                className="bg-transparent outline-none"
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '13px',
+                  letterSpacing: '0.15em',
+                  color: '#e4d6b4',
+                  textTransform: 'uppercase',
+                  width: '160px',
+                  borderBottom: '1px solid rgba(217,164,65,0.4)',
+                }}
+                value={nameValue}
+                onChange={(e) => setNameValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitName()
+                  // An edit that exists already: Escape puts it back, and gives the
+                  // keyboard back to the title it came from.
+                  if (e.key === 'Escape') {
+                    setEditingName(false)
+                    nameButtonRef.current?.focus()
+                  }
+                }}
+                onBlur={commitName}
+              />
+            ) : (
+              <button
+                ref={nameButtonRef}
+                type="button"
+                data-testid="session-name"
+                onClick={() => {
+                  if (!activeSession) return
+                  setShowDropdown(false)
+                  setNameValue(sessions.find((s) => s.file === activeSession)?.name ?? '')
+                  setEditingName(true)
+                }}
+                title="Click to rename this session"
+                className="min-w-0 truncate"
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '13px',
+                  letterSpacing: '0.15em',
+                  color: '#f2e6c9',
+                  textTransform: 'uppercase',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'text',
+                  maxWidth: '190px',
+                }}
+              >
+                {sessions.find((s) => s.file === activeSession)?.name || 'No Session'}
+              </button>
+            )}
             <button
-              ref={nameButtonRef}
               type="button"
-              data-testid="session-name"
-              onClick={() => {
-                if (!activeSession) return
-                setShowDropdown(false)
-                setNameValue(sessions.find((s) => s.file === activeSession)?.name ?? '')
-                setEditingName(true)
+              data-testid="session-list-toggle"
+              aria-expanded={showDropdown}
+              // mousedown, not click: committing the rename on blur swaps this
+              // input for a button, and the click that follows would land on a
+              // node that no longer exists — one dead click after every rename.
+              onMouseDown={(e) => {
+                if (editingName) {
+                  e.preventDefault()
+                  commitName()
+                }
+                setShowDropdown((open) => !open)
               }}
-              title="Click to rename this session"
-              className="flex items-center gap-1"
-              style={{
-                fontFamily: "'Cinzel', serif",
-                fontSize: '13px',
-                letterSpacing: '0.15em',
-                color: '#6b4e15',
-                textTransform: 'uppercase',
-                background: 'none',
-                border: 'none',
-                cursor: 'text',
-                maxWidth: '180px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
+              title="Switch session"
+              aria-label="Switch session"
+              className="p-1 opacity-80 hover:opacity-100"
+              style={{ fontSize: '11px', color: '#a5813f', background: 'none', border: 'none' }}
             >
-              {sessions.find((s) => s.file === activeSession)?.name || 'No Session'}
+              ▼
             </button>
-          )}
-          <button
-            type="button"
-            data-testid="session-list-toggle"
-            // mousedown, not click: committing the rename on blur swaps this
-            // input for a button, and the click that follows would land on a
-            // node that no longer exists — one dead click after every rename.
-            onMouseDown={(e) => {
-              if (editingName) {
-                e.preventDefault()
-                commitName()
-              }
-              setShowDropdown((open) => !open)
-            }}
-            title="Switch session"
-            aria-label="Switch session"
-            style={{ fontSize: '10px', color: '#6b4e15', background: 'none', border: 'none' }}
-          >
-            ▼
-          </button>
-          {showDropdown && (
-            <div
-              className="absolute top-full left-0 mt-1 z-50 rounded shadow-lg py-1 max-h-48 overflow-y-auto"
-              style={{ background: '#1a1408', border: '1px solid #2e2416', minWidth: '180px' }}
-            >
-              {sessions.map((s) => (
-                <div key={s.file} className="flex items-center px-3 py-1.5 hover:bg-[#2e2416] gap-2">
-                  {renaming === s.file ? (
-                    <input
-                      className="flex-1 bg-transparent text-xs outline-none"
-                      style={{ color: '#c8b07a' }}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          if (renameValue.trim()) onRenameSession(s.file, renameValue.trim())
+            {showDropdown && (
+              <div
+                className="absolute top-full left-0 mt-1 z-50 rounded shadow-lg py-1 max-h-48 overflow-y-auto"
+                style={{ background: '#17130c', border: '1px solid #3d2f1c', minWidth: '180px' }}
+              >
+                {sessions.map((s) => (
+                  <div key={s.file} className="flex items-center px-3 py-1.5 hover:bg-[#3d2f1c] gap-2">
+                    {renaming === s.file ? (
+                      <input
+                        className="flex-1 bg-transparent outline-none"
+                        style={{ color: '#e4d6b4', fontSize: '13px' }}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            if (renameValue.trim()) onRenameSession(s.file, renameValue.trim())
+                            setRenaming(null)
+                          }
+                          if (e.key === 'Escape') setRenaming(null)
+                        }}
+                        onBlur={() => {
+                          if (renameValue) onRenameSession(s.file, renameValue)
                           setRenaming(null)
-                        }
-                        if (e.key === 'Escape') setRenaming(null)
-                      }}
-                      onBlur={() => {
-                        if (renameValue) onRenameSession(s.file, renameValue)
-                        setRenaming(null)
-                      }}
-                    />
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="flex-1 text-left text-xs truncate"
-                        style={{ color: s.file === activeSession ? '#c8922a' : '#c8b07a' }}
-                        onClick={() => {
-                          onSwitchSession(s.file)
-                          setShowDropdown(false)
                         }}
-                      >
-                        {s.name}
-                      </button>
-                      <button
-                        type="button"
-                        className="text-xs opacity-50 hover:opacity-100"
-                        style={{ color: '#6b4e15' }}
-                        onClick={() => {
-                          setRenaming(s.file)
-                          setRenameValue(s.name)
-                        }}
-                        title="Rename"
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        className="text-xs opacity-50 hover:opacity-100"
-                        style={{ color: '#b43c28' }}
-                        onClick={() => {
-                          if (window.confirm(`Delete session "${s.name}"?`)) onDeleteSession(s.file)
-                        }}
-                        title="Delete"
-                      >
-                        🗑
-                      </button>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          {recording && (
-            <span className="text-xs" style={{ color: '#ef4444' }} data-testid="recording-indicator">
-              ●
-            </span>
-          )}
-          {elapsed && (
-            <span className="text-xs tabular-nums" style={{ color: '#4a8a6a' }}>
-              {elapsed}
-            </span>
-          )}
-          {wordCount > 0 && (
-            <span className="text-xs tabular-nums" style={{ color: '#5a5a4a' }}>
-              {wordCount} words
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onCopyTranscript}
-            className="text-xs opacity-50 hover:opacity-100 px-1"
-            style={{ color: '#6b4e15' }}
-            title="Copy transcript"
-          >
-            📋
-          </button>
-          <button
-            type="button"
-            onClick={onExportTranscript}
-            className="text-xs opacity-50 hover:opacity-100 px-1"
-            style={{ color: '#6b4e15' }}
-            title="Export as markdown"
-          >
-            ↗
-          </button>
+                      />
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="flex-1 text-left truncate"
+                          style={{ fontSize: '13px', color: s.file === activeSession ? '#d9a441' : '#e4d6b4' }}
+                          onClick={() => {
+                            onSwitchSession(s.file)
+                            setShowDropdown(false)
+                          }}
+                        >
+                          {s.name}
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 opacity-70 hover:opacity-100"
+                          style={{ color: '#a5813f', fontSize: '13px' }}
+                          onClick={() => {
+                            setRenaming(s.file)
+                            setRenameValue(s.name)
+                          }}
+                          title="Rename"
+                          aria-label={`Rename ${s.name}`}
+                        >
+                          ✎
+                        </button>
+                        <button
+                          type="button"
+                          className="p-1 opacity-70 hover:opacity-100"
+                          style={{ color: '#b43c28', fontSize: '13px' }}
+                          onClick={() => {
+                            if (window.confirm(`Delete session "${s.name}"?`)) onDeleteSession(s.file)
+                          }}
+                          title="Delete"
+                          aria-label={`Delete ${s.name}`}
+                        >
+                          🗑
+                        </button>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -421,12 +387,51 @@ export default function Transcript({
               setCreateValue(defaultSessionName())
               setCreating(true)
             }}
-            className="text-sm px-1.5 rounded hover:bg-[#2e2416]"
-            style={{ color: '#6b4e15' }}
+            className="shrink-0 px-2 py-1 rounded hover:bg-[#3d2f1c]"
+            style={{ color: '#a5813f', fontSize: '14px' }}
             title="New session"
+            aria-label="New session"
             data-testid="new-session"
           >
             +
+          </button>
+        </div>
+        <div className="flex items-center gap-3 px-4 pt-1.5 pb-2.5">
+          {recording && (
+            <span className="data-label" style={{ color: '#ef4444' }} data-testid="recording-indicator">
+              ● recording
+            </span>
+          )}
+          {elapsed && (
+            <span className="data-label tabular-nums" style={{ color: '#6dbf95' }}>
+              {elapsed}
+            </span>
+          )}
+          {wordCount > 0 && (
+            <span className="data-label tabular-nums" style={{ color: '#9d8b66' }}>
+              {wordCount} words
+            </span>
+          )}
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={onCopyTranscript}
+            className="px-2 py-1 opacity-80 hover:opacity-100"
+            style={{ color: '#b9a683', fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px' }}
+            title="Copy transcript"
+            aria-label="Copy transcript"
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={onExportTranscript}
+            className="px-2 py-1 opacity-80 hover:opacity-100"
+            style={{ color: '#b9a683', fontFamily: "'IBM Plex Mono', monospace", fontSize: '11px' }}
+            title="Export as markdown"
+            aria-label="Export transcript as markdown"
+          >
+            Export
           </button>
         </div>
       </div>
@@ -443,7 +448,7 @@ export default function Transcript({
             type="button"
             onClick={() => window.doty.micOpenSettings()}
             className="text-xs underline opacity-90 hover:opacity-100"
-            style={{ color: '#c8922a' }}
+            style={{ color: '#d9a441' }}
           >
             Open System Settings →
           </button>
@@ -453,7 +458,7 @@ export default function Transcript({
       {/* Scrollable content */}
       <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 select-text cursor-text">
         {paragraphs.length === 0 && !interimText ? (
-          <p style={{ fontSize: '15px', color: '#3a2e1a', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
+          <p style={{ fontSize: '15px', color: '#9d8b66', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
             {recording
               ? asrStatus === 'loading'
                 ? 'The construct stirs to life...'
@@ -469,9 +474,9 @@ export default function Transcript({
                   key={pi}
                   style={{
                     fontSize: '12px',
-                    color: '#6a6a5a',
+                    color: '#a89b7f',
                     lineHeight: '1.8',
-                    fontFamily: 'monospace',
+                    fontFamily: "'IBM Plex Mono', monospace",
                     textAlign: 'center',
                     opacity: 0.7,
                     margin: '8px 0',
@@ -485,13 +490,13 @@ export default function Transcript({
             const firstTs = para[0]?.elapsedMs
             const paragraphText = para.map((s) => s.text).join(' ')
             return (
-              <div key={pi} className="group relative" style={{ marginBottom: '12px' }}>
+              <div key={pi} className="group relative" style={{ marginBottom: '16px' }}>
                 {firstTs > 0 && (
                   <span
-                    className="absolute -left-0 top-0 text-[10px] tabular-nums select-none opacity-0 group-hover:opacity-60 transition-opacity"
+                    className="absolute -left-0 top-0 text-[11px] tabular-nums select-none opacity-0 group-hover:opacity-80 group-focus-within:opacity-80 transition-opacity"
                     style={{
-                      color: '#5a5a4a',
-                      fontFamily: 'monospace',
+                      color: '#a89b7f',
+                      fontFamily: "'IBM Plex Mono', monospace",
                       transform: 'translateX(-100%) translateX(-8px)',
                     }}
                   >
@@ -500,12 +505,12 @@ export default function Transcript({
                 )}
                 <p
                   style={{
-                    fontSize: '16px',
-                    color: '#c8b07a',
-                    lineHeight: '1.7',
+                    fontSize: '17px',
+                    color: '#e4d6b4',
+                    lineHeight: '1.65',
                     fontFamily: "'Crimson Text', serif",
-                    borderLeft: '1px solid rgba(46,36,22,0.6)',
-                    paddingLeft: '10px',
+                    borderLeft: '1px solid rgba(122,97,56,0.45)',
+                    paddingLeft: '12px',
                   }}
                 >
                   {paragraphText}
@@ -520,12 +525,12 @@ export default function Transcript({
           <div style={{ marginBottom: '12px' }}>
             <p
               style={{
-                fontSize: '16px',
-                color: '#8a7a5a',
-                lineHeight: '1.7',
+                fontSize: '17px',
+                color: '#b9a683',
+                lineHeight: '1.65',
                 fontFamily: "'Crimson Text', serif",
-                borderLeft: '1px solid rgba(200,146,42,0.3)',
-                paddingLeft: '10px',
+                borderLeft: '1px solid rgba(217,164,65,0.35)',
+                paddingLeft: '12px',
                 fontStyle: 'italic',
               }}
             >
@@ -535,7 +540,7 @@ export default function Transcript({
                   display: 'inline-block',
                   width: '2px',
                   height: '1em',
-                  backgroundColor: '#c8922a',
+                  backgroundColor: '#d9a441',
                   marginLeft: '2px',
                   verticalAlign: 'text-bottom',
                   animation: 'blink 1s step-end infinite',
@@ -557,7 +562,7 @@ export default function Transcript({
           style={{
             background: 'rgba(200,146,42,0.2)',
             border: '1px solid rgba(200,146,42,0.4)',
-            color: '#c8922a',
+            color: '#d9a441',
             backdropFilter: 'blur(8px)',
           }}
         >

@@ -20,7 +20,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 /** The accent the session list paints on the active row. */
-const ACTIVE = 'rgb(200, 146, 42)'
+const ACTIVE = 'rgb(217, 164, 65)'
 
 interface Harness {
   profile: string
