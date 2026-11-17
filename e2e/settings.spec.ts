@@ -1,9 +1,9 @@
 /**
- * E2E: Settings is a left rail with four groups, not one long scroll.
+ * E2E: Settings is a left rail with five groups, not one long scroll.
  *
  *   1. the gear opens a modal dialog whose tablist is exactly Audio, Library,
- *      Transcription, Director
- *   2. each tab shows its own group and hides the other three
+ *      Transcription, Director, Advanced
+ *   2. each tab shows its own group and hides the other four
  *   3. the Library index line is meaningful with no embedding model (slice A2)
  *   4. Escape closes from inside the dialog and focus goes back to the gear
  *   5. arrows move the selected tab, and every tab's `aria-controls` names the
@@ -25,13 +25,14 @@ import fs from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-type SectionId = 'audio' | 'library' | 'transcription' | 'director'
-const SECTIONS: SectionId[] = ['audio', 'library', 'transcription', 'director']
+type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'advanced'
+const SECTIONS: SectionId[] = ['audio', 'library', 'transcription', 'director', 'advanced']
 const LABELS: Record<SectionId, string> = {
   audio: 'Audio',
   library: 'Library',
   transcription: 'Transcription',
   director: 'Director',
+  advanced: 'Advanced',
 }
 
 interface Harness {
@@ -98,14 +99,15 @@ function uniqueControl(page: Page, section: SectionId): Locator {
   if (section === 'audio') return d.getByText('Crossfade', { exact: true })
   if (section === 'library') return d.getByTestId('index-summary')
   if (section === 'transcription') return d.getByText('Speech Recognition', { exact: true })
-  return d.getByText('Autopilot Mode', { exact: true })
+  if (section === 'director') return d.getByText('Autopilot Mode', { exact: true })
+  return d.getByTestId('debug-diagnostics')
 }
 
 async function activeElementId(page: Page): Promise<string> {
   return page.evaluate(() => document.activeElement?.id ?? '')
 }
 
-test('the gear opens one dialog whose rail is exactly the four groups', async () => {
+test('the gear opens one dialog whose rail is exactly the five groups', async () => {
   const h = harness()
   let app: ElectronApplication | undefined
   try {
@@ -115,7 +117,7 @@ test('the gear opens one dialog whose rail is exactly the four groups', async ()
 
     expect(await dialog(page).getAttribute('aria-modal')).toBe('true')
     const tabs = dialog(page).getByRole('tab')
-    await expect(tabs).toHaveCount(4)
+    await expect(tabs).toHaveCount(5)
     for (const section of SECTIONS) await expect(tab(page, section)).toHaveText(LABELS[section])
 
     // Each group is the only one on screen.
@@ -169,7 +171,7 @@ test('arrows move the tab, Escape closes from inside, focus returns to the gear'
 
     // Home/End are part of the same roving-tabindex contract.
     await page.keyboard.press('End')
-    await expect(tab(page, 'director')).toHaveAttribute('aria-selected', 'true')
+    await expect(tab(page, 'advanced')).toHaveAttribute('aria-selected', 'true')
     await page.keyboard.press('Home')
     await expect(tab(page, 'audio')).toHaveAttribute('aria-selected', 'true')
 

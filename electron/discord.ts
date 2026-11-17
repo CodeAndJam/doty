@@ -20,7 +20,7 @@ import { store } from './store'
 
 // ── Verbose logging ───────────────────────────────────────────────────────────
 
-let verbose = true
+let verbose = false
 
 function log(msg: string): void {
   console.log(`[discord] ${msg}`)
@@ -30,8 +30,8 @@ function vlog(msg: string): void {
   if (verbose) console.log(`[discord:v] ${msg}`)
 }
 
-/** Enable or disable verbose Discord logging at runtime */
-function setDiscordVerbose(enabled: boolean): void {
+/** Debug mode turns the noisy per-event lines on; plain logs always run. */
+export function setDiscordVerbose(enabled: boolean): void {
   verbose = enabled
   log(`Verbose logging ${enabled ? 'enabled' : 'disabled'}`)
 }
