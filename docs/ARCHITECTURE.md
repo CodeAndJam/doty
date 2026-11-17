@@ -289,8 +289,8 @@ Nothing here may stop playback or hide the suggestions.
 |---|---|---|
 | Decision model | recommendations are heuristic | ranker status, per-option probabilities absent |
 | Embedding model | search by name/tag; recommendations by keywords | `ready: false`, search `mode: 'text'` |
-| Index incomplete | text search on that lane | `text search — index 12/43` |
-| Audio verdict | duration decides | badge falls back to the lane label |
+| Index incomplete | text search over the folder | `text search — index 12/43` |
+| Audio verdict | duration, genre and the name decide | badge falls back to that guess |
 | VAD model | RMS gate in the STT worker | none; transcript still arrives |
 | STT model | no transcript; DM can type a prompt | onboarding / model status |
 
