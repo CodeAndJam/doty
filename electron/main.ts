@@ -1139,7 +1139,7 @@ handle(INVOKE.getSfxList, () => {
   const known = new Map(listSfx(store.get('sfxFolder', '') as string).map((item) => [`sfx:${item.id}`, item]))
   return library.items('sfx').map((item) => {
     const found = known.get(item.key)
-    if (found) return { ...found, lane: 'sfx' as const }
+    if (found) return { ...found, lane: item.lane }
     // A file the DM filed as an effect but which lives in the music folder: show
     // it in the effects shelf, addressed by its absolute path.
     return {
@@ -1152,7 +1152,7 @@ handle(INVOKE.getSfxList, () => {
       description: '',
       duration: 0,
       source: 'custom' as const,
-      lane: 'sfx' as const,
+      lane: item.lane,
     }
   })
 })

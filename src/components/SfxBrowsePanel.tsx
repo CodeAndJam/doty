@@ -39,9 +39,15 @@ export default function SfxBrowsePanel({
     if (next) setLanes(next)
   }
 
-  // Load SFX list on mount
+  // Load SFX list on mount, and follow a lane change made anywhere else.
   useEffect(() => {
     void refresh()
+    const unsubScan = window.doty.onScanComplete(() => void refresh())
+    const unsubSfx = window.doty.onSfxChanged(() => void refresh())
+    return () => {
+      unsubScan()
+      unsubSfx()
+    }
   }, [])
 
   /** Label, never a disk move. */

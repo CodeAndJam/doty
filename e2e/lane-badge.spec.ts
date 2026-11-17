@@ -7,9 +7,9 @@
  *   3. the label survives a relaunch (it lives in the database, not the renderer)
  *   4. an item filed where it already lives is not shown as "moved"
  *
- * Isolated on purpose: its own `DOTY_PROFILE`, a temp music folder and a temp
- * effects folder, so the run never reads or writes the DM's real library or
- * profile. No model is needed — lane resolution falls back to folder/name.
+ * Isolated on purpose: each test gets its own `DOTY_PROFILE`, a temp music folder
+ * and a temp effects folder, so a run never reads or writes the DM's real library
+ * or profile. No model is needed — lane resolution falls back to folder/name.
  *
  * Run with `pnpm build && npx playwright test e2e/lane-badge.spec.ts --reporter=line`.
  */
@@ -22,13 +22,35 @@ const FIXTURES_DIR = resolve(__dirname, 'fixtures')
 const MUSIC_TRACK = 'Fantasy Tavern.mp3' // 10 min: music by duration as well as by folder
 const EFFECT_TRACK = 'Weather - Thunder Crash 1.mp3' // 18 s: an effect by duration
 
-/** A fresh database and Electron profile, shared across the two launches. */
-const PROFILE = `lane-e2e-${process.pid}-${Date.now()}`
-const PROFILE_DIR = join(process.env.HOME ?? '', '.doty', 'profiles', PROFILE)
+/** The only border a badge ever gets is the "filed elsewhere" highlight. */
+const NOT_MOVED = 'rgba(0, 0, 0, 0)'
+const MOVED = 'rgba(200, 146, 42, 0.6)'
 
-const ROOT = fs.mkdtempSync(join(tmpdir(), 'doty-lane-'))
-const MUSIC_DIR = join(ROOT, 'music')
-const SFX_DIR = join(ROOT, 'sfx')
+interface Harness {
+  profile: string
+  profileDir: string
+  root: string
+  music: string
+  sfx: string
+}
+
+/** A fresh database, Electron profile and library per test. */
+function harness(): Harness {
+  const profile = `lane-e2e-${process.pid}-${test.info().testId}`.replace(/[^a-zA-Z0-9_-]+/g, '-')
+  const root = fs.mkdtempSync(join(tmpdir(), 'doty-lane-'))
+  const music = join(root, 'music')
+  const sfx = join(root, 'sfx')
+  fs.mkdirSync(music, { recursive: true })
+  fs.mkdirSync(sfx, { recursive: true })
+  fs.copyFileSync(join(FIXTURES_DIR, MUSIC_TRACK), join(music, MUSIC_TRACK))
+  fs.copyFileSync(join(FIXTURES_DIR, EFFECT_TRACK), join(sfx, EFFECT_TRACK))
+  return { profile, profileDir: join(process.env.HOME ?? '', '.doty', 'profiles', profile), root, music, sfx }
+}
+
+function cleanup(h: Harness) {
+  fs.rmSync(h.root, { recursive: true, force: true })
+  fs.rmSync(h.profileDir, { recursive: true, force: true })
+}
 
 async function gracefulClose(app: ElectronApplication) {
   await app.evaluate(({ app: electronApp }) => {
@@ -37,21 +59,21 @@ async function gracefulClose(app: ElectronApplication) {
   await app.close()
 }
 
-function launch() {
-  return electron.launch({
+/** Bypass the STT onboarding wall — this test needs no model. */
+async function openApp(h: Harness): Promise<{ app: ElectronApplication; page: Page }> {
+  const app = await electron.launch({
     args: [join(__dirname, '../out/main/index.js')],
-    env: { ...process.env, DOTY_PROFILE: PROFILE },
+    env: { ...process.env, DOTY_PROFILE: h.profile },
   })
-}
-
-/** Bypass the STT onboarding wall: this test needs no model. */
-async function openApp(): Promise<{ app: ElectronApplication; page: Page }> {
-  const app = await launch()
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
   page.on('pageerror', (err) => console.error('[renderer:error]', err.message))
   const skip = page.getByText('Skip for now — set it up later in Settings')
   if (await skip.isVisible().catch(() => false)) await skip.click()
+  await page.evaluate(
+    ([music, sfx]: string[]) => Promise.all([window.doty.setMusicFolder(music), window.doty.setSfxFolder(sfx)]),
+    [h.music, h.sfx],
+  )
   return { app, page }
 }
 
@@ -61,7 +83,6 @@ async function badges(page: Page) {
     els.map((el) => ({
       text: (el.textContent ?? '').trim(),
       aria: el.getAttribute('aria-label') ?? '',
-      // The "moved" highlight is the only border the badge ever gets.
       border: getComputedStyle(el).borderTopColor,
     })),
   )
@@ -78,9 +99,13 @@ function disk(dir: string): string[] {
     .sort()
 }
 
+async function searchBox(page: Page, which: 'tracks' | 'effects') {
+  return page.getByPlaceholder(which === 'tracks' ? 'Search tracks or tags...' : 'Search effects...')
+}
+
 async function openBrowse(page: Page, which: 'tracks' | 'effects') {
   await page.getByTitle(which === 'tracks' ? 'Browse all tracks' : 'Browse all effects').click()
-  await expect(page.getByPlaceholder(which === 'tracks' ? 'Search tracks or tags...' : 'Search effects...')).toBeVisible()
+  await expect(await searchBox(page, which)).toBeVisible()
 }
 
 async function closeBrowse(page: Page) {
@@ -90,89 +115,115 @@ async function closeBrowse(page: Page) {
 
 /** Narrow the open shelf to one item, so its badge is the only one. */
 async function onlyRow(page: Page, which: 'tracks' | 'effects', name: string) {
-  await page.getByPlaceholder(which === 'tracks' ? 'Search tracks or tags...' : 'Search effects...').fill(name)
+  await (await searchBox(page, which)).fill(name)
   await expect(page.getByTestId('lane-badge')).toHaveCount(1)
-  return page.getByTestId('lane-badge').first()
 }
 
-const NOT_MOVED = 'rgba(0, 0, 0, 0)'
-const MOVED = 'rgba(200, 146, 42, 0.6)'
-
-test('a lane badge files a track on the other shelf and the label survives a relaunch', async () => {
-  fs.mkdirSync(MUSIC_DIR, { recursive: true })
-  fs.mkdirSync(SFX_DIR, { recursive: true })
-  fs.copyFileSync(join(FIXTURES_DIR, MUSIC_TRACK), join(MUSIC_DIR, MUSIC_TRACK))
-  fs.copyFileSync(join(FIXTURES_DIR, EFFECT_TRACK), join(SFX_DIR, EFFECT_TRACK))
-  const musicBefore = disk(MUSIC_DIR)
-  const sfxBefore = disk(SFX_DIR)
-
+test('a music track filed as an effect moves shelf and its label survives a relaunch', async () => {
+  const h = harness()
+  const musicBefore = disk(h.music)
+  const sfxBefore = disk(h.sfx)
   let app: ElectronApplication | undefined
   try {
     let page: Page
-    ;({ app, page } = await openApp())
-
-    await page.evaluate(
-      ([music, sfx]: string[]) => Promise.all([window.doty.setMusicFolder(music), window.doty.setSfxFolder(sfx)]),
-      [MUSIC_DIR, SFX_DIR],
-    )
+    ;({ app, page } = await openApp(h))
 
     // (a) a music row carries a badge, and a track filed where it lives is not "moved".
     await openBrowse(page, 'tracks')
-    const musicBadge = await onlyRow(page, 'tracks', 'Fantasy Tavern')
-    const asMusic = await badges(page)
+    await onlyRow(page, 'tracks', 'Fantasy Tavern')
+    const [asMusic] = await badges(page)
     console.log('[e2e] music row badge:', asMusic)
-    expect(asMusic[0].text).toBe('♪')
-    expect(asMusic[0].aria).toContain('Filed as music')
-    expect(asMusic[0].border).toBe(NOT_MOVED)
-    void musicBadge
+    expect(asMusic.text).toBe('♪')
+    expect(asMusic.aria).toContain('Filed as music')
+    expect(asMusic.border).toBe(NOT_MOVED)
 
     // (a) an effects card carries a badge too, also where it lives.
     await closeBrowse(page)
     await openBrowse(page, 'effects')
     await onlyRow(page, 'effects', 'Thunder Crash')
-    const asEffect = await badges(page)
+    const [asEffect] = await badges(page)
     console.log('[e2e] effects card badge:', asEffect)
-    expect(asEffect[0].text).toBe('FX')
-    expect(asEffect[0].aria).toContain('Filed as an effect')
-    expect(asEffect[0].border).toBe(NOT_MOVED)
+    expect(asEffect.text).toBe('FX')
+    expect(asEffect.aria).toContain('Filed as an effect')
+    expect(asEffect.border).toBe(NOT_MOVED)
 
     // (b) click it on the music row: filed as an effect, the row leaves the shelf.
     await closeBrowse(page)
     await openBrowse(page, 'tracks')
     await onlyRow(page, 'tracks', 'Fantasy Tavern')
-    await page.getByTestId('lane-badge').first().click()
+    await page.getByTestId('lane-badge').click()
     await expect(page.getByTestId('lane-badge')).toHaveCount(0, { timeout: 15_000 })
     await closeBrowse(page)
 
-    // ...and it shows up in the effects shelf, marked as moved.
+    // ...and it shows up in the effects shelf, wearing the "filed elsewhere" highlight.
     await openBrowse(page, 'effects')
     await onlyRow(page, 'effects', 'Fantasy Tavern')
-    const moved = await badges(page)
+    const [moved] = await badges(page)
     console.log('[e2e] moved effect badge:', moved)
-    // The badge shows the resolved lane (an effect now) and the highlight shows
-    // that it is not where its folder put it.
-    expect(moved[0].text).toBe('FX')
-    expect(moved[0].aria).toContain('Filed as an effect')
-    expect(moved[0].border).toBe(MOVED)
+    expect(moved.text).toBe('FX')
+    expect(moved.aria).toContain('Filed as an effect')
+    expect(moved.border).toBe(MOVED)
 
     // (d) nothing on disk changed: same files, same sizes, same mtimes.
-    expect(disk(MUSIC_DIR)).toEqual(musicBefore)
-    expect(disk(SFX_DIR)).toEqual(sfxBefore)
+    expect(disk(h.music)).toEqual(musicBefore)
+    expect(disk(h.sfx)).toEqual(sfxBefore)
 
     // (c) the label is a database row, so a relaunch still knows it.
     await closeBrowse(page)
     await gracefulClose(app)
     app = undefined
-    ;({ app, page } = await openApp())
+    ;({ app, page } = await openApp(h))
     await openBrowse(page, 'effects')
     await onlyRow(page, 'effects', 'Fantasy Tavern')
-    const afterRelaunch = await badges(page)
+    const [afterRelaunch] = await badges(page)
     console.log('[e2e] after relaunch:', afterRelaunch)
-    expect(afterRelaunch[0].text).toBe('FX')
-    expect(afterRelaunch[0].border).toBe(MOVED)
+    expect(afterRelaunch.text).toBe('FX')
+    expect(afterRelaunch.border).toBe(MOVED)
   } finally {
     if (app) await gracefulClose(app)
-    fs.rmSync(ROOT, { recursive: true, force: true })
-    fs.rmSync(PROFILE_DIR, { recursive: true, force: true })
+    cleanup(h)
+  }
+})
+
+test('an effect filed as music moves to the music shelf and back, losing the highlight', async () => {
+  const h = harness()
+  const musicBefore = disk(h.music)
+  const sfxBefore = disk(h.sfx)
+  let app: ElectronApplication | undefined
+  try {
+    let page: Page
+    ;({ app, page } = await openApp(h))
+
+    await openBrowse(page, 'effects')
+    await onlyRow(page, 'effects', 'Thunder Crash')
+    expect((await badges(page))[0].border).toBe(NOT_MOVED)
+    await page.getByTestId('lane-badge').click()
+    await expect(page.getByTestId('lane-badge')).toHaveCount(0, { timeout: 15_000 })
+    await closeBrowse(page)
+
+    // The music shelf addresses it by absolute path: a different branch of listMusic.
+    await openBrowse(page, 'tracks')
+    await onlyRow(page, 'tracks', 'Thunder Crash')
+    const [asMusic] = await badges(page)
+    console.log('[e2e] effect filed as music:', asMusic)
+    expect(asMusic.text).toBe('♪')
+    expect(asMusic.aria).toContain('Filed as music')
+    expect(asMusic.border).toBe(MOVED)
+    expect(disk(h.music)).toEqual(musicBefore)
+    expect(disk(h.sfx)).toEqual(sfxBefore)
+
+    // Clicking again picks the folder's own lane, which drops the override: no highlight.
+    await page.getByTestId('lane-badge').click()
+    await expect(page.getByTestId('lane-badge')).toHaveCount(0, { timeout: 15_000 })
+    await closeBrowse(page)
+    await openBrowse(page, 'effects')
+    await onlyRow(page, 'effects', 'Thunder Crash')
+    const [back] = await badges(page)
+    console.log('[e2e] filed back as an effect:', back)
+    expect(back.text).toBe('FX')
+    expect(back.border).toBe(NOT_MOVED)
+  } finally {
+    if (app) await gracefulClose(app)
+    cleanup(h)
   }
 })

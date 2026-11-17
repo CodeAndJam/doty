@@ -32,6 +32,14 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
 
   useEffect(() => {
     void refresh()
+    // The label can change from the effects panel or a background pass; a drawer
+    // left open must not keep showing the old one.
+    const unsubScan = window.doty.onScanComplete(() => void refresh())
+    const unsubSfx = window.doty.onSfxChanged(() => void refresh())
+    return () => {
+      unsubScan()
+      unsubSfx()
+    }
   }, [])
 
   /** Label, never a disk move: the file stays where the DM put it. */
