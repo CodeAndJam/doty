@@ -43,11 +43,9 @@ export function mergeSfxCandidates(nearest: string[], heuristic: string[], count
   return out
 }
 
-/** The model's ranking, cut to the column's size. */
-export function rankSfxCandidates(paths: string[], probabilities: number[], count: number): string[] {
+/** The model's ranking, best first, before the column's cut. */
+export function rankAllSfx(paths: string[], probabilities: number[]): Confident[] {
   return paths
     .map((path, i) => ({ path, probability: probabilities[i] ?? 0 }))
     .sort((a, b) => b.probability - a.probability)
-    .slice(0, count)
-    .map((c) => c.path)
 }

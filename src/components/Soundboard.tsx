@@ -12,18 +12,35 @@ import { trackKindOf } from '../lib/trackKind'
 import type { DecisionLogEntry, IndexProgress, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
-import { BrowseIcon, ChevronLeft, ChevronRight, MusicNoteIcon, PinIcon, SfxIcon, StopIcon } from './Icons'
-import PlayerBar from './PlayerBar'
+import {
+  BrowseIcon,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  LoopSmallIcon,
+  MusicNoteIcon,
+  PinIcon,
+  SfxIcon,
+  StopIcon,
+  VolumeHighIcon,
+  VolumeLowIcon,
+  VolumeMutedIcon,
+} from './Icons'
+import PlayerBar, { trackName } from './PlayerBar'
 import QueuePanel from './QueuePanel'
+import RecommendCard, { musicDetails, sfxDetails } from './RecommendCard'
 import SfxBrowsePanel from './SfxBrowsePanel'
-import SfxCard from './SfxCard'
-import TrackCard from './TrackCard'
+import VolumePopover from './VolumePopover'
 
 const PINS_KEY = 'doty:pinnedTracks'
 const SFX_PINS_KEY = 'doty:pinnedSfx'
 
-/** As many columns as the pane's width allows, never fewer than two. */
-const SFX_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }
+/**
+ * One rule for both shelves: as many cards per line as the pane's width allows.
+ * The two columns are the same width, so they always show the same shape.
+ */
+const CARD_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }
 
 function loadPins(): string[] {
   try {
@@ -87,10 +104,57 @@ function CollapsedRail({
   )
 }
 
+/** A list section's title and its hairline, the same in both columns. */
+function SectionHeading({
+  mark,
+  label,
+  rule,
+  children,
+}: {
+  mark?: ReactNode
+  label: string
+  rule: string
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex items-center gap-2 shrink-0 mb-1 mt-1" style={{ height: '24px' }}>
+      {mark}
+      <span className="label-caps">{label}</span>
+      <div className="flex-1 h-px" style={{ background: rule }} />
+      {children}
+    </div>
+  )
+}
+
+/** A small text button for a card's hover toolbar. */
+function CardAction({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="px-1.5 py-0.5 hover:opacity-80 transition-opacity shrink-0"
+      style={{
+        fontSize: '11px',
+        fontFamily: "'IBM Plex Mono', monospace",
+        color: 'var(--accent-dim)',
+        border: '1px solid rgba(200,146,42,0.2)',
+        lineHeight: '14px',
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
 interface Props {
   recommendations: string[]
   /** The effects the column offers: the model's ranking, best first. */
   sfxRecommendations: string[]
+  /** Every effect the model ranked, best first: what the column did not suggest. */
+  sfxCandidates?: string[]
+  /** Per-effect probability, aligned with `sfxCandidates`. */
+  sfxProbabilities?: Record<string, number>
   /** The `sfxRecommendations` the model was sure enough about for autopilot to fire. */
   sfxAutopilot: string[]
   lastConfidence: number
@@ -119,6 +183,8 @@ interface Props {
 export default function Soundboard({
   recommendations,
   sfxRecommendations,
+  sfxCandidates = [],
+  sfxProbabilities = {},
   sfxAutopilot,
   lastConfidence,
   lastChoiceConfidence,
@@ -709,6 +775,18 @@ export default function Soundboard({
       .sort((a, b) => sfxRecommendations.indexOf(a.id) - sfxRecommendations.indexOf(b.id))
   }, [allSfx, sfxRecommendations, sfxPinnedSet])
 
+  // SFX: everything else the model ranked, so its options are as inspectable as
+  // the music column's. Before the model answers, the shortlist is unranked and
+  // there is nothing honest to show under "also considered".
+  const sfxConsidered = useMemo(() => {
+    if (Object.keys(sfxProbabilities).length === 0) return []
+    const recSet = new Set(sfxRecommendations)
+    return sfxCandidates
+      .filter((id) => !recSet.has(id) && !sfxPinnedSet.has(id))
+      .map((id) => allSfx.find((s) => s.id === id))
+      .filter((s): s is SfxMeta => !!s)
+  }, [allSfx, sfxCandidates, sfxProbabilities, sfxRecommendations, sfxPinnedSet])
+
   // SFX: active channel map
   const activeChannelMap = useMemo(() => {
     const map = new Map<string, (typeof sfxPlayer.channels)[0]>()
@@ -722,29 +800,120 @@ export default function Soundboard({
   const queuePosition: [number, number] | null =
     queue.tracks.length > 0 ? [queue.currentIndex, queue.tracks.length] : null
 
-  // ── SFX card renderer ────────────────────────────────────────────────
+  // ── Card renderers ───────────────────────────────────────────────────
 
-  function renderSfxCard(sfx: SfxMeta) {
+  function renderSfxCard(sfx: SfxMeta, showProbability = true) {
     const ch = activeChannelMap.get(sfx.id)
+    const volume = ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)
+    const VolumeIcon = volume === 0 ? VolumeMutedIcon : volume < 0.5 ? VolumeLowIcon : VolumeHighIcon
     return (
-      <SfxCard
+      <RecommendCard
         key={sfx.id}
-        sfx={sfx}
-        channelId={ch?.id ?? null}
+        kind="sfx"
+        title={sfx.label}
         isPlaying={!!ch?.playing}
-        isLooping={ch?.looping ?? false}
         isPinned={sfxPinnedSet.has(sfx.id)}
-        channelVolume={ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)}
+        probability={showProbability ? sfxProbabilities[sfx.id] : undefined}
+        details={sfxDetails(sfx, sfxTagsMap[sfx.filename] || [])}
         tags={sfxTagsMap[sfx.filename] || []}
         allTags={sfxAllTags}
-        onPlay={(loop) => handlePlaySfx(sfx.id, sfx.label, sfx.filename, loop)}
-        onStop={() => ch && sfxPlayer.stop(ch.id)}
-        onToggleLoop={() => ch && sfxPlayer.toggleLoop(ch.id)}
-        onVolumeChange={(v) => {
-          sfxPlayer.setSfxVolume(sfx.id, v)
-        }}
+        onPlay={() => (ch?.playing ? sfxPlayer.stop(ch.id) : handlePlaySfx(sfx.id, sfx.label, sfx.filename))}
         onPin={() => toggleSfxPin(sfx.id)}
         onTagsChange={(tags) => handleSfxTagsChange(sfx.filename, tags)}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                ch?.playing ? sfxPlayer.toggleLoop(ch.id) : handlePlaySfx(sfx.id, sfx.label, sfx.filename, true)
+              }
+              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              title={ch?.looping ? 'Stop looping' : 'Loop'}
+              style={{ color: ch?.looping ? 'var(--rune)' : 'var(--ink-muted)' }}
+            >
+              <LoopSmallIcon />
+            </button>
+            <VolumePopover
+              volume={volume}
+              onVolumeChange={(v) => sfxPlayer.setSfxVolume(sfx.id, v)}
+              VolumeIcon={VolumeIcon}
+              accentColor="rgba(74,138,106,0.3)"
+              label={`${sfx.label} volume`}
+            />
+          </>
+        }
+      />
+    )
+  }
+
+  function renderTrack(f: string, opts: { pinned?: boolean; index?: number; probability?: number } = {}) {
+    // The lane is a label the card shows, not the file's location: a track pulled
+    // in from the effects folder is one click away from the right shelf.
+    const isSfxFile = (metaMap[f]?.lane ?? trackKindOf(f, metaMap[f])) === 'sfx'
+    return (
+      <RecommendCard
+        key={`${opts.pinned ? 'pin' : 'sug'}-${f}`}
+        kind="music"
+        title={trackName(f)}
+        isPlaying={playing === f}
+        isPinned={!!opts.pinned}
+        probability={opts.probability}
+        details={musicDetails(f, metaMap[f])}
+        tags={tagsMap[f] || []}
+        allTags={allTags}
+        onPlay={() => handlePlayTrack(f)}
+        onPin={() => togglePin(f)}
+        onTagsChange={(tags) => handleTagsChange(f, tags)}
+        actions={
+          <>
+            {opts.pinned && (
+              <div className="flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => movePin(f, -1)}
+                  disabled={!opts.index}
+                  className="p-1"
+                  style={{ opacity: opts.index ? 1 : 0.3 }}
+                  title="Move up"
+                >
+                  <ChevronUp />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => movePin(f, 1)}
+                  disabled={opts.index === pinned.length - 1}
+                  className="p-1"
+                  style={{ opacity: opts.index === pinned.length - 1 ? 0.3 : 1 }}
+                  title="Move down"
+                >
+                  <ChevronDown />
+                </button>
+              </div>
+            )}
+            {!opts.pinned && (
+              <button
+                type="button"
+                data-testid="move-track"
+                onClick={() => {
+                  window.doty.moveTrack(f, isSfxFile ? 'music' : 'sfx').then((r) => {
+                    if (r.ok) setMovedAway((prev) => [...prev, f])
+                  })
+                }}
+                title={isSfxFile ? 'Move to the music library' : 'Move to the effects library'}
+                className="px-1 shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--accent-dim)' }}
+              >
+                {isSfxFile ? '→ music' : '→ fx'}
+              </button>
+            )}
+            <CardAction title="Play next" onClick={() => queue.playNext(f)}>
+              NEXT
+            </CardAction>
+            <CardAction title="Add to queue" onClick={() => queue.enqueue(f)}>
+              QUEUE
+            </CardAction>
+          </>
+        }
       />
     )
   }
@@ -929,36 +1098,16 @@ export default function Soundboard({
             ) : !hasTracks ? (
               emptyState('No tracks found')
             ) : (
-              <div className="flex-1 min-h-0 flex flex-col gap-px overflow-y-auto">
+              <div className="flex-1 min-h-0 overflow-y-auto">
                 {/* Pinned section */}
                 {pinned.length > 0 && (
-                  <div className="flex items-center gap-2 shrink-0 mt-1" style={{ height: '28px' }}>
-                    <PinIcon filled />
-                    <span className="label-caps">Pinned</span>
-                    <div className="flex-1 h-px" style={{ background: 'rgba(200,146,42,0.15)' }} />
-                  </div>
+                  <>
+                    <SectionHeading mark={<PinIcon filled />} label="Pinned" rule="rgba(200,146,42,0.15)" />
+                    <div className="grid gap-1 mb-2" style={CARD_GRID}>
+                      {pinned.map((f, i) => renderTrack(f, { pinned: true, index: i }))}
+                    </div>
+                  </>
                 )}
-                {pinned.map((f, i) => (
-                  <TrackCard
-                    key={`pin-${f}`}
-                    filename={f}
-                    isPlaying={playing === f}
-                    isPinned
-                    showReorder
-                    canMoveUp={i > 0}
-                    canMoveDown={i < pinned.length - 1}
-                    meta={metaMap[f]}
-                    tags={tagsMap[f] || []}
-                    allTags={allTags}
-                    onPlay={() => handlePlayTrack(f)}
-                    onPin={() => togglePin(f)}
-                    onMoveUp={() => movePin(f, -1)}
-                    onMoveDown={() => movePin(f, 1)}
-                    onTagsChange={(tags) => handleTagsChange(f, tags)}
-                    onPlayNext={() => queue.playNext(f)}
-                    onAddToQueue={() => queue.enqueue(f)}
-                  />
-                ))}
 
                 {/* Suggestions section */}
                 {suggestions.length > 0 && (
@@ -1060,66 +1209,21 @@ export default function Soundboard({
                     </button>
                   </div>
                 )}
-                {suggestions.map((f) => (
-                  <TrackCard
-                    key={`sug-${f}`}
-                    filename={f}
-                    isPlaying={playing === f}
-                    isPinned={false}
-                    showReorder={false}
-                    canMoveUp={false}
-                    canMoveDown={false}
-                    meta={metaMap[f]}
-                    tags={tagsMap[f] || []}
-                    allTags={allTags}
-                    probability={lastRanker === 'model' ? probabilities[f] : undefined}
-                    kind={(metaMap[f]?.lane ?? trackKindOf(f, metaMap[f])) === 'sfx' ? 'sfx' : 'music'}
-                    onMoveTo={(target) => {
-                      window.doty.moveTrack(f, target).then((r) => {
-                        if (r.ok) setMovedAway((prev) => [...prev, f])
-                      })
-                    }}
-                    onPlay={() => handlePlayTrack(f)}
-                    onPin={() => togglePin(f)}
-                    onMoveUp={() => {}}
-                    onMoveDown={() => {}}
-                    onTagsChange={(tags) => handleTagsChange(f, tags)}
-                    onPlayNext={() => queue.playNext(f)}
-                    onAddToQueue={() => queue.enqueue(f)}
-                  />
-                ))}
+                <div className="grid gap-1 mb-2" style={CARD_GRID}>
+                  {suggestions.map((f) =>
+                    renderTrack(f, { probability: lastRanker === 'model' ? probabilities[f] : undefined }),
+                  )}
+                </div>
 
                 {/* Everything else the model ranked: all of its options are inspectable */}
                 {considered.length > 0 && (
-                  <div className="shrink-0 mt-1" data-testid="considered-list">
-                    <div className="flex items-center gap-2" style={{ height: '18px' }}>
-                      <span className="label-caps">also considered · {candidates.length} ranked</span>
-                      <div className="flex-1 h-px" style={{ background: 'rgba(122,97,56,0.25)' }} />
-                    </div>
-                    <div className="overflow-y-auto" style={{ maxHeight: '168px' }}>
-                      {considered.map((f) => (
-                        <div key={`alt-${f}`} className="mb-1 opacity-80">
-                          <TrackCard
-                            filename={f}
-                            isPlaying={playing === f}
-                            isPinned={false}
-                            showReorder={false}
-                            canMoveUp={false}
-                            canMoveDown={false}
-                            meta={metaMap[f]}
-                            tags={tagsMap[f] || []}
-                            allTags={allTags}
-                            probability={probabilities[f]}
-                            onPlay={() => handlePlayTrack(f)}
-                            onPin={() => togglePin(f)}
-                            onMoveUp={() => {}}
-                            onMoveDown={() => {}}
-                            onTagsChange={(tags) => handleTagsChange(f, tags)}
-                            onPlayNext={() => queue.playNext(f)}
-                            onAddToQueue={() => queue.enqueue(f)}
-                          />
-                        </div>
-                      ))}
+                  <div data-testid="considered-list">
+                    <SectionHeading
+                      label={`also considered · ${candidates.length} ranked`}
+                      rule="rgba(122,97,56,0.25)"
+                    />
+                    <div className="grid gap-1" style={CARD_GRID}>
+                      {considered.map((f) => renderTrack(f, { probability: probabilities[f] }))}
                     </div>
                   </div>
                 )}
@@ -1305,13 +1409,9 @@ export default function Soundboard({
                   {/* Pinned SFX */}
                   {pinnedSfxItems.length > 0 && (
                     <>
-                      <div className="flex items-center gap-2 shrink-0 mb-1 mt-1" style={{ height: '28px' }}>
-                        <PinIcon filled />
-                        <span className="label-caps">Pinned</span>
-                        <div className="flex-1 h-px" style={{ background: 'rgba(74,138,106,0.15)' }} />
-                      </div>
-                      <div className="grid gap-1 mb-2" style={SFX_GRID}>
-                        {pinnedSfxItems.map(renderSfxCard)}
+                      <SectionHeading mark={<PinIcon filled />} label="Pinned" rule="rgba(74,138,106,0.15)" />
+                      <div className="grid gap-1 mb-2" style={CARD_GRID}>
+                        {pinnedSfxItems.map((sfx) => renderSfxCard(sfx, false))}
                       </div>
                     </>
                   )}
@@ -1319,15 +1419,28 @@ export default function Soundboard({
                   {/* Suggested SFX */}
                   {sfxSuggestions.length > 0 && (
                     <>
-                      <div className="flex items-center gap-2 shrink-0 mb-1 mt-1" style={{ height: '28px' }}>
-                        <span style={{ fontSize: '11px', color: '#9d8b66' }}>&#x2B21;</span>
-                        <span className="label-caps">Suggested</span>
-                        <div className="flex-1 h-px" style={{ background: 'rgba(122,97,56,0.25)' }} />
-                      </div>
-                      <div className="grid gap-1" style={SFX_GRID}>
-                        {sfxSuggestions.map(renderSfxCard)}
+                      <SectionHeading
+                        mark={<span style={{ fontSize: '11px', color: 'var(--ink-muted)' }}>&#x2B21;</span>}
+                        label="Suggested"
+                        rule="rgba(122,97,56,0.25)"
+                      />
+                      <div className="grid gap-1 mb-2" style={CARD_GRID}>
+                        {sfxSuggestions.map((sfx) => renderSfxCard(sfx))}
                       </div>
                     </>
+                  )}
+
+                  {/* Everything else the model ranked, as in the music column */}
+                  {sfxConsidered.length > 0 && (
+                    <div data-testid="sfx-considered">
+                      <SectionHeading
+                        label={`also considered · ${sfxCandidates.length} ranked`}
+                        rule="rgba(122,97,56,0.25)"
+                      />
+                      <div className="grid gap-1" style={CARD_GRID}>
+                        {sfxConsidered.map((sfx) => renderSfxCard(sfx))}
+                      </div>
+                    </div>
                   )}
                 </div>
               )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { confidentSfx, mergeSfxCandidates, rankSfxCandidates, SFX_MIN_PROBABILITY } from '../../lib/sfxRank'
+import { confidentSfx, mergeSfxCandidates, rankAllSfx, SFX_MIN_PROBABILITY } from '../../lib/sfxRank'
 
 describe('confidentSfx', () => {
   it('fires only effects the model is nearly certain about', () => {
@@ -47,14 +47,21 @@ describe('mergeSfxCandidates', () => {
   })
 })
 
-describe('rankSfxCandidates', () => {
+describe('rankAllSfx', () => {
   it('shows the model ranking even when nothing clears the firing bar', () => {
     // The column is a suggestion: a second best costs a glance. Autopilot keeps
     // the 0.95 bar through confidentSfx.
-    expect(rankSfxCandidates(['a.mp3', 'b.mp3', 'c.mp3'], [0.2, 0.7, 0.1], 3)).toEqual(['b.mp3', 'a.mp3', 'c.mp3'])
+    expect(rankAllSfx(['a.mp3', 'b.mp3', 'c.mp3'], [0.2, 0.7, 0.1]).map((c) => c.path)).toEqual([
+      'b.mp3',
+      'a.mp3',
+      'c.mp3',
+    ])
   })
 
-  it('cuts the list to the column size', () => {
-    expect(rankSfxCandidates(['a.mp3', 'b.mp3'], [0.4, 0.6], 1)).toEqual(['b.mp3'])
+  it('keeps every candidate, so the column can show what it did not suggest', () => {
+    expect(rankAllSfx(['a.mp3', 'b.mp3'], [0.4, 0.6])).toEqual([
+      { path: 'b.mp3', probability: 0.6 },
+      { path: 'a.mp3', probability: 0.4 },
+    ])
   })
 })

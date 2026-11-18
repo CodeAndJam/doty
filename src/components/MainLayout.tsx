@@ -3,7 +3,7 @@ import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
-import { confidentSfx, mergeSfxCandidates, rankSfxCandidates } from '../lib/sfxRank'
+import { confidentSfx, mergeSfxCandidates, rankAllSfx } from '../lib/sfxRank'
 import { speakerPrefix } from '../lib/speaker'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
@@ -32,6 +32,9 @@ export default function MainLayout() {
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
+  /** Every effect the model ranked, best first: the column shows the rest under it. */
+  const [sfxCandidates, setSfxCandidates] = useState<string[]>([])
+  const [sfxProbabilities, setSfxProbabilities] = useState<Record<string, number>>({})
   /** The subset the model was sure enough about for autopilot to play unasked. */
   const [sfxAutopilot, setSfxAutopilot] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
@@ -267,6 +270,8 @@ export default function MainLayout() {
       const candidates = mergeSfxCandidates(nearest, results, count)
       console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
       setSfxRecommendations(candidates)
+      setSfxCandidates(candidates)
+      setSfxProbabilities({})
 
       // The model decides when a sound is worth firing; the shortlist only narrows
       // what it chooses between. A missing model leaves the shortlist and nothing
@@ -287,7 +292,10 @@ export default function MainLayout() {
           // The column shows the model's ranking — nothing fires from it, so a
           // second-best suggestion costs the DM one glance. Autopilot is the part
           // that must be sure: it plays a sound nobody asked for.
-          setSfxRecommendations(rankSfxCandidates(candidates, probabilities, count))
+          const ranked = rankAllSfx(candidates, probabilities)
+          setSfxRecommendations(ranked.slice(0, count).map((c) => c.path))
+          setSfxCandidates(ranked.map((c) => c.path))
+          setSfxProbabilities(Object.fromEntries(ranked.map((c) => [c.path, c.probability])))
           setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
         })
         .catch(() => {})
@@ -838,6 +846,8 @@ export default function MainLayout() {
               rankerStatus={modelStatus}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
+              sfxCandidates={sfxCandidates}
+              sfxProbabilities={sfxProbabilities}
               sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
               lastChoiceConfidence={lastChoiceConfidence}

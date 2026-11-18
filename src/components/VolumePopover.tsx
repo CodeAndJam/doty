@@ -14,7 +14,7 @@ interface VolumePopoverProps {
 }
 
 /**
- * Shared volume popover used by PlayerBar and SfxCard.
+ * Shared volume popover used by PlayerBar and a card's toolbar.
  * Renders the slider via a portal so it's never clipped by overflow:hidden containers.
  * A transparent bridge element connects the button to the slider so the mouse
  * can travel between them without the popover closing.
