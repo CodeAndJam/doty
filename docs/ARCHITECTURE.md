@@ -121,6 +121,9 @@ Cues are written as WebVTT voice spans (`<v Ana>…</v>`), so one session file s
 valid for any player, and `loadSessionAsync` reads the tag back into a speaker.
 The lane's audio is written beside the mic's take as `session-…-remote.wav`,
 opened on the first remote utterance so a mic-only session leaves no empty file.
+The same cues can be mirrored into the channel's own text chat: lines are
+batched for two seconds and packed into as few messages as Discord's 2000-char
+limit allows, because a channel rate limit turns one line per message into spam.
 
 ## Transcript to a music decision
 
@@ -325,6 +328,7 @@ Nothing here may stop playback or hide the suggestions.
 | Director | `session:evaluate` · `session:decision` · `session:preference` · `session:report` |
 | Playback | player, queue and SFX channels in `electron/ipc.ts` |
 | Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
+| Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
 
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a

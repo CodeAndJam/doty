@@ -5,6 +5,7 @@ import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
+import { speakerPrefix } from '../src/lib/speaker'
 import {
   feedChunk,
   finalizeStream,
@@ -45,6 +46,7 @@ import {
   setTags,
 } from './database'
 import {
+  canPostTranscript,
   clearToken,
   destroyDiscord,
   connect as discordConnect,
@@ -53,17 +55,20 @@ import {
   getAutoConnect,
   getDiscordVolume,
   getGuilds,
+  getSendTranscript,
   getVoiceChannels,
   joinChannel,
   leaveChannel,
   loadToken,
   onStateChange,
   pauseStream,
+  postTranscript,
   refreshCapture,
   resumeStream,
   setAutoConnect,
   setDiscordVerbose,
   setDiscordVolume,
+  setSendTranscript,
   stopSfx,
   stopStream,
   streamSfx,
@@ -230,6 +235,14 @@ const sttDownloads = createModelDownloads({
 let sessionStartTime: number | null = null
 /** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
 let recordingActive = false
+/** True once a remote speaker has been heard this take: the mic lane gets `dm:`. */
+let sessionHasRemote = false
+
+/** One finished line, labelled exactly as the transcript shows it. */
+function postTranscriptLine(speaker: string | undefined, text: string): void {
+  const prefix = speakerPrefix(speaker, sessionHasRemote)
+  postTranscript(prefix ? `${prefix}: ${text}` : text)
+}
 let sessionWav: WavWriter | null = null
 let remoteWav: WavWriter | null = null
 
@@ -457,6 +470,7 @@ app.whenReady().then(async () => {
     }
     // Send the same time base used for the saved VTT cues
     send(EVENTS.transcript, { text, elapsedMs: elapsed })
+    postTranscriptLine(undefined, text)
   })
 
   // Who is being captured, for the tell beside the switch.
@@ -476,6 +490,8 @@ app.whenReady().then(async () => {
       appendRemoteWavChunk(samples)
     }
     send(EVENTS.transcript, { text, elapsedMs: elapsed, speaker })
+    sessionHasRemote = true
+    postTranscriptLine(speaker, text)
   })
 
   setOnRankerStatus((status) => {
@@ -550,6 +566,7 @@ handle(INVOKE.sttStart, () => {
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
+  sessionHasRemote = false
   recordingActive = true
   // The index is minutes of model work; the transcript is the critical path.
   library.pause()
@@ -1259,6 +1276,17 @@ handle(INVOKE.discordSetCaptureMode, (_e, mode: 'local' | 'all') => {
   setCaptureMode(next)
   // Applies live: subscribing mid-session is the point of a switch in the panel.
   refreshCapture()
+  return { ok: true }
+})
+
+handle(INVOKE.discordGetSendTranscript, () => getSendTranscript())
+
+handle(INVOKE.discordSetSendTranscript, (_e, enabled: boolean) => {
+  // Turning it on without a sendable channel would post nothing and say nothing.
+  if (enabled && !canPostTranscript()) {
+    return { ok: false, error: 'Join a voice channel first, and let the bot post in it' }
+  }
+  setSendTranscript(enabled)
   return { ok: true }
 })
 

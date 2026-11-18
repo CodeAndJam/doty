@@ -111,6 +111,8 @@ export const INVOKE = {
   discordSetAutoConnect: 'discord:set-auto-connect',
   discordGetCaptureState: 'discord:get-capture-state',
   discordSetCaptureMode: 'discord:set-capture-mode',
+  discordGetSendTranscript: 'discord:get-send-transcript',
+  discordSetSendTranscript: 'discord:set-send-transcript',
 } as const
 
 export const EVENTS = {

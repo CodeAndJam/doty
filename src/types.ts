@@ -405,6 +405,8 @@ export interface DotyAPI {
   discordSetAutoConnect: (enabled: boolean) => Promise<{ ok: boolean }>
   discordGetCaptureState: () => Promise<CaptureState>
   discordSetCaptureMode: (mode: 'local' | 'all') => Promise<{ ok: boolean; error?: string }>
+  discordGetSendTranscript: () => Promise<boolean>
+  discordSetSendTranscript: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
   onDiscordState: (cb: (state: DiscordState) => void) => () => void
   /** Capture mode, who is being captured, and why it stopped. */
   onCaptureState: (cb: (state: CaptureState) => void) => () => void

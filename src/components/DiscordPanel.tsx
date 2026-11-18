@@ -77,6 +77,8 @@ export default function DiscordPanel() {
   const [connecting, setConnecting] = useState(false)
   const [autoConnect, setAutoConnect] = useState(false)
   const [capture, setCapture] = useState<CaptureState>({ mode: 'local', names: [], error: null })
+  const [sendTranscript, setSendTranscript] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
 
   // Load initial state
   useEffect(() => {
@@ -85,6 +87,7 @@ export default function DiscordPanel() {
     window.doty.discordGetVolume().then(setVolume)
     window.doty.discordGetAutoConnect().then(setAutoConnect)
     window.doty.discordGetCaptureState().then(setCapture)
+    window.doty.discordGetSendTranscript().then(setSendTranscript)
 
     const unsub = window.doty.onDiscordState((s) => {
       setState(s)
@@ -493,6 +496,49 @@ export default function DiscordPanel() {
               style={{ fontSize: '13px', color: '#ef4444', marginTop: '4px', fontFamily: "'IBM Plex Mono', monospace" }}
             >
               {capture.error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Transcript into the channel's chat */}
+      {isConnected && (
+        <div className="mb-4">
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: isInVoice ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+              color: '#a5813f',
+              fontFamily: "'Crimson Text', serif",
+              opacity: isInVoice ? 1 : 0.5,
+            }}
+          >
+            <input
+              type="checkbox"
+              disabled={!isInVoice}
+              checked={sendTranscript}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setChatError(null)
+                const result = await window.doty.discordSetSendTranscript(enabled)
+                if (result.ok) setSendTranscript(enabled)
+                else setChatError(result.error ?? 'Could not change that')
+              }}
+              style={{ accentColor: '#d9a441' }}
+            />
+            Post the transcript to the channel chat
+          </label>
+          <p style={{ fontSize: '13px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            Every finished line, a couple of seconds at a time, only while recording.
+          </p>
+          {chatError && (
+            <p
+              style={{ fontSize: '13px', color: '#ef4444', marginTop: '4px', fontFamily: "'IBM Plex Mono', monospace" }}
+            >
+              {chatError}
             </p>
           )}
         </div>

@@ -160,6 +160,14 @@ Discord section while the bot is in a channel. Their audio is written beside the
 session as `session-…-remote.wav`, only while you are recording, and nothing
 leaves the machine.
 
+#### Posting the transcript to the channel chat
+
+A second switch, *Post the transcript to the channel chat*, mirrors every
+finished line into the voice channel's own text chat — useful when someone in
+the call cannot hear the room. Lines are gathered and posted a couple of seconds
+at a time (Discord rate limits a channel), and the bot needs permission to post
+there. Off by default, like participant capture.
+
 ## Troubleshooting
 
 ### macOS says "Doty is damaged and can't be opened"

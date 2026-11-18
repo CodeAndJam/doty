@@ -15,6 +15,7 @@ import {
 } from '@discordjs/voice'
 import { ChannelType, Client, GatewayIntentBits, type Guild, type VoiceBasedChannel } from 'discord.js'
 import { safeStorage } from 'electron'
+import { chunkLines } from './chat-chunk'
 import { createMusicResource, createSfxResource } from './discord-audio'
 import { attachCapture, detachCapture, getCaptureMode } from './discord-capture'
 import { store } from './store'
@@ -491,8 +492,77 @@ export function leaveChannel(): void {
   })
 }
 
-// ── Participant capture ──────────────────────────────────────────────────────
+// ── Transcript in the channel's chat ─────────────────────────────────────────
 
+/** How long lines are gathered before one message goes out. */
+const CHAT_BATCH_MS = 2000
+
+let chatLines: string[] = []
+let chatTimer: ReturnType<typeof setTimeout> | null = null
+let chatErrorLogged = false
+
+export function getSendTranscript(): boolean {
+  return store.get('discordTranscriptToChat', false) === true
+}
+
+export function setSendTranscript(enabled: boolean): void {
+  store.set('discordTranscriptToChat', enabled)
+  if (enabled) return
+  chatLines = []
+  if (chatTimer) {
+    clearTimeout(chatTimer)
+    chatTimer = null
+  }
+}
+
+/** Whether the bot can actually post where it is right now. */
+export function canPostTranscript(): boolean {
+  return chatChannel() !== null
+}
+
+function chatChannel(): { send: (content: string) => Promise<unknown> } | null {
+  if (!client || !state.currentChannelId) return null
+  const channel = client.channels.cache.get(state.currentChannelId)
+  const sendable = channel as unknown as { send?: (content: string) => Promise<unknown> } | undefined
+  return sendable && typeof sendable.send === 'function'
+    ? (sendable as { send: (content: string) => Promise<unknown> })
+    : null
+}
+
+/**
+ * Queue one finished line for the channel's own chat. Batched: Discord rate
+ * limits a channel hard, and five notifications for five short lines reads as
+ * spam in a call the DM is trying to run.
+ */
+export function postTranscript(line: string): void {
+  if (!getSendTranscript()) return
+  chatLines.push(line)
+  if (chatTimer) return
+  chatTimer = setTimeout(() => void flushTranscriptChat(), CHAT_BATCH_MS)
+}
+
+async function flushTranscriptChat(): Promise<void> {
+  chatTimer = null
+  const lines = chatLines
+  chatLines = []
+  if (lines.length === 0) return
+  const channel = chatChannel()
+  if (!channel) return
+  for (const message of chunkLines(lines)) {
+    try {
+      await channel.send(message)
+    } catch (err) {
+      // One warning per connection: a missing permission would otherwise log on
+      // every line for the rest of the session.
+      if (!chatErrorLogged) {
+        chatErrorLogged = true
+        console.error('[discord] transcript post failed:', err instanceof Error ? err.message : err)
+      }
+    }
+  }
+}
+
+// ── Participant capture ──────────────────────────────────────────────────────
 /**
  * (Re)attach participant capture to the current connection. Called on join and
  * whenever the DM flips the capture mode, so the switch takes effect live.

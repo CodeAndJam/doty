@@ -171,6 +171,8 @@ contextBridge.exposeInMainWorld('doty', {
   discordSetAutoConnect: (enabled: boolean) => invoke(INVOKE.discordSetAutoConnect, enabled),
   discordGetCaptureState: () => invoke(INVOKE.discordGetCaptureState),
   discordSetCaptureMode: (mode: 'local' | 'all') => invoke(INVOKE.discordSetCaptureMode, mode),
+  discordGetSendTranscript: () => invoke(INVOKE.discordGetSendTranscript),
+  discordSetSendTranscript: (enabled: boolean) => invoke(INVOKE.discordSetSendTranscript, enabled),
   onDiscordState: (cb: (state: any) => void) => subscribe(EVENTS.discordState, cb),
   onCaptureState: (cb: (state: { mode: 'local' | 'all'; names: string[]; error: string | null }) => void) =>
     subscribe(EVENTS.captureState, cb),
