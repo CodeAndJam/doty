@@ -212,6 +212,16 @@ export default function SfxBrowsePanel({
           className="flex-1 bg-transparent outline-none text-sm"
           style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#6dbf95' }}
         />
+        {search.trim() && (!found || found.pending) && (
+          <span
+            role="status"
+            aria-live="polite"
+            className="animate-pulse"
+            style={{ fontSize: '11px', color: '#6dbf95', fontFamily: "'IBM Plex Mono', monospace" }}
+          >
+            searching…
+          </span>
+        )}
         {search.trim() && found && (
           <span
             data-testid="search-mode"

@@ -24,6 +24,8 @@ export interface SearchState {
   hits: SearchHit[]
   mode: 'semantic' | 'text'
   index: IndexProgress | null
+  /** A newer query is in flight; the hits shown are the previous answer. */
+  pending?: boolean
 }
 
 /** The path that actually plays for this hit. */
@@ -34,6 +36,7 @@ export function playablePath(hit: SearchHit): string {
 export function useLibrarySearch(query: string, lane: 'music' | 'sfx', k = 50): SearchState | null {
   const [state, setState] = useState<SearchState | null>(null)
   const [index, setIndex] = useState<IndexProgress | null>(null)
+  const [pending, setPending] = useState(false)
   /** Bumped by a rescan or a finished index, so an open answer is redone. */
   const [revision, setRevision] = useState(0)
   const trimmed = query.trim()
@@ -65,9 +68,13 @@ export function useLibrarySearch(query: string, lane: 'music' | 'sfx', k = 50): 
   useEffect(() => {
     if (!trimmed) {
       setState(null)
+      setPending(false)
       return
     }
     let cancelled = false
+    // Shown while the debounce runs and the answer is in flight: a wide search
+    // over the index takes seconds, and a silent list reads as "nothing found".
+    setPending(true)
     const timer = setTimeout(() => {
       window.doty
         .librarySearch(trimmed, lane, k)
@@ -77,6 +84,9 @@ export function useLibrarySearch(query: string, lane: 'music' | 'sfx', k = 50): 
         .catch(() => {
           if (!cancelled) setState({ hits: [], mode: 'text', index: null })
         })
+        .finally(() => {
+          if (!cancelled) setPending(false)
+        })
     }, 250)
 
     return () => {
@@ -85,5 +95,5 @@ export function useLibrarySearch(query: string, lane: 'music' | 'sfx', k = 50): 
     }
   }, [trimmed, lane, k, revision])
 
-  return useMemo(() => (state ? { ...state, index } : null), [state, index])
+  return useMemo(() => (state ? { ...state, index, pending } : null), [state, index, pending])
 }

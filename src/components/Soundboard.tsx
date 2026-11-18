@@ -22,6 +22,9 @@ import TrackCard from './TrackCard'
 const PINS_KEY = 'doty:pinnedTracks'
 const SFX_PINS_KEY = 'doty:pinnedSfx'
 
+/** As many columns as the pane's width allows, never fewer than two. */
+const SFX_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))' }
+
 function loadPins(): string[] {
   try {
     return JSON.parse(localStorage.getItem(PINS_KEY) || '[]')
@@ -781,7 +784,7 @@ export default function Soundboard({
       {/* Two-column layout */}
       <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
         {/* ── Left column: Music ──────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showMusic ? 'flex-1' : 'w-9 shrink-0'}`}>
+        <div className={`flex flex-col min-h-0 min-w-0 overflow-hidden ${showMusic ? 'flex-1' : 'w-9 shrink-0'}`}>
           {!showMusic && (
             <CollapsedRail
               label="Music"
@@ -1132,7 +1135,7 @@ export default function Soundboard({
         </div>
 
         {/* ── Right column: SFX ───────────────────────────────────────── */}
-        <div className={`flex flex-col min-h-0 overflow-hidden ${showSfx ? 'flex-1' : 'w-9 shrink-0'}`}>
+        <div className={`flex flex-col min-h-0 min-w-0 overflow-hidden ${showSfx ? 'flex-1' : 'w-9 shrink-0'}`}>
           {!showSfx && (
             <CollapsedRail
               label="SFX"
@@ -1307,7 +1310,9 @@ export default function Soundboard({
                         <span className="label-caps">Pinned</span>
                         <div className="flex-1 h-px" style={{ background: 'rgba(74,138,106,0.15)' }} />
                       </div>
-                      <div className="grid grid-cols-2 gap-1 mb-2">{pinnedSfxItems.map(renderSfxCard)}</div>
+                      <div className="grid gap-1 mb-2" style={SFX_GRID}>
+                        {pinnedSfxItems.map(renderSfxCard)}
+                      </div>
                     </>
                   )}
 
@@ -1319,7 +1324,9 @@ export default function Soundboard({
                         <span className="label-caps">Suggested</span>
                         <div className="flex-1 h-px" style={{ background: 'rgba(122,97,56,0.25)' }} />
                       </div>
-                      <div className="grid grid-cols-2 gap-1">{sfxSuggestions.map(renderSfxCard)}</div>
+                      <div className="grid gap-1" style={SFX_GRID}>
+                        {sfxSuggestions.map(renderSfxCard)}
+                      </div>
                     </>
                   )}
                 </div>

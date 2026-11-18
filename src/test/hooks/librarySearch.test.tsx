@@ -75,6 +75,32 @@ describe('useLibrarySearch', () => {
     expect(result.current?.hits).toHaveLength(1)
   })
 
+  it('says a newer query is pending until it answers', async () => {
+    let release = () => {}
+    const search = vi
+      .fn()
+      .mockResolvedValueOnce({ mode: 'text' as const, items: [hit('first.mp3')] })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({ mode: 'text' as const, items: [hit('second.mp3')] })
+          }),
+      )
+    stubDoty(search)
+    const { result, rerender } = renderHook(({ q }) => useLibrarySearch(q, 'music'), { initialProps: { q: 'a' } })
+    await waitFor(() => expect(result.current?.hits).toHaveLength(1))
+
+    rerender({ q: 'ab' })
+    await waitFor(() => expect(result.current?.pending).toBe(true))
+    // The debounce has to fire before there is anything to release.
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2))
+    await act(async () => {
+      release()
+    })
+    await waitFor(() => expect(result.current?.pending).toBe(false))
+    expect(result.current?.hits[0]?.path).toBe('second.mp3')
+  })
+
   it('clears when the box is emptied', async () => {
     stubDoty(async () => ({ mode: 'text' as const, items: [hit('first.mp3')] }))
     const { result, rerender } = renderHook(({ q }) => useLibrarySearch(q, 'music'), { initialProps: { q: 'a' } })

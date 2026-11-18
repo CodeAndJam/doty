@@ -292,22 +292,25 @@ export default function SfxCard({
         </div>
       </div>
 
-      {/* Category badge, or the lane badge the browser passes in its place */}
-      {badge ?? (
-        <span
-          className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
-          style={{
-            fontFamily: "'IBM Plex Mono', monospace",
-            fontSize: '11px',
-            color: isPlaying ? 'rgba(74,138,106,0.4)' : '#3d2f1c',
-            pointerEvents: 'none',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-        >
-          {sfx.category}
-        </span>
-      )}
+      {/* Category badge, or the lane badge the browser passes in its place.
+          A file pulled in from the music folder has no useful category, so it
+          gets no badge at all. */}
+      {badge ??
+        (SFX_CATEGORY_LABELS[sfx.category as SfxCategory] ? (
+          <span
+            className="absolute top-1 right-1.5 group-hover:opacity-0 transition-opacity"
+            style={{
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontSize: '11px',
+              color: isPlaying ? 'rgba(74,138,106,0.4)' : '#3d2f1c',
+              pointerEvents: 'none',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {SFX_CATEGORY_LABELS[sfx.category as SfxCategory]}
+          </span>
+        ) : null)}
 
       {/* Inline tag editor */}
       {editingTags && (

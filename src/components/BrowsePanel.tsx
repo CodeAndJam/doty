@@ -103,6 +103,16 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             color: '#d9a441',
           }}
         />
+        {search.trim() && (!found || found.pending) && (
+          <span
+            role="status"
+            aria-live="polite"
+            className="animate-pulse"
+            style={{ fontSize: '11px', color: '#d9a441', fontFamily: "'IBM Plex Mono', monospace" }}
+          >
+            searching…
+          </span>
+        )}
         {search.trim() && found && (
           <span
             data-testid="search-mode"
