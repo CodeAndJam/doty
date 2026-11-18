@@ -174,6 +174,14 @@ export interface DiscordVoiceChannel {
 export type DiscordStatus = 'disconnected' | 'connecting' | 'ready' | 'error'
 export type DiscordVoiceStatus = 'idle' | 'joining' | 'connected' | 'playing' | 'error'
 
+export interface CaptureState {
+  mode: 'local' | 'all'
+  /** Display names of the participants whose audio goes into the session. */
+  names: string[]
+  /** Why capture is not running, when it should be. */
+  error: string | null
+}
+
 export interface DiscordState {
   status: DiscordStatus
   voiceStatus: DiscordVoiceStatus
@@ -204,7 +212,7 @@ export interface DotyAPI {
   sttStart: () => Promise<{ ok: boolean; reason?: string }>
   sttStop: () => Promise<{ ok: boolean }>
   sttTranscribeChunk: (buffer: ArrayBuffer) => Promise<{ text: string }>
-  onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => () => void
+  onTranscript: (cb: (data: { text: string; elapsedMs: number; speaker?: string }) => void) => () => void
   onSttStatus: (cb: (status: string) => void) => () => void
   onSttInterim: (cb: (text: string) => void) => () => void
   onParagraphBreak: (cb: () => void) => () => void
@@ -326,7 +334,7 @@ export interface DotyAPI {
   // Sessions
   sessionCreate: (name?: string) => Promise<{ file: string; name: string; created: string }>
   sessionList: () => Promise<Array<{ file: string; name: string; created: string }>>
-  sessionLoad: (file: string) => Promise<Array<{ start: string; end: string; text: string }>>
+  sessionLoad: (file: string) => Promise<Array<{ start: string; end: string; text: string; speaker?: string }>>
   sessionRename: (file: string, newName: string) => Promise<void>
   sessionDelete: (file: string) => Promise<{ ok: boolean }>
   sessionGetLast: () => Promise<string | null>
@@ -395,7 +403,13 @@ export interface DotyAPI {
   discordClearToken: () => Promise<{ ok: boolean }>
   discordGetAutoConnect: () => Promise<boolean>
   discordSetAutoConnect: (enabled: boolean) => Promise<{ ok: boolean }>
+  discordGetCaptureState: () => Promise<CaptureState>
+  discordSetCaptureMode: (mode: 'local' | 'all') => Promise<{ ok: boolean; error?: string }>
+  discordGetSendTranscript: () => Promise<boolean>
+  discordSetSendTranscript: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
   onDiscordState: (cb: (state: DiscordState) => void) => () => void
+  /** Capture mode, who is being captured, and why it stopped. */
+  onCaptureState: (cb: (state: CaptureState) => void) => () => void
 }
 
 declare global {

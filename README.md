@@ -26,7 +26,7 @@ DM has to time by hand counts as a defect, not a missing feature.
 ## Features
 
 ### Real-time speech-to-text
-Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Nemotron 3.5 Streaming, ~0.4 s latency); Parakeet Ultra is available in Settings when accuracy matters more than the typing effect. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
+Doty transcribes your game table continuously using [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) and GGUF models that run fully offline on Metal. European Portuguese is the default focus (Parakeet Ultra, the most accurate European-language model); Nemotron 3.5 Streaming is available in Settings when live latency matters more than accuracy. Transcription quality is gated in CI — see [docs/QUALITY.md](docs/QUALITY.md).
 
 ### AI music recommendations
 Doty ranks your library with a **decision model** — d1-omni-600M, exported to ONNX and run locally — rather than a text generator. Each pass scores 20 candidate tracks and returns a calibrated probability for every one of them, so "the model is 26% sure" is a real signal that the scene does not fit the library, not a broken score. Candidates are chosen by a cheap keyword/tag/BPM prefilter that deliberately spans calm, mid and loud tracks, because the model can only pick well among what it is offered.
@@ -150,6 +150,23 @@ To stream music to a Discord voice channel:
 5. Play any track in Doty — it will automatically stream to Discord.
 
 The Discord volume slider (visible when in a voice channel) is independent from your local playback volume.
+
+#### Transcribing the other players
+
+Doty can also write what the people in the voice channel say into the session
+transcript, under their own names — `Ana: …` beside your own lines. It is **off
+by default**: turn on *Capture → Transcribe other participants* in the same
+Discord section while the bot is in a channel. Their audio is written beside the
+session as `session-…-remote.wav`, only while you are recording, and nothing
+leaves the machine.
+
+#### Posting the transcript to the channel chat
+
+A second switch, *Post the transcript to the channel chat*, mirrors every
+finished line into the voice channel's own text chat — useful when someone in
+the call cannot hear the room. Lines are gathered and posted a couple of seconds
+at a time (Discord rate limits a channel), and the bot needs permission to post
+there. Off by default, like participant capture.
 
 ## Troubleshooting
 

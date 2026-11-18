@@ -109,6 +109,10 @@ export const INVOKE = {
   discordClearToken: 'discord:clear-token',
   discordGetAutoConnect: 'discord:get-auto-connect',
   discordSetAutoConnect: 'discord:set-auto-connect',
+  discordGetCaptureState: 'discord:get-capture-state',
+  discordSetCaptureMode: 'discord:set-capture-mode',
+  discordGetSendTranscript: 'discord:get-send-transcript',
+  discordSetSendTranscript: 'discord:set-send-transcript',
 } as const
 
 export const EVENTS = {
@@ -139,6 +143,7 @@ export const EVENTS = {
   sfxChanged: 'sfx:changed',
   // Discord
   discordState: 'discord:state',
+  captureState: 'capture:state',
 } as const
 
 export type InvokeChannel = (typeof INVOKE)[keyof typeof INVOKE]

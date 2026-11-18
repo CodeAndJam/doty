@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { DiscordGuild, DiscordState, DiscordVoiceChannel } from '../types'
+import type { CaptureState, DiscordGuild, DiscordState, DiscordVoiceChannel } from '../types'
 
 const inputStyle: React.CSSProperties = {
   width: '100%',
@@ -76,6 +76,9 @@ export default function DiscordPanel() {
   const [volume, setVolume] = useState(1)
   const [connecting, setConnecting] = useState(false)
   const [autoConnect, setAutoConnect] = useState(false)
+  const [capture, setCapture] = useState<CaptureState>({ mode: 'local', names: [], error: null })
+  const [sendTranscript, setSendTranscript] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
 
   // Load initial state
   useEffect(() => {
@@ -83,11 +86,17 @@ export default function DiscordPanel() {
     window.doty.discordHasToken().then(setHasToken)
     window.doty.discordGetVolume().then(setVolume)
     window.doty.discordGetAutoConnect().then(setAutoConnect)
+    window.doty.discordGetCaptureState().then(setCapture)
+    window.doty.discordGetSendTranscript().then(setSendTranscript)
 
     const unsub = window.doty.onDiscordState((s) => {
       setState(s)
     })
-    return unsub
+    const unsubSpeakers = window.doty.onCaptureState(setCapture)
+    return () => {
+      unsub()
+      unsubSpeakers()
+    }
   }, [])
 
   // Fetch guilds when connected
@@ -432,6 +441,106 @@ export default function DiscordPanel() {
                 )}
               </>
             ))}
+        </div>
+      )}
+
+      {/* Capture mode — the switch the whole feature hangs on */}
+      {isConnected && (
+        <div className="mb-4">
+          <Label>Capture</Label>
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: isInVoice ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+              color: '#a5813f',
+              fontFamily: "'Crimson Text', serif",
+              opacity: isInVoice ? 1 : 0.5,
+            }}
+          >
+            <input
+              type="checkbox"
+              disabled={!isInVoice}
+              checked={capture.mode === 'all'}
+              onChange={async (e) => {
+                const mode = e.target.checked ? 'all' : 'local'
+                const result = await window.doty.discordSetCaptureMode(mode)
+                // The switch must not claim a capture the app refused to start.
+                if (!result.ok) setCapture((c) => ({ ...c, error: result.error ?? 'Capture could not start' }))
+              }}
+              style={{ accentColor: '#d9a441' }}
+            />
+            Transcribe other participants
+          </label>
+          <p style={{ fontSize: '13px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            {isInVoice
+              ? 'Their lines join the transcript under their own name.'
+              : 'Available once the bot is in a voice channel.'}
+          </p>
+          {capture.mode === 'all' && capture.names.length > 0 && (
+            <p
+              style={{
+                fontSize: '13px',
+                color: '#d9a441',
+                marginTop: '4px',
+                fontFamily: "'IBM Plex Mono', monospace",
+              }}
+            >
+              capturing {capture.names.length} remote — {capture.names.join(', ')}
+            </p>
+          )}
+          {capture.error && (
+            <p
+              style={{ fontSize: '13px', color: '#ef4444', marginTop: '4px', fontFamily: "'IBM Plex Mono', monospace" }}
+            >
+              {capture.error}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Transcript into the channel's chat */}
+      {isConnected && (
+        <div className="mb-4">
+          <label
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              cursor: isInVoice ? 'pointer' : 'not-allowed',
+              fontSize: '14px',
+              color: '#a5813f',
+              fontFamily: "'Crimson Text', serif",
+              opacity: isInVoice ? 1 : 0.5,
+            }}
+          >
+            <input
+              type="checkbox"
+              disabled={!isInVoice}
+              checked={sendTranscript}
+              onChange={async (e) => {
+                const enabled = e.target.checked
+                setChatError(null)
+                const result = await window.doty.discordSetSendTranscript(enabled)
+                if (result.ok) setSendTranscript(enabled)
+                else setChatError(result.error ?? 'Could not change that')
+              }}
+              style={{ accentColor: '#d9a441' }}
+            />
+            Post the transcript to the channel chat
+          </label>
+          <p style={{ fontSize: '13px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
+            Every finished line, a couple of seconds at a time, only while recording.
+          </p>
+          {chatError && (
+            <p
+              style={{ fontSize: '13px', color: '#ef4444', marginTop: '4px', fontFamily: "'IBM Plex Mono', monospace" }}
+            >
+              {chatError}
+            </p>
+          )}
         </div>
       )}
 

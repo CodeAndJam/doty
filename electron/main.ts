@@ -5,6 +5,7 @@ import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
+import { speakerPrefix } from '../src/lib/speaker'
 import {
   feedChunk,
   finalizeStream,
@@ -45,6 +46,7 @@ import {
   setTags,
 } from './database'
 import {
+  canPostTranscript,
   clearToken,
   destroyDiscord,
   connect as discordConnect,
@@ -53,16 +55,20 @@ import {
   getAutoConnect,
   getDiscordVolume,
   getGuilds,
+  getSendTranscript,
   getVoiceChannels,
   joinChannel,
   leaveChannel,
   loadToken,
   onStateChange,
   pauseStream,
+  postTranscript,
+  refreshCapture,
   resumeStream,
   setAutoConnect,
   setDiscordVerbose,
   setDiscordVolume,
+  setSendTranscript,
   stopSfx,
   stopStream,
   streamSfx,
@@ -70,6 +76,7 @@ import {
   tryAutoConnect,
 } from './discord'
 import { ffmpegStatus } from './discord-audio'
+import { getCaptureState, setCaptureMode, setOnRemoteSegment, setOnRemoteState } from './discord-capture'
 import { downloadFile } from './download-file'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
 import { createLibrary } from './library'
@@ -101,7 +108,7 @@ import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
-import { updateWavHeader } from './wav-header'
+import { WavWriter } from './wav-writer'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
 
@@ -228,9 +235,16 @@ const sttDownloads = createModelDownloads({
 let sessionStartTime: number | null = null
 /** True between stt:start and stt:stop (sessionStartTime may outlive a stop for trailing flushes). */
 let recordingActive = false
-let sessionWavFd: number | null = null
-let sessionWavBytes = 0
-let wavHeaderInterval: ReturnType<typeof setInterval> | null = null
+/** True once a remote speaker has been heard this take: the mic lane gets `dm:`. */
+let sessionHasRemote = false
+
+/** One finished line, labelled exactly as the transcript shows it. */
+function postTranscriptLine(speaker: string | undefined, text: string): void {
+  const prefix = speakerPrefix(speaker, sessionHasRemote)
+  postTranscript(prefix ? `${prefix}: ${text}` : text)
+}
+let sessionWav: WavWriter | null = null
+let remoteWav: WavWriter | null = null
 
 function getActiveSessionFile(): string | null {
   const active = sessionOps.getActiveSession()
@@ -251,66 +265,33 @@ function startWavRecording(): void {
   if (!wavPath) return
   // Close any previous take before reopening (record/stop in the same session appends)
   finalizeWavRecording()
-  let existingBytes = 0
-  try {
-    const stat = fs.statSync(wavPath)
-    const fd = fs.openSync(wavPath, 'r')
-    const magic = Buffer.alloc(4)
-    fs.readSync(fd, magic, 0, 4, 0)
-    fs.closeSync(fd)
-    if (stat.size >= 44 && magic.toString() === 'RIFF') existingBytes = stat.size - 44
-  } catch {
-    /* new file */
-  }
-  if (existingBytes === 0) {
-    // Write a placeholder 44-byte WAV header (updated on stop)
-    const header = Buffer.alloc(44)
-    header.write('RIFF', 0)
-    header.writeUInt32LE(0, 4) // placeholder file size
-    header.write('WAVE', 8)
-    header.write('fmt ', 12)
-    header.writeUInt32LE(16, 16) // PCM format chunk size
-    header.writeUInt16LE(1, 20) // PCM format
-    header.writeUInt16LE(1, 22) // mono
-    header.writeUInt32LE(16000, 24) // sample rate
-    header.writeUInt32LE(32000, 28) // byte rate (16000 * 2)
-    header.writeUInt16LE(2, 32) // block align
-    header.writeUInt16LE(16, 34) // bits per sample
-    header.write('data', 36)
-    header.writeUInt32LE(0, 40) // placeholder data size
-    fs.writeFileSync(wavPath, header)
-  }
-  sessionWavFd = fs.openSync(wavPath, 'r+')
-  sessionWavBytes = existingBytes
-  // Update WAV header every 30s for crash resilience
-  wavHeaderInterval = setInterval(() => {
-    if (sessionWavFd !== null) updateWavHeader(sessionWavFd, sessionWavBytes)
-  }, 30000)
+  sessionWav = new WavWriter(wavPath)
+  sessionWav.start()
 }
 
 function appendWavChunk(samples: Float32Array): void {
-  if (sessionWavFd === null) return
-  const int16 = Buffer.alloc(samples.length * 2)
-  for (let i = 0; i < samples.length; i++) {
-    int16.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
+  sessionWav?.append(samples)
+}
+
+/**
+ * The remote lane's own file, opened on the first utterance so a mic-only take
+ * leaves no empty second WAV behind.
+ */
+function appendRemoteWavChunk(samples: Float32Array): void {
+  if (!remoteWav) {
+    const wavPath = getSessionWavPath()
+    if (!wavPath) return
+    remoteWav = new WavWriter(wavPath.replace(/\.wav$/, '-remote.wav'))
+    remoteWav.start()
   }
-  // Write at an explicit offset: appendFileSync on an fd starts at position 0 and
-  // would overwrite the 44-byte WAV header.
-  fs.writeSync(sessionWavFd, int16, 0, int16.length, 44 + sessionWavBytes)
-  sessionWavBytes += int16.length
+  remoteWav.append(samples)
 }
 
 function finalizeWavRecording(): void {
-  if (wavHeaderInterval) {
-    clearInterval(wavHeaderInterval)
-    wavHeaderInterval = null
-  }
-  if (sessionWavFd === null) return
-  // Update RIFF size and data size in the header
-  updateWavHeader(sessionWavFd, sessionWavBytes)
-  fs.closeSync(sessionWavFd)
-  sessionWavFd = null
-  sessionWavBytes = 0
+  sessionWav?.stop()
+  sessionWav = null
+  remoteWav?.stop()
+  remoteWav = null
 }
 
 function launchScanner(folder: string, force = false) {
@@ -489,6 +470,28 @@ app.whenReady().then(async () => {
     }
     // Send the same time base used for the saved VTT cues
     send(EVENTS.transcript, { text, elapsedMs: elapsed })
+    postTranscriptLine(undefined, text)
+  })
+
+  // Who is being captured, for the tell beside the switch.
+  setOnRemoteState((state) => send(EVENTS.captureState, state))
+
+  // Remote speakers: their own cues, their own WebVTT voice span, their own WAV.
+  // Gated on the same record button as the mic — capture is on with the voice
+  // connection, writing is not.
+  setOnRemoteSegment(({ speaker, text, samples }) => {
+    if (!recordingActive) return
+    const file = getActiveSessionFile()
+    let elapsed = 0
+    if (file) {
+      if (!sessionStartTime) sessionStartTime = Date.now()
+      elapsed = Date.now() - sessionStartTime
+      sessionOps.appendCue(file, elapsed, text, speaker)
+      appendRemoteWavChunk(samples)
+    }
+    send(EVENTS.transcript, { text, elapsedMs: elapsed, speaker })
+    sessionHasRemote = true
+    postTranscriptLine(speaker, text)
   })
 
   setOnRankerStatus((status) => {
@@ -563,6 +566,7 @@ handle(INVOKE.sttStart, () => {
   // Continue timestamps after the active session's last cue instead of restarting at 0
   const activeFile = getActiveSessionFile()
   sessionStartTime = Date.now() - (activeFile ? sessionOps.getLastCueStartMs(activeFile) : 0)
+  sessionHasRemote = false
   recordingActive = true
   // The index is minutes of model work; the transcript is the critical path.
   library.pause()
@@ -843,7 +847,7 @@ handle(INVOKE.sessionRename, (_e, file: string, newName: string) => {
 handle(INVOKE.sessionDelete, (_e, file: string) => {
   if (!sessionOps.isSessionPath(file)) return { ok: false }
   const wasActive = getActiveSessionFile() === file
-  if (wasActive && sessionWavFd !== null) finalizeWavRecording()
+  if (wasActive && sessionWav?.active) finalizeWavRecording()
   sessionOps.deleteSession(file)
   if (wasActive) {
     const next = sessionOps.listSessions()[0]?.file ?? null
@@ -1257,6 +1261,32 @@ handle(INVOKE.discordGetAutoConnect, () => getAutoConnect())
 
 handle(INVOKE.discordSetAutoConnect, (_e, enabled: boolean) => {
   setAutoConnect(enabled)
+  return { ok: true }
+})
+
+handle(INVOKE.discordGetCaptureState, () => getCaptureState())
+
+handle(INVOKE.discordSetCaptureMode, (_e, mode: 'local' | 'all') => {
+  const next = mode === 'all' ? 'all' : 'local'
+  // Degrade, never block: a switch that promises transcription with no model
+  // installed is worse than a switch that says why it refused.
+  if (next === 'all' && !isAnySttModelReady()) {
+    return { ok: false, error: 'No speech model installed — download one in Settings → Transcription' }
+  }
+  setCaptureMode(next)
+  // Applies live: subscribing mid-session is the point of a switch in the panel.
+  refreshCapture()
+  return { ok: true }
+})
+
+handle(INVOKE.discordGetSendTranscript, () => getSendTranscript())
+
+handle(INVOKE.discordSetSendTranscript, (_e, enabled: boolean) => {
+  // Turning it on without a sendable channel would post nothing and say nothing.
+  if (enabled && !canPostTranscript()) {
+    return { ok: false, error: 'Join a voice channel first, and let the bot post in it' }
+  }
+  setSendTranscript(enabled)
   return { ok: true }
 })
 

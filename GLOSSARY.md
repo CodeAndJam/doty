@@ -34,10 +34,20 @@ _Avoid_: suggestion, playlist
 Which shelf a file belongs on: the score, or the effects. A label, not a folder — resolved from the
 DM's switch, then the classifier (audio verdict first, then duration/genre/name), then the folder
 the file came from. Folders are only sources, and one folder may hold both lanes.
-_Avoid_: kind, type, category (the effects folder's own subfolder), library
+_Avoid_: kind, type, category (the effects folder's own subfolder), library, speaker, stream
 
 **Override** — retired as a mode:
 The table taking playback by hand no longer silences the ranker: suggestions keep arriving and
 autopilot changes only at a boundary. Only the metric survives — `overrideRate` is the share of
 acted-on decisions the DM replaced.
 _Avoid_: manual mode, autopilot off, resume auto
+
+**Speaker**:
+A person whose speech appears in the transcript: the DM, or one participant of the Discord voice
+channel the bot is in. One speaker is one capture source.
+_Avoid_: lane, channel, stream, voice
+
+**Capture mode**:
+Which speakers the current recording takes in: `local`, the DM's microphone only, or `all`, the
+microphone plus every Discord participant.
+_Avoid_: listen mode, record mode, monitor

@@ -4,6 +4,7 @@ import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
 import { confidentSfx, mergeSfxCandidates, rankSfxCandidates } from '../lib/sfxRank'
+import { speakerPrefix } from '../lib/speaker'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import Settings from './Settings'
@@ -140,7 +141,7 @@ export default function MainLayout() {
       if (last) {
         setActiveSession(last)
         const cues = await window.doty.sessionLoad(last)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
       } else if (list.length === 0) {
         // Auto-create first session
         const s = await window.doty.sessionCreate()
@@ -149,7 +150,7 @@ export default function MainLayout() {
       } else {
         setActiveSession(list[0].file)
         const cues = await window.doty.sessionLoad(list[0].file)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
       }
     }
     loadSessions()
@@ -170,7 +171,7 @@ export default function MainLayout() {
       // Reload the session if it's the active one
       if (r.file === activeSession) {
         const cues = await window.doty.sessionLoad(r.file)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
       }
     })
     const unsubError = window.doty.onReprocessError(() => {
@@ -318,9 +319,10 @@ export default function MainLayout() {
   useEffect(() => {
     window.doty.getMusicFolder().then(setMusicFolder)
 
-    const unsubTranscript = window.doty.onTranscript(({ text, elapsedMs }) => {
-      setTranscripts((prev) => [...prev, { text, elapsedMs }])
+    const unsubTranscript = window.doty.onTranscript(({ text, elapsedMs, speaker }) => {
+      setTranscripts((prev) => [...prev, { text, elapsedMs, speaker }])
       setInterimText('') // Clear interim when final arrives
+      // The ranker reads the words, not the labels: "Ana:" is for the DM's eyes.
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
       // Debounce STT-triggered recommendations, then apply the cadence gates:
       // three new words, and two seconds since the last answer. A request that is
@@ -401,7 +403,7 @@ export default function MainLayout() {
         if (!last) return
         setActiveSession(last)
         const cues = await window.doty.sessionLoad(last)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
       })
     })
 
@@ -696,7 +698,7 @@ export default function MainLayout() {
               onSwitchSession={async (file) => {
                 setActiveSession(file)
                 const cues = await window.doty.sessionLoad(file)
-                setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+                setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
               }}
               onRenameSession={async (file, name) => {
                 await window.doty.sessionRename(file, name)
@@ -710,7 +712,7 @@ export default function MainLayout() {
                   if (remaining.length > 0) {
                     setActiveSession(remaining[0].file)
                     const cues = await window.doty.sessionLoad(remaining[0].file)
-                    setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0 })))
+                    setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
                   } else {
                     // Keep a recording destination: deleting the last session
                     // must not leave the mic writing into a void.
@@ -722,14 +724,19 @@ export default function MainLayout() {
                 }
               }}
               onCopyTranscript={() => {
+                const multi = transcripts.some((s) => s.speaker)
                 const text = transcripts
                   .filter((s) => !s.system && s.text)
-                  .map((s) => s.text)
+                  .map((s) => {
+                    const prefix = speakerPrefix(s.speaker, multi)
+                    return prefix ? `${prefix}: ${s.text}` : s.text
+                  })
                   .join(' ')
                 navigator.clipboard.writeText(text)
               }}
               onExportTranscript={() => {
                 const lines: string[] = []
+                const multiSpeaker = transcripts.some((s) => s.speaker)
                 for (const seg of transcripts) {
                   if (seg.system) {
                     lines.push(`\n---\n*${seg.text}*\n`)
@@ -740,7 +747,8 @@ export default function MainLayout() {
                     seg.elapsedMs > 0
                       ? `[${Math.floor(seg.elapsedMs / 60000)}:${String(Math.floor((seg.elapsedMs / 1000) % 60)).padStart(2, '0')}] `
                       : ''
-                  lines.push(`${ts}${seg.text}`)
+                  const prefix = speakerPrefix(seg.speaker, multiSpeaker)
+                  lines.push(`${ts}${prefix ? `**${prefix}:** ` : ''}${seg.text}`)
                 }
                 const md = `# Session Transcript\n\n${lines.join('\n\n')}\n`
                 navigator.clipboard.writeText(md)

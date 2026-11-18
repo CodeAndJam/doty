@@ -14,7 +14,7 @@ vi.mock('./store', () => ({
   },
 }))
 
-import { deleteSession, getLastCueStartMs, loadSessionAsync, renameSession } from './sessions'
+import { appendCue, deleteSession, getLastCueStartMs, loadSessionAsync, renameSession } from './sessions'
 
 describe('getLastCueStartMs', () => {
   it('returns the start of the last cue, not its end', () => {
@@ -61,6 +61,34 @@ Second line
     expect(cues[1]).toEqual({ start: '00:00:05.000', end: '00:00:08.000', text: 'Second line' })
   })
 
+  it('reads a WebVTT voice span back into a speaker, leaving plain cues alone', async () => {
+    const content = `WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+<v Ana>olá malta</v>
+
+00:00:05.000 --> 00:00:08.000
+I say this into the mic
+`
+    fs.writeFileSync(tmpFile, content, 'utf-8')
+    const cues = await loadSessionAsync(tmpFile)
+    expect(cues[0]).toEqual({ start: '00:00:01.000', end: '00:00:04.000', text: 'olá malta', speaker: 'Ana' })
+    expect(cues[1]).toEqual({
+      start: '00:00:05.000',
+      end: '00:00:08.000',
+      text: 'I say this into the mic',
+    })
+  })
+
+  it('keeps a display name that would break the voice span out of the tag', async () => {
+    appendCue(tmpFile, 1000, 'olá malta', 'Ana <script>')
+    appendCue(tmpFile, 2000, 'closes early </v> here', 'Cabeda')
+    const cues = await loadSessionAsync(tmpFile)
+    expect(cues[0]).toEqual({ start: '00:00:01.000', end: '00:00:04.000', text: 'olá malta', speaker: 'Ana script' })
+    expect(cues[1].speaker).toBe('Cabeda')
+    expect(cues[1].text).toBe('closes early  here')
+  })
+
   it('returns empty array for non-existent file', async () => {
     const cues = await loadSessionAsync('/nonexistent/file.vtt')
     expect(cues).toEqual([])
@@ -87,11 +115,14 @@ describe('deleteSession', () => {
   it('deletes both .vtt and .wav files', () => {
     const vttPath = path.join(tmpDir, 'session.vtt')
     const wavPath = path.join(tmpDir, 'session.wav')
+    const remotePath = path.join(tmpDir, 'session-remote.wav')
     fs.writeFileSync(vttPath, 'WEBVTT\n', 'utf-8')
     fs.writeFileSync(wavPath, Buffer.alloc(44))
+    fs.writeFileSync(remotePath, Buffer.alloc(44))
     deleteSession(vttPath)
     expect(fs.existsSync(vttPath)).toBe(false)
     expect(fs.existsSync(wavPath)).toBe(false)
+    expect(fs.existsSync(remotePath)).toBe(false)
   })
 
   it('deletes VTT even if WAV does not exist', () => {

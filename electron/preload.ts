@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld('doty', {
   sttStart: () => invoke(INVOKE.sttStart),
   sttStop: () => invoke(INVOKE.sttStop),
   sttTranscribeChunk: (buffer: ArrayBuffer) => invoke(INVOKE.sttTranscribeChunk, buffer),
-  onTranscript: (cb: (data: { text: string; elapsedMs: number }) => void) => subscribe(EVENTS.transcript, cb),
+  onTranscript: (cb: (data: { text: string; elapsedMs: number; speaker?: string }) => void) =>
+    subscribe(EVENTS.transcript, cb),
   onSttStatus: (cb: (status: string) => void) => subscribe(EVENTS.sttStatus, cb),
   onSttInterim: (cb: (text: string) => void) => subscribe(EVENTS.sttInterim, cb),
   onParagraphBreak: (cb: () => void) => subscribe(EVENTS.paragraphBreak, cb),
@@ -168,5 +169,11 @@ contextBridge.exposeInMainWorld('doty', {
   discordClearToken: () => invoke(INVOKE.discordClearToken),
   discordGetAutoConnect: () => invoke(INVOKE.discordGetAutoConnect),
   discordSetAutoConnect: (enabled: boolean) => invoke(INVOKE.discordSetAutoConnect, enabled),
+  discordGetCaptureState: () => invoke(INVOKE.discordGetCaptureState),
+  discordSetCaptureMode: (mode: 'local' | 'all') => invoke(INVOKE.discordSetCaptureMode, mode),
+  discordGetSendTranscript: () => invoke(INVOKE.discordGetSendTranscript),
+  discordSetSendTranscript: (enabled: boolean) => invoke(INVOKE.discordSetSendTranscript, enabled),
   onDiscordState: (cb: (state: any) => void) => subscribe(EVENTS.discordState, cb),
+  onCaptureState: (cb: (state: { mode: 'local' | 'all'; names: string[]; error: string | null }) => void) =>
+    subscribe(EVENTS.captureState, cb),
 })
