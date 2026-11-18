@@ -142,10 +142,14 @@ export function createLighting(deps: LightingDeps): Lighting {
   }
 
   // A lamp with no `effect_list` can only be animated by writing to it, so the
-  // breath is a 200 ms stream of turn_on calls — one per tick, skipped while the
-  // previous is still in flight, or a slow lamp gets a backlog.
-  const PULSE_TICK_MS = 200
-  const PULSE_STEPS = 15
+  // breath is a stream of turn_on calls. Ten a second with a four-second cycle
+  // keeps each step under ~3 % brightness: at 5 Hz the lamp stepped visibly.
+  // A tick is skipped while the previous call is in flight, so a slow lamp gets
+  // motion rather than a backlog.
+  const PULSE_TICK_MS = 100
+  const PULSE_STEPS = 40
+  const PULSE_LOW = 30
+  const PULSE_HIGH = 65
   const PULSE_FROM: [number, number, number] = [0, 190, 190]
   const PULSE_TO: [number, number, number] = [110, 40, 200]
 
@@ -161,16 +165,30 @@ export function createLighting(deps: LightingDeps): Lighting {
     stopPulse()
     pulsing = true
     pulsePhase = 0
+    let lastSent = ''
     director?.noteManualChange()
     logPreset('pulse', 'the DM asked the lights to breathe')
     pulseTimer = setInterval(() => {
       if (!client || pulseInFlight) return
       pulsePhase += (2 * Math.PI) / PULSE_STEPS
-      const t = (Math.sin(pulsePhase) + 1) / 2
-      const rgb = PULSE_FROM.map((from, i) => Math.round(from + (PULSE_TO[i] - from) * t)) as [number, number, number]
+      const breath = (Math.sin(pulsePhase) + 1) / 2
+      const level = Math.round(PULSE_LOW + breath * (PULSE_HIGH - PULSE_LOW))
+      // Colour moves at half the speed of brightness: one teal→violet→teal arc
+      // per breath reads as living light instead of a blinking lamp.
+      const tint = (Math.sin(pulsePhase / 2) + 1) / 2
+      const rgb = PULSE_FROM.map((from, i) => Math.round(from + (PULSE_TO[i] - from) * tint)) as [
+        number,
+        number,
+        number,
+      ]
+      // Sine peaks repeat the same rounded value for a few ticks; not sending
+      // them keeps the device quieter without changing the motion.
+      const key = `${level}|${rgb.join(',')}`
+      if (key === lastSent) return
+      lastSent = key
       pulseInFlight = true
       void client
-        .apply(entityIds(), { rgb, brightnessPct: Math.round(25 + t * 45) }, 0)
+        .apply(entityIds(), { rgb, brightnessPct: level }, 0)
         .catch(() => {})
         .finally(() => {
           pulseInFlight = false

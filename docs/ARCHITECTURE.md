@@ -326,8 +326,9 @@ advertises a colour mode, and an effect picker when it advertises `effect_list`.
 `lights:set-light` sends one `call_service` for that entity and only the fields
 the light supports — a dimmer never receives `rgb_color`. **Pulse** is the one
 app-side animation: a lamp with no `effect_list` can only be made to breathe by
-writing to it, so main sends a `turn_on` every 200 ms (one breath per 3 s,
-skipping a tick while the previous call is in flight). Any other manual change,
+writing to it, so main sends a `turn_on` every 100 ms (one breath per 4 s,
+30–65 % brightness, skipping a tick while the previous call is in flight and
+dropping repeated rounded values). Any other manual change,
 an Area change or the end of the session stops it.
 
 ```mermaid

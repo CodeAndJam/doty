@@ -112,12 +112,12 @@ describe('lighting service', () => {
       await lighting.setPulse(true)
       expect(lighting.current().pulse).toBe(true)
       await vi.advanceTimersByTimeAsync(1000)
-      expect(applied.length).toBeGreaterThanOrEqual(4)
+      expect(applied.length).toBeGreaterThanOrEqual(6)
 
       const levels = applied.map((call) => call.preset.brightnessPct as number)
       expect(new Set(levels).size).toBeGreaterThan(1)
-      expect(Math.min(...levels)).toBeGreaterThanOrEqual(25)
-      expect(Math.max(...levels)).toBeLessThanOrEqual(70)
+      expect(Math.min(...levels)).toBeGreaterThanOrEqual(30)
+      expect(Math.max(...levels)).toBeLessThanOrEqual(65)
 
       await lighting.setPulse(false)
       expect(lighting.current().pulse).toBe(false)
