@@ -1,5 +1,17 @@
 # Changelog
 
+## [5.1.0](https://github.com/CodeAndJam/doty/compare/v5.0.0...v5.1.0) (2026-11-17)
+
+
+### Features
+
+* **session:** lane labels, semantic search, session naming and the autopilot master switch ([#143](https://github.com/CodeAndJam/doty/issues/143)) ([439c121](https://github.com/CodeAndJam/doty/commit/439c121ebf64eb8dbebf88517ac3ccdb7f8f3989))
+
+
+### Bug Fixes
+
+* **discord:** spawn the resolved ffmpeg instead of prism's lookup ([#140](https://github.com/CodeAndJam/doty/issues/140)) ([09ccffd](https://github.com/CodeAndJam/doty/commit/09ccffd0e70f4c16c432736005797954c202eda3))
+
 ## [5.0.0](https://github.com/CodeAndJam/doty/compare/v4.1.0...v5.0.0) (2026-11-16)
 
 
