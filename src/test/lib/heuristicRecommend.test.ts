@@ -197,6 +197,64 @@ describe('heuristicRecommend', () => {
     expect(files[0]).toMatch(/Horror|Spooky|Haunted/i)
   })
 
+  it('prefers the track the prompt names over one that only fits the analysis', () => {
+    const files = ['Horror Ambience - Haunted House - Dark Wind - Cursed Bells.mp3', 'Campfire.mp3']
+    const metadata: Record<string, TrackMeta> = {
+      // The analysis reads loud and major: a poor fit for the horror profile.
+      'Horror Ambience - Haunted House - Dark Wind - Cursed Bells.mp3': {
+        bpm: 145,
+        energy: 1,
+        scale: 'major',
+        danceability: 0.9,
+      } as TrackMeta,
+      // The analysis reads like a textbook horror bed, but nothing in the name does.
+      'Campfire.mp3': { bpm: 80, energy: 0.4, scale: 'minor', danceability: 0.2 } as TrackMeta,
+    }
+
+    const { files: ranked } = heuristicRecommend('horror', files, metadata, 2)
+
+    expect(ranked[0]).toBe('Horror Ambience - Haunted House - Dark Wind - Cursed Bells.mp3')
+  })
+
+  it('still ranks by analysed energy when the prompt names nothing in the library', () => {
+    const files = ['Campfire.mp3', 'Decisive Battle - Rivals.mp3']
+    const metadata: Record<string, TrackMeta> = {
+      'Campfire.mp3': { bpm: 90, energy: 0.45, scale: 'major', danceability: 0.2 } as TrackMeta,
+      'Decisive Battle - Rivals.mp3': { bpm: 140, energy: 1, scale: 'minor', danceability: 0.6 } as TrackMeta,
+    }
+
+    const { files: ranked } = heuristicRecommend('a steady drizzle over the moors', files, metadata, 2)
+
+    expect(ranked[0]).toBe('Campfire.mp3')
+  })
+
+  it('still ranks by name when the scanner has a lane but no analysis numbers', () => {
+    // The scanner labels a row before the audio pass reaches it. A missing
+    // energy used to make every score NaN, and a NaN comparator leaves the
+    // folder's own order in place: the prompt was effectively ignored.
+    const files = ['Horror Ambience - Haunted House.mp3', 'Campfire.mp3']
+    const metadata: Record<string, TrackMeta> = {
+      'Horror Ambience - Haunted House.mp3': { lane: 'music' } as TrackMeta,
+      'Campfire.mp3': { lane: 'music' } as TrackMeta,
+    }
+
+    const { files: ranked } = heuristicRecommend('campfire', files, metadata, 2)
+
+    expect(ranked[0]).toBe('Campfire.mp3')
+  })
+
+  it('falls back to energy for a prompt made of function words', () => {
+    const files = ['The Dark Forest.mp3', 'Campfire.mp3']
+    const metadata: Record<string, TrackMeta> = {
+      'The Dark Forest.mp3': { bpm: 130, energy: 0.9, scale: 'minor', danceability: 0.6 } as TrackMeta,
+      'Campfire.mp3': { bpm: 90, energy: 0.45, scale: 'major', danceability: 0.2 } as TrackMeta,
+    }
+
+    const { files: ranked } = heuristicRecommend('the', files, metadata, 2)
+
+    expect(ranked[0]).toBe('Campfire.mp3')
+  })
+
   it('returns all files if fewer than 5', () => {
     const { files } = heuristicRecommend('campfire', FILES.slice(0, 3), META)
     expect(files).toHaveLength(3)

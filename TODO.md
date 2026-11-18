@@ -205,6 +205,7 @@
 
 ## Done
 
+- [x] Recommendation: the prompt was ignored once a library existed. Rows stamped with a lane but not yet analysed scored `NaN` (bpm/energy were `undefined`), and the `NaN` comparator kept the folder order: `horror` offered Campfire first. Missing numbers now score 0, and a prompt word the track's name carries is worth more than a perfect analysis fit (#141, `e2e/dm-input.spec.ts`).
 - [x] Architecture deepening on top of #111: one IPC channel registry with typed `handle`/`send`/`invoke`/`subscribe` plus a contract test, one model-download state machine for STT/LLM/embedding, `sfx-library` extracted, ranking moved into `rankTracks` with shared music/SFX scoring, orphaned `prefilter` deleted (`music://` was already deduplicated in #111)
 
 - [x] STT quality gate: WER/CER + noise + silence + realtime checks over Portuguese fixtures, committed baseline, nightly macOS workflow (`pnpm stt:eval`, `docs/QUALITY.md`)
