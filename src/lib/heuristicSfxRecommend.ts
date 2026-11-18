@@ -12,7 +12,7 @@
 
 import type { SfxMeta } from '../types'
 import { fold, tokenize } from './keywordMatch'
-import { historyBoost, maxPlays, tagMatch, textOverlap } from './scoreCandidates'
+import { historyBoost, maxPlays, nameMatch, tagMatch, textOverlap } from './scoreCandidates'
 
 interface SfxMoodProfile {
   keywords: string[]
@@ -351,11 +351,6 @@ function detectMoods(tokens: string[]): SfxMoodProfile[] {
     .map((p) => p.profile)
 }
 
-/** Score a label/description against transcript tokens */
-function textScore(text: string, tokens: string[]): number {
-  return textOverlap(text, tokens)
-}
-
 export function heuristicSfxRecommend(
   transcript: string,
   sfxList: SfxMeta[],
@@ -379,11 +374,11 @@ export function heuristicSfxRecommend(
   const topPlays = maxPlays(playFrequencies)
 
   const scored = sfxList.map((sfx) => {
-    // Label match (weighted 2x)
-    const labelScore = textScore(sfx.label, tokens) * 2
+    // Label match, weighted like a track name: the word the DM typed beats a good fit
+    const labelScore = nameMatch(sfx.label, tokens)
 
     // Description match (weighted 1x)
-    const descScore = textScore(sfx.description, tokens)
+    const descScore = textOverlap(sfx.description, tokens)
 
     // Category match (weighted 2x) — binary: is this SFX's category in the detected moods?
     const catScore = matchedCategories.has(sfx.category) ? 2 : 0

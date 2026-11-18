@@ -10,16 +10,11 @@ export default defineConfig({
     exclude: [
       'e2e/**',
       'node_modules/**',
-      'electron/*-integration.test.ts',
       // The live Home Assistant check writes real lights; it runs only on request.
       ...(process.env.HA_LIVE === '1' ? [] : ['electron/home-assistant-live.test.ts']),
       // The model-backed STT gate is opt-in (needs GGUFs); the pure STT logic
       // tests in electron/stt-quality/ still run in every CI pass.
       ...(process.env.STT_QUALITY === '1' ? [] : ['electron/stt-quality.test.ts']),
-      'electron/voxtral-streaming*.test.ts',
-      'electron/voxtral-session.test.ts',
-      'electron/voxtral-latency.test.ts',
-      'electron/stt-models.test.ts',
     ],
     coverage: {
       provider: 'v8',

@@ -377,7 +377,6 @@ Nothing here may stop playback or hide the suggestions.
 | Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
 | Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-pulse` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
-
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a
 command, so the renderer stays the only thing that touches playback.

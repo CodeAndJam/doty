@@ -4,7 +4,7 @@
  * One speech burst per speaker is buffered from speaking-start to the next
  * pause, then decoded whole by a worker of its own. Batch-per-utterance needs no
  * per-speaker model and no concurrent stream, which is the cheap side of the
- * shape the receive spike used to leave open.
+ * shape `spike/DISCORD-RECEIVE.md` left open.
  */
 import { type ChildProcessByStdio, spawn } from 'node:child_process'
 import { join } from 'node:path'

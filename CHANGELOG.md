@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.0](https://github.com/CodeAndJam/doty/compare/v5.1.0...v5.2.0) (2026-11-18)
+
+
+### Features
+
+* **discord:** participant capture and transcript mirroring ([#145](https://github.com/CodeAndJam/doty/issues/145)) ([8675fa5](https://github.com/CodeAndJam/doty/commit/8675fa5a9cb7a6ce62eff3f043ddc71fdddd3a6a))
+
 ## [5.1.0](https://github.com/CodeAndJam/doty/compare/v5.0.0...v5.1.0) (2026-11-17)
 
 
