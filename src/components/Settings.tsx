@@ -4,6 +4,7 @@ import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress } from '../types'
 import DiscordPanel from './DiscordPanel'
+import HomeAssistantPanel from './HomeAssistantPanel'
 
 const LANGUAGE_LABELS: Record<string, string> = {
   pt: 'Português',
@@ -1239,6 +1240,10 @@ export default function Settings({
                   token field keeps what was typed. */}
             <div className="mb-6">
               <DiscordPanel />
+            </div>
+            {/* Home Assistant: absent from the page until it is configured. */}
+            <div className="mb-6">
+              <HomeAssistantPanel />
             </div>
             {/* Divider before future features */}
             <div

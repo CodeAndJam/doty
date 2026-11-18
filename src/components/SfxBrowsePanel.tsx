@@ -4,8 +4,21 @@ import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
 import { searchModeLabel } from '../lib/searchLabel'
 import type { SfxCategory, SfxMeta } from '../types'
 import { SFX_CATEGORY_LABELS } from '../types'
-import { CloseIcon, PinIcon, SearchIcon, StopIcon } from './Icons'
-import SfxCard from './SfxCard'
+import {
+  CloseIcon,
+  LoopSmallIcon,
+  PinIcon,
+  SearchIcon,
+  StopIcon,
+  VolumeHighIcon,
+  VolumeLowIcon,
+  VolumeMutedIcon,
+} from './Icons'
+import RecommendCard, { sfxDetails } from './RecommendCard'
+import VolumePopover from './VolumePopover'
+
+/** Same rule as the session columns: one card per row, as many as fit the pane. */
+const CARD_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }
 
 interface SfxBrowsePanelProps {
   sfxPlayer: UseSfxPlayerReturn
@@ -142,10 +155,20 @@ export default function SfxBrowsePanel({
   function renderSfxCard(sfx: SfxMeta) {
     const ch = activeChannelMap.get(sfx.id)
     const lane = lanes[sfx.filename]
+    const tags = tagsMap[sfx.filename] || []
+    const volume = ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)
+    const VolumeIcon = volume === 0 ? VolumeMutedIcon : volume < 0.5 ? VolumeLowIcon : VolumeHighIcon
     return (
-      <SfxCard
+      <RecommendCard
         key={sfx.id}
-        badge={
+        kind="sfx"
+        title={sfx.label}
+        isPlaying={!!ch?.playing}
+        isPinned={pinnedSet.has(sfx.id)}
+        details={sfxDetails(sfx, tags)}
+        tags={tags}
+        allTags={allTags}
+        corner={
           <button
             type="button"
             data-testid="lane-badge"
@@ -173,22 +196,31 @@ export default function SfxBrowsePanel({
             {lane?.lane === 'music' ? '♪' : 'FX'}
           </button>
         }
-        sfx={sfx}
-        channelId={ch?.id ?? null}
-        isPlaying={!!ch?.playing}
-        isLooping={ch?.looping ?? false}
-        isPinned={pinnedSet.has(sfx.id)}
-        channelVolume={ch?.volume ?? sfxPlayer.getSfxVolume(sfx.id)}
-        tags={tagsMap[sfx.filename] || []}
-        allTags={allTags}
-        onPlay={(loop) => sfxPlayer.play(sfx.id, sfx.label, sfx.filename, loop)}
-        onStop={() => ch && sfxPlayer.stop(ch.id)}
-        onToggleLoop={() => ch && sfxPlayer.toggleLoop(ch.id)}
-        onVolumeChange={(v) => {
-          sfxPlayer.setSfxVolume(sfx.id, v)
-        }}
+        onPlay={() => (ch?.playing ? sfxPlayer.stop(ch.id) : sfxPlayer.play(sfx.id, sfx.label, sfx.filename))}
         onPin={() => onTogglePin(sfx.id)}
         onTagsChange={(tags) => handleTagsChange(sfx.filename, tags)}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() =>
+                ch?.playing ? sfxPlayer.toggleLoop(ch.id) : sfxPlayer.play(sfx.id, sfx.label, sfx.filename, true)
+              }
+              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              title={ch?.looping ? 'Stop looping' : 'Loop'}
+              style={{ color: ch?.looping ? 'var(--rune)' : 'var(--ink-muted)' }}
+            >
+              <LoopSmallIcon />
+            </button>
+            <VolumePopover
+              volume={volume}
+              onVolumeChange={(v) => sfxPlayer.setSfxVolume(sfx.id, v)}
+              VolumeIcon={VolumeIcon}
+              accentColor="rgba(74,138,106,0.3)"
+              label={`${sfx.label} volume`}
+            />
+          </>
+        }
       />
     )
   }
@@ -212,6 +244,16 @@ export default function SfxBrowsePanel({
           className="flex-1 bg-transparent outline-none text-sm"
           style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#6dbf95' }}
         />
+        {search.trim() && (!found || found.pending) && (
+          <span
+            role="status"
+            aria-live="polite"
+            className="animate-pulse"
+            style={{ fontSize: '11px', color: '#6dbf95', fontFamily: "'IBM Plex Mono', monospace" }}
+          >
+            searching…
+          </span>
+        )}
         {search.trim() && found && (
           <span
             data-testid="search-mode"
@@ -407,7 +449,7 @@ export default function SfxBrowsePanel({
               </span>
               <div className="flex-1 h-px" style={{ background: 'rgba(74,138,106,0.15)' }} />
             </div>
-            <div className="grid grid-cols-3 gap-1 mb-3">
+            <div className="grid gap-1 mb-3" style={CARD_GRID}>
               {sfxPinned
                 .map((id) => allSfx.find((s) => s.id === id))
                 .filter((s): s is SfxMeta => !!s)
@@ -440,7 +482,9 @@ export default function SfxBrowsePanel({
                 <div className="flex-1 h-px" style={{ background: 'rgba(46,36,22,0.5)' }} />
               </div>
             )}
-            <div className="grid grid-cols-3 gap-1">{filteredSfx.map(renderSfxCard)}</div>
+            <div className="grid gap-1" style={CARD_GRID}>
+              {filteredSfx.map(renderSfxCard)}
+            </div>
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center py-8">

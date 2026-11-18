@@ -5,6 +5,56 @@ export interface ProgressPayload {
   totalMB: number
 }
 
+/** The lights a session can reach, as the panel sees them. */
+export type LightStatus = 'off' | 'connecting' | 'connected' | 'needs-reconnect'
+
+export interface LightView {
+  entityId: string
+  name: string
+  on: boolean
+  /** Current level, 1–100, when Home Assistant reports one. */
+  brightnessPct: number | null
+  /** Current colour, when the light has one. */
+  rgb: [number, number, number] | null
+  /** False when the light accepts no colour at all. */
+  canColor: boolean
+  /** Animations this light advertises; empty when it has none. */
+  effectList: string[]
+  effect: string | null
+}
+
+/** One manual change to one light, from the session pane. */
+export interface LightPatch {
+  on?: boolean
+  brightnessPct?: number
+  rgb?: [number, number, number]
+  effect?: string
+}
+
+export interface LightsState {
+  /** False until a Home Assistant URL and token are stored: the UI shows nothing. */
+  configured: boolean
+  status: LightStatus
+  /** Why the last connection attempt failed, when it did. */
+  error?: string
+  url: string
+  areas: Array<{ areaId: string; name: string }>
+  areaId: string
+  auto: boolean
+  /** The Session Hint, as stored for this session. */
+  hint: string
+  mood: string | null
+  /** Who set the current Area Preset. */
+  producer: 'mood' | 'hint' | null
+  /** When the DM's manual change stops pausing auto, in epoch ms. */
+  pausedUntil: number | null
+  /** False when any light in the Area cannot take a colour. */
+  canColor: boolean
+  /** True while the app-side breathing animation is running. */
+  pulse: boolean
+  lights: LightView[]
+}
+
 export interface SttDownloadState {
   downloading: { modelId: string; percent: number } | null
   error: { modelId: string; error: string } | null
@@ -243,6 +293,22 @@ export interface DotyAPI {
       ready: boolean
     }>
   >
+  // Lights (Home Assistant on the LAN)
+  lightsGetState: (session?: string | null) => Promise<LightsState>
+  lightsConfigure: (input: { url: string; token?: string }) => Promise<LightsState>
+  lightsClear: () => Promise<LightsState>
+  lightsDiscover: () => Promise<Array<{ name: string; url: string }>>
+  lightsSetArea: (session: string | null, areaId: string) => Promise<LightsState>
+  lightsSetAuto: (enabled: boolean) => Promise<LightsState>
+  lightsSetPower: (on: boolean) => Promise<LightsState>
+  lightsSetBrightness: (percent: number) => Promise<LightsState>
+  lightsSetLight: (entityId: string, patch: LightPatch) => Promise<LightsState>
+  lightsSetPulse: (enabled: boolean) => Promise<LightsState>
+  lightsSetMood: (mood: string) => Promise<LightsState>
+  lightsSetHint: (session: string | null, hint: string) => Promise<LightsState>
+  lightsResume: () => Promise<LightsState>
+  onLightsState: (cb: (state: LightsState) => void) => () => void
+
   rankerStatus: () => Promise<{ cached: boolean; downloading: boolean; languageCovered: boolean }>
   rankerDecide: (prompt: string, candidates: string[]) => Promise<number[]>
   rankerDownload: () => Promise<{ ok: boolean; reason?: string }>

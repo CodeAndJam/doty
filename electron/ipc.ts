@@ -89,6 +89,20 @@ export const INVOKE = {
   debugGetState: 'debug:get-state',
   debugSetEnabled: 'debug:set-enabled',
   debugOpenLog: 'debug:open-log',
+  // Lights (Home Assistant on the LAN)
+  lightsGetState: 'lights:get-state',
+  lightsConfigure: 'lights:configure',
+  lightsClear: 'lights:clear',
+  lightsDiscover: 'lights:discover',
+  lightsSetArea: 'lights:set-area',
+  lightsSetAuto: 'lights:set-auto',
+  lightsSetPower: 'lights:set-power',
+  lightsSetBrightness: 'lights:set-brightness',
+  lightsSetLight: 'lights:set-light',
+  lightsSetPulse: 'lights:set-pulse',
+  lightsSetMood: 'lights:set-mood',
+  lightsSetHint: 'lights:set-hint',
+  lightsResume: 'lights:resume',
   // Discord
   discordConnect: 'discord:connect',
   discordDisconnect: 'discord:disconnect',
@@ -141,6 +155,8 @@ export const EVENTS = {
   musicFolderChanged: 'music:folder-changed',
   sessionsChanged: 'sessions:changed',
   sfxChanged: 'sfx:changed',
+  // Lights
+  lightsState: 'lights:state',
   // Discord
   discordState: 'discord:state',
   captureState: 'capture:state',

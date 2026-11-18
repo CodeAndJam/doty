@@ -9,6 +9,22 @@ function store() {
 }
 
 describe('session store', () => {
+  it('remembers the session Area and hint, and overwrites on a second write', () => {
+    const s = store()
+    expect(s.getLights('session-a.vtt')).toBeNull()
+
+    s.setLights({ session: 'session-a.vtt', areaId: 'office', hint: 'dark and funny', pinned: true })
+    expect(s.getLights('session-a.vtt')).toEqual({
+      session: 'session-a.vtt',
+      areaId: 'office',
+      hint: 'dark and funny',
+      pinned: true,
+    })
+
+    s.setLights({ session: 'session-a.vtt', areaId: 'attic', hint: '', pinned: false })
+    expect(s.getLights('session-a.vtt')).toMatchObject({ areaId: 'attic', pinned: false })
+  })
+
   it('records decisions in order and reads them back by time', () => {
     const s = store()
     s.recordDecision({
@@ -88,6 +104,32 @@ describe('session store', () => {
     expect(s.report(at).decisions).toBe(5)
     expect(s.report(at).autoActions).toBe(0)
     expect(s.report(at).overrideRate).toBe(0)
+  })
+
+  it('keeps light decisions out of the music KPI', () => {
+    const s = store()
+    s.recordDecision({
+      at,
+      kind: 'music',
+      action: 'queue-next',
+      reason: '',
+      track: null,
+      probability: 0.6,
+      mood: null,
+      source: 'auto',
+    })
+    s.recordDecision({
+      at,
+      kind: 'light',
+      action: 'pause',
+      reason: 'the DM took the light',
+      track: null,
+      probability: 0,
+      mood: 'tavern',
+      source: 'manual',
+    })
+
+    expect(s.report(at)).toMatchObject({ decisions: 1, autoActions: 1, manualPicks: 0, overrideRate: 0 })
   })
 
   it('keeps preferences newest first', () => {

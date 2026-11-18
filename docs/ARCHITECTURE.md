@@ -286,6 +286,12 @@ erDiagram
     text mood
     text source
   }
+  session_lights {
+    text session PK
+    text area
+    text hint
+    int pinned
+  }
   session_preferences {
     int id PK
     int at
@@ -304,6 +310,46 @@ same relative name.
 `lane_overrides.path` is that same key. `source` in `session_preferences` is
 `manual`, `auto` or `reject`; a skip is a rejection, not a preference.
 
+## Lights
+
+Home Assistant on the LAN, and nothing else (ADR-0004). One WebSocket does the
+whole job: the registries answer which lights exist and which Area they sit in,
+`state_changed` says when the DM takes the light back, `call_service` writes.
+REST is not used — it cannot see Areas.
+
+The panel is absent from the DOM until a token and address are stored. A session
+chooses an Area; Doty touches only `light.*` entities there, skipping a group
+when every one of its members is in the same Area.
+
+Each light in the Area has its own row: on/off, level, colour when the light
+advertises a colour mode, and an effect picker when it advertises `effect_list`.
+`lights:set-light` sends one `call_service` for that entity and only the fields
+the light supports — a dimmer never receives `rgb_color`. **Pulse** is the one
+app-side animation: a lamp with no `effect_list` can only be made to breathe by
+writing to it, so main sends a `turn_on` every 100 ms (one breath per 4 s,
+30–65 % brightness, skipping a tick while the previous call is in flight and
+dropping repeated rounded values). Any other manual change,
+an Area change or the end of the session stops it.
+
+```mermaid
+flowchart TD
+  SCENE[confirmed Session Scene] --> DIR[light director]
+  HINT[Session Hint] --> DIR
+  DIR --> DWELL{dwell 25 s?}
+  DWELL -->|no| HOLD[hold]
+  DWELL -->|yes| P[Area Preset: hue by mood, brightness by intensity]
+  P --> HA[light.turn_on · 3 s transition]
+  HA --> CTX[context id remembered]
+  CTX -->|state_changed with another context| PAUSE[auto paused 15 min]
+  PAUSE -->|DM resumes| DIR
+  SESSION[stt:start] --> SNAP[snapshot the Area]
+  SESSION_END[stt:stop] -->|Doty wrote last| SNAP
+```
+
+The director is injected with a port, so the pause, the dwell and the restore are
+tested without a socket; `home-assistant.ts` is tested against a fake HA that
+speaks only the frames the client is allowed to depend on.
+
 ## Degradation
 
 Nothing here may stop playback or hide the suggestions.
@@ -316,6 +362,7 @@ Nothing here may stop playback or hide the suggestions.
 | Audio verdict | duration, genre and the name decide | badge falls back to that guess |
 | VAD model | RMS gate in the STT worker | none; transcript still arrives |
 | STT model | no transcript; DM can type a prompt | onboarding / model status |
+| Home Assistant | every other feature; the lights pane is absent | Settings says `needs reconnect` |
 
 ## IPC surface
 
@@ -329,7 +376,7 @@ Nothing here may stop playback or hide the suggestions.
 | Playback | player, queue and SFX channels in `electron/ipc.ts` |
 | Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
-
+| Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-pulse` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a
 command, so the renderer stays the only thing that touches playback.

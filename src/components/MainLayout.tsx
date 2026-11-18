@@ -3,10 +3,11 @@ import { useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
-import { confidentSfx, mergeSfxCandidates, rankSfxCandidates } from '../lib/sfxRank'
+import { confidentSfx, mergeSfxCandidates, rankAllSfx } from '../lib/sfxRank'
 import { speakerPrefix } from '../lib/speaker'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
+import LightPanel from './LightPanel'
 import Settings from './Settings'
 import Soundboard from './Soundboard'
 import type { TranscriptSegment } from './Transcript'
@@ -31,6 +32,9 @@ export default function MainLayout() {
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
   const [settingsSection, setSettingsSection] = useState<'audio' | 'library' | 'transcription' | 'director'>('library')
   const [sfxRecommendations, setSfxRecommendations] = useState<string[]>([])
+  /** Every effect the model ranked, best first: the column shows the rest under it. */
+  const [sfxCandidates, setSfxCandidates] = useState<string[]>([])
+  const [sfxProbabilities, setSfxProbabilities] = useState<Record<string, number>>({})
   /** The subset the model was sure enough about for autopilot to play unasked. */
   const [sfxAutopilot, setSfxAutopilot] = useState<string[]>([])
   const [showSettings, setShowSettings] = useState(false)
@@ -209,13 +213,14 @@ export default function MainLayout() {
       return
     }
     const recentTranscript = transcriptBufferRef.current.slice(-500).trim()
+    const state = recentTranscript
     console.log(
       '[recommend] transcript context:',
       recentTranscript.length,
       'chars, preview:',
       recentTranscript.slice(0, 80),
     )
-    const result = await recommendRef.current(recentTranscript, files, recommendCountRef.current)
+    const result = await recommendRef.current(state, files, recommendCountRef.current)
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
     setRecommendations(result.files)
     setLastConfidence(result.confidence)
@@ -223,7 +228,7 @@ export default function MainLayout() {
     setProbabilities(result.probabilities)
     setCandidates(result.candidates)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
-    setSessionText(recentTranscript)
+    setSessionText(state)
     lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
   }, [])
 
@@ -251,6 +256,8 @@ export default function MainLayout() {
     const candidates = mergeSfxCandidates(nearest, results, count)
     console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
     setSfxRecommendations(candidates)
+    setSfxCandidates(candidates)
+    setSfxProbabilities({})
 
     // The model decides when a sound is worth firing; the shortlist only narrows
     // what it chooses between. A missing model leaves the shortlist and nothing
@@ -271,7 +278,10 @@ export default function MainLayout() {
         // The column shows the model's ranking — nothing fires from it, so a
         // second-best suggestion costs the DM one glance. Autopilot is the part
         // that must be sure: it plays a sound nobody asked for.
-        setSfxRecommendations(rankSfxCandidates(candidates, probabilities, count))
+        const ranked = rankAllSfx(candidates, probabilities)
+        setSfxRecommendations(ranked.slice(0, count).map((c) => c.path))
+        setSfxCandidates(ranked.map((c) => c.path))
+        setSfxProbabilities(Object.fromEntries(ranked.map((c) => [c.path, c.probability])))
         setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
       })
       .catch(() => {})
@@ -451,12 +461,15 @@ export default function MainLayout() {
       dmDebounceRef.current = setTimeout(() => {
         console.log('[recommend] debounce fired, calling runDmRecommendation')
         runDmRecommendation(text.trim())
+        // One text, three panes (ADR-0005): the room hears what the lists hear.
+        window.doty.lightsSetHint(activeSession, text.trim()).catch(() => {})
       }, 500)
     } else {
       // When prompt is cleared, re-trigger default recommendations (history-based)
       dmDebounceRef.current = setTimeout(() => {
         runRecommendation()
         runSfxRecommendation()
+        window.doty.lightsSetHint(activeSession, '').catch(() => {})
       }, 300)
     }
   }
@@ -761,7 +774,7 @@ export default function MainLayout() {
         {/* Right: DM prompt + Soundboard */}
         <div className="flex-1 flex flex-col overflow-hidden gap-3">
           {/* DM chat input — top of the view for quick access */}
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-2">
             <input
               type="text"
               data-testid="dm-input"
@@ -782,11 +795,15 @@ export default function MainLayout() {
             />
           </div>
 
+          <LightPanel session={activeSession} />
+
           <div className="flex-1 overflow-hidden">
             <Soundboard
               rankerStatus={modelStatus}
               recommendations={recommendations}
               sfxRecommendations={sfxRecommendations}
+              sfxCandidates={sfxCandidates}
+              sfxProbabilities={sfxProbabilities}
               sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
               lastChoiceConfidence={lastChoiceConfidence}

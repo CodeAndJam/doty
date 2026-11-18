@@ -148,6 +148,23 @@ contextBridge.exposeInMainWorld('doty', {
   debugSetEnabled: (enabled: boolean) => invoke(INVOKE.debugSetEnabled, enabled),
   debugOpenLog: () => invoke(INVOKE.debugOpenLog),
 
+  // Lights (Home Assistant on the LAN)
+  lightsGetState: (session?: string | null) => invoke(INVOKE.lightsGetState, session),
+  lightsConfigure: (input: { url: string; token?: string }) => invoke(INVOKE.lightsConfigure, input),
+  lightsClear: () => invoke(INVOKE.lightsClear),
+  lightsDiscover: () => invoke(INVOKE.lightsDiscover) as Promise<Array<{ name: string; url: string }>>,
+  lightsSetArea: (session: string | null, areaId: string) => invoke(INVOKE.lightsSetArea, session, areaId),
+  lightsSetAuto: (enabled: boolean) => invoke(INVOKE.lightsSetAuto, enabled),
+  lightsSetPower: (on: boolean) => invoke(INVOKE.lightsSetPower, on),
+  lightsSetBrightness: (percent: number) => invoke(INVOKE.lightsSetBrightness, percent),
+  lightsSetLight: (entityId: string, patch: import('../src/types').LightPatch) =>
+    invoke(INVOKE.lightsSetLight, entityId, patch),
+  lightsSetPulse: (enabled: boolean) => invoke(INVOKE.lightsSetPulse, enabled),
+  lightsSetMood: (mood: string) => invoke(INVOKE.lightsSetMood, mood),
+  lightsSetHint: (session: string | null, hint: string) => invoke(INVOKE.lightsSetHint, session, hint),
+  lightsResume: () => invoke(INVOKE.lightsResume),
+  onLightsState: (cb: (state: import('../src/types').LightsState) => void) => subscribe(EVENTS.lightsState, cb),
+
   // Discord
   discordConnect: (token?: string) => invoke(INVOKE.discordConnect, token),
   discordDisconnect: () => invoke(INVOKE.discordDisconnect),

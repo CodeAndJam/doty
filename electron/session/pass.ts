@@ -30,6 +30,8 @@ export interface PassDeps {
   evaluate(state: string, candidates: string[]): Promise<{ tracks: number[]; moods: number[] }>
   store: Pick<SessionStore, 'recordScene' | 'recordDecision' | 'recentPreferences'>
   now(): number
+  /** A confirmed scene, for whoever also dresses the room. */
+  onScene?(scene: Scene, moodProbability: number): void
 }
 
 export interface PassResult {
@@ -114,6 +116,7 @@ export function createSessionPass(deps: PassDeps): SessionPass {
         intensity: step.scene.intensity,
         startedAt: step.scene.since,
       })
+      deps.onScene?.(step.scene, moods[best] ?? 0)
     }
     // The clock gates the change cooldown, so it only moves when music would.
     if (step.action.kind !== 'hold') lastChangeAt = now
