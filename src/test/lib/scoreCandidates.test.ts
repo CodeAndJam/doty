@@ -1,7 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { historyBoost, maxPlays, tagMatch, textOverlap } from '../../lib/scoreCandidates'
+import { historyBoost, maxPlays, nameMatch, tagMatch, textOverlap } from '../../lib/scoreCandidates'
 
 describe('candidate scoring', () => {
+  describe('nameMatch', () => {
+    it('is worth more than a perfect analysis fit when the name carries the word', () => {
+      expect(nameMatch('Horror Ambience', ['horror'])).toBeGreaterThan(1)
+    })
+
+    it('ignores function words, so the energy fallback can still rank', () => {
+      expect(nameMatch('The Dark Forest', ['the'])).toBe(0)
+      expect(nameMatch('O Lobo', ['o'])).toBe(0)
+    })
+
+    it('matches accent-insensitively', () => {
+      expect(nameMatch('Coração Sombrio', ['coracao'])).toBeGreaterThan(1)
+    })
+  })
+
   describe('textOverlap', () => {
     it('scores the share of the candidate text the prompt mentions', () => {
       // 1 of 3 words matched, doubled: 2/3.

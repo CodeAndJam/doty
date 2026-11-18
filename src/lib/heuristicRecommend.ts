@@ -13,7 +13,7 @@
 
 import type { TrackMeta } from '../types'
 import { fold, tokenize } from './keywordMatch'
-import { historyBoost, maxPlays, tagMatch, textOverlap } from './scoreCandidates'
+import { historyBoost, maxPlays, nameMatch, tagMatch } from './scoreCandidates'
 
 interface MoodProfile {
   keywords: string[]
@@ -288,6 +288,7 @@ function clamp01(v: number): number {
 
 /** Score how well a BPM fits within a target range (1 = perfect, 0 = far outside) */
 function bpmScore(bpm: number, min: number, max: number): number {
+  if (!Number.isFinite(bpm)) return 0
   if (bpm >= min && bpm <= max) return 1
   const dist = bpm < min ? min - bpm : bpm - max
   return clamp01(1 - dist / 60)
@@ -295,6 +296,7 @@ function bpmScore(bpm: number, min: number, max: number): number {
 
 /** Score how well an energy value fits within a target range */
 function rangeScore(val: number, min: number, max: number): number {
+  if (!Number.isFinite(val)) return 0
   if (val >= min && val <= max) return 1
   const dist = val < min ? min - val : val - max
   return clamp01(1 - dist / 0.4)
@@ -314,9 +316,29 @@ function detectMood(tokens: string[]): MoodProfile | null {
   return bestScore > 0 ? best : null
 }
 
-/** Score a filename against transcript tokens (word overlap) */
-function filenameScore(filename: string, tokens: string[]): number {
-  return textOverlap(filename.replace(/\.[^.]+$/, ''), tokens) * 2
+/** The track's name as the DM sees it, without the extension. */
+function trackName(file: string): string {
+  return file.replace(/\.[^.]+$/, '')
+}
+
+/**
+ * How well the analysis fits the mood, 0 when there is nothing to fit.
+ *
+ * Unknown numbers score 0: the scanner labels a row before the audio pass
+ * reaches it, and a NaN here poisoned the whole candidate's score, which left
+ * the folder order in place and ignored the prompt.
+ */
+function featureScoreOf(meta: TrackMeta | undefined, mood: MoodProfile | null): number {
+  if (!meta) return 0
+  if (!mood) {
+    // No mood detected — prefer mid-energy tracks as neutral background
+    return rangeScore(meta.energy, 0.3, 0.6) * 0.5
+  }
+  const bpm = bpmScore(meta.bpm, mood.bpmMin, mood.bpmMax)
+  const energy = rangeScore(meta.energy, mood.energyMin, mood.energyMax)
+  const scale = mood.scale ? (meta.scale === mood.scale ? 1 : 0) : 0.5
+  const dance = (Number.isFinite(meta.danceability) ? meta.danceability : 0) * 0.3
+  return (bpm + energy + scale + dance) / 3.3
 }
 
 /** Score every file against the transcript, best first. */
@@ -330,28 +352,13 @@ function rankBy(
   mood: MoodProfile | null,
 ): Array<{ file: string; score: number }> {
   const scored = files.map((file) => {
-    const meta = metadata[file]
-    const fnScore = filenameScore(file, tokens)
-
     // Tag score: direct keyword match against user tags (weighted 3x — user intent is explicit)
     const tagScore = tagMatch(tagsMap[file] || [], tokens)
-
-    let featureScore = 0
-    if (meta && mood) {
-      const bpm = bpmScore(meta.bpm, mood.bpmMin, mood.bpmMax)
-      const energy = rangeScore(meta.energy, mood.energyMin, mood.energyMax)
-      const scale = mood.scale ? (meta.scale === mood.scale ? 1 : 0) : 0.5
-      const dance = meta.danceability * 0.3
-      featureScore = (bpm + energy + scale + dance) / 3.3
-    } else if (meta) {
-      // No mood detected — prefer mid-energy tracks as neutral background
-      featureScore = rangeScore(meta.energy, 0.3, 0.6) * 0.5
-    }
-
     // History boost: frequently played tracks get a small bonus (weighted 0.5x)
     const historyScore = historyBoost(playFrequencies[file] || 0, topPlays)
+    const score = nameMatch(trackName(file), tokens) + tagScore + featureScoreOf(metadata[file], mood) + historyScore
 
-    return { file, score: fnScore + tagScore + featureScore + historyScore }
+    return { file, score }
   })
 
   scored.sort((a, b) => b.score - a.score)
