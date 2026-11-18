@@ -12,6 +12,23 @@ export interface LightView {
   entityId: string
   name: string
   on: boolean
+  /** Current level, 1–100, when Home Assistant reports one. */
+  brightnessPct: number | null
+  /** Current colour, when the light has one. */
+  rgb: [number, number, number] | null
+  /** False when the light accepts no colour at all. */
+  canColor: boolean
+  /** Animations this light advertises; empty when it has none. */
+  effectList: string[]
+  effect: string | null
+}
+
+/** One manual change to one light, from the session pane. */
+export interface LightPatch {
+  on?: boolean
+  brightnessPct?: number
+  rgb?: [number, number, number]
+  effect?: string
 }
 
 export interface LightsState {
@@ -283,6 +300,7 @@ export interface DotyAPI {
   lightsSetAuto: (enabled: boolean) => Promise<LightsState>
   lightsSetPower: (on: boolean) => Promise<LightsState>
   lightsSetBrightness: (percent: number) => Promise<LightsState>
+  lightsSetLight: (entityId: string, patch: LightPatch) => Promise<LightsState>
   lightsSetMood: (mood: string) => Promise<LightsState>
   lightsSetHint: (session: string | null, hint: string) => Promise<LightsState>
   lightsResume: () => Promise<LightsState>

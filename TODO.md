@@ -5,9 +5,10 @@
 - [ ] Lights: the prototype ships token pairing, Area choice, group control and
       mood-driven presets (`docs/adr/0004-home-assistant-on-the-lan.md`). Open:
       the three `d1-omni` hint questions (hue, motion, brightness) once a real
-      session is logged, HA `effect` animation (needs a light that advertises
-      one), `playback_device` targets, `switch.*` lamps, switches as a device
-      class, and OAuth consent (ADR v2). Thresholds and the 25 s dwell move only
+      session is logged, scene-driven HA `effect` animation (manual effect
+      selection ships; the scene does not pick one yet), `playback_device`
+      targets, `switch.*` lamps, switches as a device class, and OAuth consent
+      (ADR v2). Thresholds and the 25 s dwell move only
       against `session_decisions` rows with `kind = 'light'`.
 - [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
       soundboard until they are configured, the way the lights pane already

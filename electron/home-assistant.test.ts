@@ -65,7 +65,13 @@ const states = [
   {
     entity_id: 'light.desk',
     state: 'on',
-    attributes: { brightness: 179, rgb_color: [255, 200, 100], supported_color_modes: ['rgb'] },
+    attributes: {
+      brightness: 179,
+      rgb_color: [255, 200, 100],
+      supported_color_modes: ['rgb'],
+      effect_list: ['rainbow'],
+      effect: 'rainbow',
+    },
   },
   {
     entity_id: 'light.office_group',
@@ -105,7 +111,13 @@ describe('Home Assistant client', () => {
     client = await createHaClient({ url: ha.url, token: 'good-token' })
     const lights = await client.lights('office')
     expect(lights.map((l) => l.entityId)).toEqual(['light.desk'])
-    expect(lights[0]).toMatchObject({ name: 'Desk', state: 'on', colorModes: ['rgb'] })
+    expect(lights[0]).toMatchObject({
+      name: 'Desk',
+      state: 'on',
+      colorModes: ['rgb'],
+      effectList: ['rainbow'],
+      effect: 'rainbow',
+    })
   })
 
   it('sends one group turn_on with colour, brightness and a transition', async () => {
@@ -147,6 +159,15 @@ describe('Home Assistant client', () => {
     })
     await new Promise((resolve) => setTimeout(resolve, 50))
     expect(seen).toEqual(['light.desk'])
+  })
+
+  it('sends an effect and a level without inventing a colour', async () => {
+    ha = await fakeHa({ areas, entities, states })
+    client = await createHaClient({ url: ha.url, token: 'good-token' })
+    await client.apply(['light.desk'], { effect: 'rainbow', brightnessPct: 30 }, 3)
+
+    const call = ha.calls.find((c) => c.type === 'call_service')
+    expect(call?.service_data).toEqual({ effect: 'rainbow', brightness_pct: 30, transition: 3 })
   })
 
   it('sends no colour to a light that cannot take one', async () => {

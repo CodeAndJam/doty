@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell 
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
+import type { LightPatch } from '../src/types'
 import {
   feedChunk,
   finalizeStream,
@@ -963,6 +964,7 @@ handle(INVOKE.lightsSetArea, (_e, session: string | null, areaId: string) => lig
 handle(INVOKE.lightsSetAuto, (_e, enabled: boolean) => lighting.setAuto(enabled))
 handle(INVOKE.lightsSetPower, (_e, on: boolean) => lighting.setPower(on))
 handle(INVOKE.lightsSetBrightness, (_e, percent: number) => lighting.setBrightness(percent))
+handle(INVOKE.lightsSetLight, (_e, entityId: string, patch: LightPatch) => lighting.setLight(entityId, patch))
 handle(INVOKE.lightsSetMood, (_e, mood: string) => lighting.setMood(mood))
 handle(INVOKE.lightsSetHint, (_e, session: string | null, hint: string) => lighting.setHint(session, hint))
 handle(INVOKE.lightsResume, () => lighting.resume())

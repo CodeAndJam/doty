@@ -24,12 +24,17 @@ export interface HaLight {
   brightnessPct?: number
   rgb?: Rgb
   colorModes: string[]
+  /** Animations the light advertises, e.g. WLED or Hue scenes. */
+  effectList: string[]
+  effect: string | null
 }
 
 /** A light set that cannot take a colour: brightness is all it understands. */
 export interface ApplyData {
   rgb?: Rgb
-  brightnessPct: number
+  brightnessPct?: number
+  /** `light.turn_on`'s `effect`, for lights that advertise a list. */
+  effect?: string
 }
 
 export interface HaClient {
@@ -231,6 +236,8 @@ export async function createHaClient(options: { url: string; token: string }): P
             brightnessPct: brightnessPct(attributes.brightness),
             rgb: Array.isArray(rgb) ? ([...rgb] as Rgb) : undefined,
             colorModes: (attributes.supported_color_modes as string[] | undefined) ?? [],
+            effectList: (attributes.effect_list as string[] | undefined) ?? [],
+            effect: (attributes.effect as string | undefined) ?? null,
           }
         })
     },
@@ -239,7 +246,8 @@ export async function createHaClient(options: { url: string; token: string }): P
       await callService('turn_on', entityIds, {
         // A light that advertises no colour mode rejects rgb_color outright.
         ...(preset.rgb ? { rgb_color: preset.rgb } : {}),
-        brightness_pct: preset.brightnessPct,
+        ...(preset.brightnessPct !== undefined ? { brightness_pct: preset.brightnessPct } : {}),
+        ...(preset.effect !== undefined ? { effect: preset.effect } : {}),
         transition: transitionSec,
       })
     },

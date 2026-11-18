@@ -7,7 +7,7 @@
  */
 
 import { moodFromHint, presetFor } from '../src/lib/lightsPreset'
-import type { LightStatus, LightsState } from '../src/types'
+import type { LightPatch, LightStatus, LightsState } from '../src/types'
 import type { HaArea, HaClient, HaLight } from './home-assistant'
 import { createLightDirector, type LightDirector, type PresetProducer } from './lights'
 import type { DecisionRow, SessionLightsRow, SessionStore } from './session/store'
@@ -32,6 +32,8 @@ export interface Lighting {
   setAuto(enabled: boolean): Promise<LightsState>
   setPower(on: boolean): Promise<LightsState>
   setBrightness(percent: number): Promise<LightsState>
+  /** One light, by hand: on/off, level, colour or effect. */
+  setLight(entityId: string, patch: LightPatch): Promise<LightsState>
   setMood(mood: string): Promise<LightsState>
   setHint(session: string | null, hint: string): Promise<LightsState>
   resume(): Promise<LightsState>
@@ -86,7 +88,16 @@ export function createLighting(deps: LightingDeps): Lighting {
       producer,
       pausedUntil,
       canColor: canColor(),
-      lights: lights.map((light) => ({ entityId: light.entityId, name: light.name, on: light.state === 'on' })),
+      lights: lights.map((light) => ({
+        entityId: light.entityId,
+        name: light.name,
+        on: light.state === 'on',
+        brightnessPct: light.brightnessPct ?? null,
+        rgb: light.rgb ?? null,
+        canColor: light.colorModes.some((mode) => COLOR_MODES.has(mode)),
+        effectList: light.effectList,
+        effect: light.effect,
+      })),
     }
   }
 
@@ -289,6 +300,34 @@ export function createLighting(deps: LightingDeps): Lighting {
       await client.apply(entityIds(), presetFor(nextMood, 0.6), TRANSITION_SEC)
       remember(nextMood, 'mood')
       logPreset(nextMood, 'the DM picked a colour')
+      await refresh()
+      return publish()
+    },
+
+    async setLight(entityId, patch) {
+      const light = lights.find((entry) => entry.entityId === entityId)
+      if (!client || !light) return publish()
+      director?.noteManualChange()
+
+      if (patch.on === false) {
+        await client.turnOff([entityId], TRANSITION_SEC)
+        logPreset('off', `the DM switched ${light.name} off`)
+      } else {
+        // Only send what the light can actually take: a dimmer has no colour and
+        // a plain bulb no effect, and Home Assistant rejects the whole call.
+        const colors = light.colorModes.some((mode) => COLOR_MODES.has(mode))
+        await client.apply(
+          [entityId],
+          {
+            rgb: colors ? patch.rgb : undefined,
+            brightnessPct: patch.brightnessPct,
+            effect: light.effectList.length > 0 ? patch.effect : undefined,
+          },
+          TRANSITION_SEC,
+        )
+        logPreset(patch.effect ?? (patch.rgb ? 'colour' : 'brightness'), `the DM set ${light.name}`)
+      }
+
       await refresh()
       return publish()
     },

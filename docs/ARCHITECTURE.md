@@ -321,6 +321,11 @@ The panel is absent from the DOM until a token and address are stored. A session
 chooses an Area; Doty touches only `light.*` entities there, skipping a group
 when every one of its members is in the same Area.
 
+Each light in the Area has its own row: on/off, level, colour when the light
+advertises a colour mode, and an effect picker when it advertises `effect_list`.
+`lights:set-light` sends one `call_service` for that entity and only the fields
+the light supports — a dimmer never receives `rgb_color`.
+
 ```mermaid
 flowchart TD
   SCENE[confirmed Session Scene] --> DIR[light director]
@@ -366,7 +371,7 @@ Nothing here may stop playback or hide the suggestions.
 | Playback | player, queue and SFX channels in `electron/ipc.ts` |
 | Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
-| Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
+| Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
 
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a

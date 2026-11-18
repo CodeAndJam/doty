@@ -98,6 +98,7 @@ export const INVOKE = {
   lightsSetAuto: 'lights:set-auto',
   lightsSetPower: 'lights:set-power',
   lightsSetBrightness: 'lights:set-brightness',
+  lightsSetLight: 'lights:set-light',
   lightsSetMood: 'lights:set-mood',
   lightsSetHint: 'lights:set-hint',
   lightsResume: 'lights:resume',

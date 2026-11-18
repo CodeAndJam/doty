@@ -1,8 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { MOODS, presetFor } from '../lib/lightsPreset'
-import type { LightsState } from '../types'
+import type { LightPatch, LightsState } from '../types'
 
 const css = (rgb: [number, number, number]) => `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`
+
+const toHex = (rgb: [number, number, number]) =>
+  `#${rgb
+    .map((part) =>
+      Math.max(0, Math.min(255, Math.round(part)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')}`
+
+const fromHex = (hex: string): [number, number, number] => {
+  const value = Number.parseInt(hex.replace('#', ''), 16)
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255]
+}
 
 const label: React.CSSProperties = {
   fontSize: '11px',
@@ -18,6 +32,14 @@ const small: React.CSSProperties = {
   color: '#9d8b66',
 }
 
+const row: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  padding: '3px 0',
+  borderTop: '1px solid #241d12',
+}
+
 /**
  * The lights of the session's Area. Absent from the DOM until a Home Assistant
  * is configured: a DM without one should never see a feature they do not own.
@@ -25,11 +47,17 @@ const small: React.CSSProperties = {
 export default function LightPanel({ session }: { session: string | null }) {
   const [state, setState] = useState<LightsState | null>(null)
   const [brightness, setBrightness] = useState(60)
+  // Slider and picker values while the DM is still dragging.
+  const [levels, setLevels] = useState<Record<string, number>>({})
+  const [colours, setColours] = useState<Record<string, string>>({})
   const sessionRef = useRef(session)
   sessionRef.current = session
 
   const adopt = useCallback((next: LightsState) => {
     setState(next)
+    // Home Assistant is the truth: drop drafts once it has answered.
+    setLevels({})
+    setColours({})
   }, [])
 
   useEffect(() => {
@@ -48,6 +76,8 @@ export default function LightPanel({ session }: { session: string | null }) {
       unsubscribe()
     }
   }, [session, adopt])
+
+  const setLight = (entityId: string, patch: LightPatch) => window.doty.lightsSetLight(entityId, patch).then(adopt)
 
   if (!state?.configured) return null
 
@@ -93,7 +123,7 @@ export default function LightPanel({ session }: { session: string | null }) {
                 padding: '2px 8px',
               }}
             >
-              {anyOn ? 'On' : 'Off'}
+              {anyOn ? 'All off' : 'All on'}
             </button>
 
             <input
@@ -145,6 +175,80 @@ export default function LightPanel({ session }: { session: string | null }) {
           auto {state.auto ? 'on' : 'off'}
         </button>
       </div>
+
+      {connected && state.lights.length > 0 && (
+        <div className="mt-1 max-h-40 overflow-y-auto">
+          {state.lights.map((light) => {
+            const level = levels[light.entityId] ?? light.brightnessPct ?? 60
+            const colour = colours[light.entityId] ?? toHex(light.rgb ?? [255, 235, 200])
+            return (
+              <div key={light.entityId} style={row}>
+                <span style={{ ...small, color: '#e4d6b4', minWidth: '90px' }}>{light.name}</span>
+
+                <button
+                  type="button"
+                  onClick={() => setLight(light.entityId, { on: !light.on })}
+                  aria-pressed={light.on}
+                  aria-label={`${light.name} on`}
+                  style={{
+                    ...small,
+                    color: light.on ? '#d9a441' : '#6d6a5f',
+                    border: '1px solid #3d2f1c',
+                    padding: '1px 8px',
+                    minWidth: '38px',
+                  }}
+                >
+                  {light.on ? 'On' : 'Off'}
+                </button>
+
+                <input
+                  type="range"
+                  aria-label={`${light.name} brightness`}
+                  min={1}
+                  max={100}
+                  value={level}
+                  onChange={(e) => setLevels((prev) => ({ ...prev, [light.entityId]: Number(e.target.value) }))}
+                  onMouseUp={() => setLight(light.entityId, { on: true, brightnessPct: level })}
+                  onKeyUp={() => setLight(light.entityId, { on: true, brightnessPct: level })}
+                  style={{ width: '80px', accentColor: '#d9a441' }}
+                />
+                <span style={{ ...small, minWidth: '30px', textAlign: 'right' }}>{level}%</span>
+
+                {light.canColor && (
+                  <input
+                    type="color"
+                    aria-label={`${light.name} colour`}
+                    value={colour}
+                    onChange={(e) => setColours((prev) => ({ ...prev, [light.entityId]: e.target.value }))}
+                    onBlur={() => setLight(light.entityId, { on: true, rgb: fromHex(colour) })}
+                    style={{ width: '24px', height: '18px', background: 'transparent', border: '1px solid #3d2f1c' }}
+                  />
+                )}
+
+                {light.effectList.length > 0 && (
+                  <select
+                    aria-label={`${light.name} effect`}
+                    value={light.effect ?? ''}
+                    onChange={(e) => {
+                      // The placeholder is not an effect; switching back to it
+                      // would send an empty name Home Assistant rejects.
+                      if (e.target.value) setLight(light.entityId, { on: true, effect: e.target.value })
+                    }}
+                    style={{ ...small, background: '#100e0a', border: '1px solid #3d2f1c', padding: '1px 4px' }}
+                  >
+                    <option value="">effect…</option>
+                    {light.effectList.map((effect) => (
+                      <option key={effect} value={effect}>
+                        {effect}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {paused && (
         <div className="flex items-center gap-2 mt-1">
