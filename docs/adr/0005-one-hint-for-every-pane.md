@@ -6,11 +6,15 @@ description, and the cheap way to give it one was a second field on the lights p
 made one idea into two vocabularies — the DM would type "dark and funny" once for the score and
 again, differently, for the room.
 
-So there is one **Session Hint**: the DM's words, pinned beside the transcript, read by all three
-panes. This reverses the earlier lights-only plan, on purpose. The hint nudges and never decides —
-the transcript still owns the Scene — and no policy constant or confidence threshold moves.
+So there is one **Session Hint**: the DM's words in the prompt box, read by all three panes. This
+reverses the earlier lights-only plan, on purpose. The hint nudges and never decides — the transcript
+still owns the Scene — and no policy constant or confidence threshold moves.
 
-Status: accepted
+Status: accepted, without the pin button
+
+The button that froze the box's text for the whole session is withdrawn: in use it read as a
+different kind of control from what it is. The text keeps feeding all three panes as it is typed;
+only the "keep this for the session" affordance is gone.
 
 ## Considered Options
 

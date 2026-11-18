@@ -51,10 +51,6 @@ export default function MainLayout() {
     () => localStorage.getItem(SPEAKER_STORAGE_KEY) ?? undefined,
   )
   const [dmPrompt, setDmPrompt] = useState('')
-  // A pinned hint is the DM's words applied to every automatic run, not just the
-  // one it was typed for: one text, music and effects and lights (ADR-0005).
-  const [pinnedHint, setPinnedHint] = useState('')
-  const pinnedHintRef = useRef('')
   const [rankerCached, setRankerCached] = useState<boolean | null>(null)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
@@ -209,15 +205,6 @@ export default function MainLayout() {
 
   const showRankerMissing = rankerCached === false && modelStatus !== 'ready'
 
-  /**
-   * The DM's pinned words lead and the transcript follows, exactly as a typed
-   * prompt does. One text, every pane (ADR-0005).
-   */
-  const stateWithHint = useCallback((transcript: string) => {
-    const hint = pinnedHintRef.current
-    return hint ? [hint, hint, transcript].filter(Boolean).join('\n') : transcript
-  }, [])
-
   const runRecommendation = useCallback(async () => {
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
@@ -226,7 +213,7 @@ export default function MainLayout() {
       return
     }
     const recentTranscript = transcriptBufferRef.current.slice(-500).trim()
-    const state = stateWithHint(recentTranscript)
+    const state = recentTranscript
     console.log(
       '[recommend] transcript context:',
       recentTranscript.length,
@@ -243,65 +230,62 @@ export default function MainLayout() {
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(state)
     lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
-  }, [stateWithHint])
+  }, [])
 
-  const runSfxRecommendation = useCallback(
-    async (overrideText?: string) => {
-      const sfxList = await window.doty.getSfxList()
-      console.log('[sfx-recommend] sfxList:', sfxList.length, 'items')
-      if (sfxList.length === 0) {
-        console.log('[sfx-recommend] no SFX available, skipping')
-        return
-      }
-      const tagsMap = await window.doty.getTagsMap()
-      const playFrequencies = await window.doty.getPlayFrequencies('sfx')
-      const text = overrideText ?? stateWithHint(transcriptBufferRef.current.slice(-500).trim())
-      console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
-      const count = sfxRecommendCountRef.current
-      const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
+  const runSfxRecommendation = useCallback(async (overrideText?: string) => {
+    const sfxList = await window.doty.getSfxList()
+    console.log('[sfx-recommend] sfxList:', sfxList.length, 'items')
+    if (sfxList.length === 0) {
+      console.log('[sfx-recommend] no SFX available, skipping')
+      return
+    }
+    const tagsMap = await window.doty.getTagsMap()
+    const playFrequencies = await window.doty.getPlayFrequencies('sfx')
+    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
+    console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
+    const count = sfxRecommendCountRef.current
+    const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
 
-      // Keywords cannot answer a concept: "air" is in no mood profile and no label,
-      // so the heuristic falls back to history and offers a monster roar. The index
-      // can answer it — the same one the search box uses — so both lists go to the
-      // model, which is the only thing that can tell which of them fits the scene.
-      const hits = text.trim() ? await window.doty.librarySearch(text, 'sfx', count).catch(() => null) : null
-      const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
-      const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
-      const candidates = mergeSfxCandidates(nearest, results, count)
-      console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
-      setSfxRecommendations(candidates)
-      setSfxCandidates(candidates)
-      setSfxProbabilities({})
+    // Keywords cannot answer a concept: "air" is in no mood profile and no label,
+    // so the heuristic falls back to history and offers a monster roar. The index
+    // can answer it — the same one the search box uses — so both lists go to the
+    // model, which is the only thing that can tell which of them fits the scene.
+    const hits = text.trim() ? await window.doty.librarySearch(text, 'sfx', count).catch(() => null) : null
+    const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
+    const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
+    const candidates = mergeSfxCandidates(nearest, results, count)
+    console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
+    setSfxRecommendations(candidates)
+    setSfxCandidates(candidates)
+    setSfxProbabilities({})
 
-      // The model decides when a sound is worth firing; the shortlist only narrows
-      // what it chooses between. A missing model leaves the shortlist and nothing
-      // for autopilot.
-      if (!text.trim()) {
-        setSfxAutopilot([])
-        return
-      }
-      const descriptions = candidates.map((id) => {
-        const sfx = sfxList.find((s) => s.id === id)
-        const tags = (tagsMap[id] ?? []).join(', ')
-        return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
+    // The model decides when a sound is worth firing; the shortlist only narrows
+    // what it chooses between. A missing model leaves the shortlist and nothing
+    // for autopilot.
+    if (!text.trim()) {
+      setSfxAutopilot([])
+      return
+    }
+    const descriptions = candidates.map((id) => {
+      const sfx = sfxList.find((s) => s.id === id)
+      const tags = (tagsMap[id] ?? []).join(', ')
+      return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
+    })
+    if (descriptions.length === 0) return
+    window.doty
+      .sfxRank(text, descriptions)
+      .then((probabilities) => {
+        // The column shows the model's ranking — nothing fires from it, so a
+        // second-best suggestion costs the DM one glance. Autopilot is the part
+        // that must be sure: it plays a sound nobody asked for.
+        const ranked = rankAllSfx(candidates, probabilities)
+        setSfxRecommendations(ranked.slice(0, count).map((c) => c.path))
+        setSfxCandidates(ranked.map((c) => c.path))
+        setSfxProbabilities(Object.fromEntries(ranked.map((c) => [c.path, c.probability])))
+        setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
       })
-      if (descriptions.length === 0) return
-      window.doty
-        .sfxRank(text, descriptions)
-        .then((probabilities) => {
-          // The column shows the model's ranking — nothing fires from it, so a
-          // second-best suggestion costs the DM one glance. Autopilot is the part
-          // that must be sure: it plays a sound nobody asked for.
-          const ranked = rankAllSfx(candidates, probabilities)
-          setSfxRecommendations(ranked.slice(0, count).map((c) => c.path))
-          setSfxCandidates(ranked.map((c) => c.path))
-          setSfxProbabilities(Object.fromEntries(ranked.map((c) => [c.path, c.probability])))
-          setSfxAutopilot(confidentSfx(candidates, probabilities).map((c) => c.path))
-        })
-        .catch(() => {})
-    },
-    [stateWithHint],
-  )
+      .catch(() => {})
+  }, [])
 
   const runDmRecommendation = useCallback(
     async (prompt: string) => {
@@ -463,20 +447,6 @@ export default function MainLayout() {
     }
   }, [runRecommendation, runSfxRecommendation, stop])
 
-  function togglePin() {
-    const next = pinnedHint ? '' : dmPrompt.trim()
-    setPinnedHint(next)
-    pinnedHintRef.current = next
-    if (next) {
-      // Applies on its own, and tells main which mood to dress the room in.
-      runDmRecommendation(next)
-      window.doty.lightsSetHint(activeSession, next).catch(() => {})
-    } else {
-      window.doty.lightsSetHint(activeSession, '').catch(() => {})
-      runRecommendation()
-    }
-  }
-
   function handleDmChange(text: string) {
     setDmPrompt(text)
     console.log(
@@ -491,12 +461,15 @@ export default function MainLayout() {
       dmDebounceRef.current = setTimeout(() => {
         console.log('[recommend] debounce fired, calling runDmRecommendation')
         runDmRecommendation(text.trim())
+        // One text, three panes (ADR-0005): the room hears what the lists hear.
+        window.doty.lightsSetHint(activeSession, text.trim()).catch(() => {})
       }, 500)
     } else {
       // When prompt is cleared, re-trigger default recommendations (history-based)
       dmDebounceRef.current = setTimeout(() => {
         runRecommendation()
         runSfxRecommendation()
+        window.doty.lightsSetHint(activeSession, '').catch(() => {})
       }, 300)
     }
   }
@@ -820,23 +793,6 @@ export default function MainLayout() {
                 padding: '10px 14px',
               }}
             />
-            <button
-              type="button"
-              onClick={togglePin}
-              aria-pressed={!!pinnedHint}
-              title={pinnedHint ? 'Unpin the hint' : 'Keep this hint for the whole session'}
-              style={{
-                fontSize: '11px',
-                fontFamily: "'IBM Plex Mono', monospace",
-                letterSpacing: '0.08em',
-                color: pinnedHint ? '#d9a441' : '#6d6a5f',
-                border: `1px solid ${pinnedHint ? '#d9a441' : '#3d2f1c'}`,
-                padding: '4px 8px',
-                background: '#100e0a',
-              }}
-            >
-              {pinnedHint ? 'PINNED' : 'PIN'}
-            </button>
           </div>
 
           <LightPanel session={activeSession} />

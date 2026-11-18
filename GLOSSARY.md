@@ -75,7 +75,7 @@ by hand. The Session Scene's mood is the default producer, a Session Hint the ot
 _Avoid_: scene, theme, palette, mood lighting
 
 **Session Hint**:
-The DM's own words about the moment of play, pinned beside the rolling transcript and read by the
+The DM's own words about the moment of play, typed above the rolling transcript and read by the
 music, the effects and the lights alike. It nudges; the transcript still decides.
 _Avoid_: prompt, cue, note, scene description, static prompt
 
