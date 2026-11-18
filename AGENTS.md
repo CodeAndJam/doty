@@ -145,12 +145,12 @@ npm run dist
 
 ## Native Addons
 
-`sherpa-onnx-node` is a native C++ addon and must be rebuilt against Electron's Node.js version after `npm install`. This is handled automatically via the `postinstall` script using `electron-rebuild`.
+`better-sqlite3` is a native addon and is rebuilt against Electron's Node.js version by the `postinstall` script using `electron-rebuild`. `transcribe-cpp` ships prebuilt libraries instead: they are unpacked from the asar and resolved from `Resources/transcribe-cpp` at runtime, so nothing compiles for STT.
 
 If you see a `NODE_MODULE_VERSION` mismatch error, run:
 
 ```bash
-npm run rebuild
+pnpm run rebuild
 ```
 
 ## Model Files
