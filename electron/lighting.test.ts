@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { HaClient, HaLight } from './home-assistant'
 import { createLighting } from './lighting'
 import type { DecisionRow, SessionLightsRow } from './session/store'
@@ -101,5 +101,50 @@ describe('lighting service', () => {
 
     await lighting.setLight('light.desk', { on: true, effect: 'rainbow' })
     expect(applied[1]).toEqual({ ids: ['light.desk'], preset: { effect: 'rainbow' } })
+  })
+
+  it('breathes the room until told to stop', async () => {
+    vi.useFakeTimers()
+    try {
+      const { lighting, applied } = rig()
+      await lighting.state(null)
+
+      await lighting.setPulse(true)
+      expect(lighting.current().pulse).toBe(true)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(applied.length).toBeGreaterThanOrEqual(4)
+
+      const levels = applied.map((call) => call.preset.brightnessPct as number)
+      expect(new Set(levels).size).toBeGreaterThan(1)
+      expect(Math.min(...levels)).toBeGreaterThanOrEqual(25)
+      expect(Math.max(...levels)).toBeLessThanOrEqual(70)
+
+      await lighting.setPulse(false)
+      expect(lighting.current().pulse).toBe(false)
+      const sent = applied.length
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(applied.length, 'the loop kept writing after Pulse was turned off').toBe(sent)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('hands a light back to the DM when they touch it mid-pulse', async () => {
+    vi.useFakeTimers()
+    try {
+      const { lighting, applied } = rig()
+      await lighting.state(null)
+      await lighting.setPulse(true)
+      await vi.advanceTimersByTimeAsync(400)
+
+      await lighting.setBrightness(80)
+      expect(lighting.current().pulse).toBe(false)
+      const sent = applied.length
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(applied.length).toBe(sent)
+      expect(applied.at(-1)?.preset.brightnessPct).toBe(80)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

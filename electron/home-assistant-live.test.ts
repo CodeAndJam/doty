@@ -17,6 +17,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest'
 import { createHaClient, type HaClient, type HaLight } from './home-assistant'
+import { createLighting } from './lighting'
 
 const url = process.env.HA_URL ?? ''
 const token = process.env.HA_TOKEN ?? ''
@@ -85,5 +86,52 @@ describe.skipIf(!url || !token)('live Home Assistant', () => {
     await new Promise((resolve) => setTimeout(resolve, 300))
     await restore()
     expect(seen, 'Doty heard its own write as a manual change').toEqual([])
+  })
+
+  it('breathes a lamp that has no effects of its own', async () => {
+    const settings = new Map<string, string>([
+      ['lightUrl', url],
+      ['lightArea', 'office'],
+    ])
+    const lighting = createLighting({
+      getSetting: (key, fallback) => settings.get(key) ?? fallback,
+      setSetting: (key, value) => settings.set(key, String(value)),
+      saveToken: async () => {},
+      loadToken: async () => token,
+      clearToken: () => {},
+      connect: (address, accessToken) => createHaClient({ url: address, token: accessToken }),
+      sessionStore: {
+        getLights: () => null,
+        setLights: () => {},
+        recordDecision: () => {},
+      },
+      now: () => Date.now(),
+      emit: () => {},
+    })
+    const probe = await createHaClient({ url, token })
+
+    await lighting.state(null)
+    const areaId = lighting.current().areaId
+    const lamp = (await probe.lights(areaId))[0]
+    const before = { brightnessPct: lamp.brightnessPct, rgb: lamp.rgb }
+
+    try {
+      await lighting.setPulse(true)
+      expect(lighting.current().pulse).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      await lighting.setPulse(false)
+      expect(lighting.current().pulse).toBe(false)
+
+      // Read while the breath is fresh: a lamp ignoring the stream would still
+      // sit at the pre-pulse level.
+      const after = (await probe.lights(areaId))[0]
+      expect(after.brightnessPct).toBeGreaterThanOrEqual(20)
+      expect(after.brightnessPct).toBeLessThanOrEqual(75)
+    } finally {
+      if (before.rgb) {
+        await probe.apply([lamp.entityId], { rgb: before.rgb, brightnessPct: before.brightnessPct ?? 50 }, 0)
+      }
+      probe.close()
+    }
   })
 })

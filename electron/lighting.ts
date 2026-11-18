@@ -34,6 +34,12 @@ export interface Lighting {
   setBrightness(percent: number): Promise<LightsState>
   /** One light, by hand: on/off, level, colour or effect. */
   setLight(entityId: string, patch: LightPatch): Promise<LightsState>
+  /**
+   * Breathing animation for lamps with no native effects. App-side: a stream of
+   * `turn_on` calls, so it is the chattiest thing in the app and stops on any
+   * other manual change.
+   */
+  setPulse(enabled: boolean): Promise<LightsState>
   setMood(mood: string): Promise<LightsState>
   setHint(session: string | null, hint: string): Promise<LightsState>
   resume(): Promise<LightsState>
@@ -64,6 +70,10 @@ export function createLighting(deps: LightingDeps): Lighting {
   let mood: string | null = null
   let producer: PresetProducer | null = null
   let sessionKey: string | null = null
+  let pulsing = false
+  let pulseTimer: ReturnType<typeof setInterval> | null = null
+  let pulsePhase = 0
+  let pulseInFlight = false
 
   const url = () => deps.getSetting('lightUrl', '')
   const configured = () => url().length > 0
@@ -88,6 +98,7 @@ export function createLighting(deps: LightingDeps): Lighting {
       producer,
       pausedUntil,
       canColor: canColor(),
+      pulse: pulsing,
       lights: lights.map((light) => ({
         entityId: light.entityId,
         name: light.name,
@@ -128,6 +139,43 @@ export function createLighting(deps: LightingDeps): Lighting {
 
   function logPreset(action: string, reason: string) {
     record({ at: deps.now(), kind: 'light', action, reason, track: null, probability: 0, mood, source: 'manual' })
+  }
+
+  // A lamp with no `effect_list` can only be animated by writing to it, so the
+  // breath is a 200 ms stream of turn_on calls — one per tick, skipped while the
+  // previous is still in flight, or a slow lamp gets a backlog.
+  const PULSE_TICK_MS = 200
+  const PULSE_STEPS = 15
+  const PULSE_FROM: [number, number, number] = [0, 190, 190]
+  const PULSE_TO: [number, number, number] = [110, 40, 200]
+
+  function stopPulse() {
+    if (pulseTimer) clearInterval(pulseTimer)
+    pulseTimer = null
+    pulseInFlight = false
+    pulsing = false
+  }
+
+  function startPulse() {
+    if (!client || lights.length === 0) return
+    stopPulse()
+    pulsing = true
+    pulsePhase = 0
+    director?.noteManualChange()
+    logPreset('pulse', 'the DM asked the lights to breathe')
+    pulseTimer = setInterval(() => {
+      if (!client || pulseInFlight) return
+      pulsePhase += (2 * Math.PI) / PULSE_STEPS
+      const t = (Math.sin(pulsePhase) + 1) / 2
+      const rgb = PULSE_FROM.map((from, i) => Math.round(from + (PULSE_TO[i] - from) * t)) as [number, number, number]
+      pulseInFlight = true
+      void client
+        .apply(entityIds(), { rgb, brightnessPct: Math.round(25 + t * 45) }, 0)
+        .catch(() => {})
+        .finally(() => {
+          pulseInFlight = false
+        })
+    }, PULSE_TICK_MS)
   }
 
   function attach(next: HaClient, area: string) {
@@ -220,6 +268,7 @@ export function createLighting(deps: LightingDeps): Lighting {
     },
 
     async configure(input) {
+      stopPulse()
       deps.setSetting('lightUrl', input.url.trim().replace(/\/+$/, ''))
       if (input.token !== undefined) await deps.saveToken(input.token.trim())
       for (const detach of detachClient) detach()
@@ -231,6 +280,7 @@ export function createLighting(deps: LightingDeps): Lighting {
     },
 
     async clear() {
+      stopPulse()
       deps.clearToken()
       deps.setSetting('lightUrl', '')
       for (const detach of detachClient) detach()
@@ -247,6 +297,7 @@ export function createLighting(deps: LightingDeps): Lighting {
     },
 
     async setArea(session, nextAreaId) {
+      stopPulse()
       areaId = nextAreaId
       deps.setSetting('lightArea', nextAreaId)
       if (session) {
@@ -275,6 +326,7 @@ export function createLighting(deps: LightingDeps): Lighting {
 
     async setPower(on) {
       if (!client) return publish()
+      stopPulse()
       director?.noteManualChange()
       if (on) await client.apply(entityIds(), presetFor('epic', 0.5), TRANSITION_SEC)
       else await client.turnOff(entityIds(), TRANSITION_SEC)
@@ -285,6 +337,7 @@ export function createLighting(deps: LightingDeps): Lighting {
 
     async setBrightness(percent) {
       if (!client) return publish()
+      stopPulse()
       director?.noteManualChange()
       const level = Math.min(100, Math.max(1, Math.round(percent)))
       const { rgb } = presetFor(mood ?? 'epic', 0.5)
@@ -294,8 +347,16 @@ export function createLighting(deps: LightingDeps): Lighting {
       return publish()
     },
 
+    async setPulse(enabled) {
+      stopPulse()
+      if (enabled) startPulse()
+      else await refresh()
+      return publish()
+    },
+
     async setMood(nextMood) {
       if (!client) return publish()
+      stopPulse()
       director?.noteManualChange()
       await client.apply(entityIds(), presetFor(nextMood, 0.6), TRANSITION_SEC)
       remember(nextMood, 'mood')
@@ -307,6 +368,7 @@ export function createLighting(deps: LightingDeps): Lighting {
     async setLight(entityId, patch) {
       const light = lights.find((entry) => entry.entityId === entityId)
       if (!client || !light) return publish()
+      stopPulse()
       director?.noteManualChange()
 
       if (patch.on === false) {
@@ -361,6 +423,7 @@ export function createLighting(deps: LightingDeps): Lighting {
     },
 
     async endSession() {
+      stopPulse()
       await director?.endSession()
       remember(null, null)
       publish()

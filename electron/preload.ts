@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('doty', {
   lightsSetBrightness: (percent: number) => invoke(INVOKE.lightsSetBrightness, percent),
   lightsSetLight: (entityId: string, patch: import('../src/types').LightPatch) =>
     invoke(INVOKE.lightsSetLight, entityId, patch),
+  lightsSetPulse: (enabled: boolean) => invoke(INVOKE.lightsSetPulse, enabled),
   lightsSetMood: (mood: string) => invoke(INVOKE.lightsSetMood, mood),
   lightsSetHint: (session: string | null, hint: string) => invoke(INVOKE.lightsSetHint, session, hint),
   lightsResume: () => invoke(INVOKE.lightsResume),

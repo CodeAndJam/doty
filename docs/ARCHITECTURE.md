@@ -324,7 +324,11 @@ when every one of its members is in the same Area.
 Each light in the Area has its own row: on/off, level, colour when the light
 advertises a colour mode, and an effect picker when it advertises `effect_list`.
 `lights:set-light` sends one `call_service` for that entity and only the fields
-the light supports — a dimmer never receives `rgb_color`.
+the light supports — a dimmer never receives `rgb_color`. **Pulse** is the one
+app-side animation: a lamp with no `effect_list` can only be made to breathe by
+writing to it, so main sends a `turn_on` every 200 ms (one breath per 3 s,
+skipping a tick while the previous call is in flight). Any other manual change,
+an Area change or the end of the session stops it.
 
 ```mermaid
 flowchart TD
@@ -371,7 +375,7 @@ Nothing here may stop playback or hide the suggestions.
 | Playback | player, queue and SFX channels in `electron/ipc.ts` |
 | Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
-| Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
+| Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-pulse` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
 
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a

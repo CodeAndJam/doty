@@ -50,6 +50,8 @@ export interface LightsState {
   pausedUntil: number | null
   /** False when any light in the Area cannot take a colour. */
   canColor: boolean
+  /** True while the app-side breathing animation is running. */
+  pulse: boolean
   lights: LightView[]
 }
 
@@ -301,6 +303,7 @@ export interface DotyAPI {
   lightsSetPower: (on: boolean) => Promise<LightsState>
   lightsSetBrightness: (percent: number) => Promise<LightsState>
   lightsSetLight: (entityId: string, patch: LightPatch) => Promise<LightsState>
+  lightsSetPulse: (enabled: boolean) => Promise<LightsState>
   lightsSetMood: (mood: string) => Promise<LightsState>
   lightsSetHint: (session: string | null, hint: string) => Promise<LightsState>
   lightsResume: () => Promise<LightsState>

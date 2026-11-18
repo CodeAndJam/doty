@@ -157,6 +157,23 @@ export default function LightPanel({ session }: { session: string | null }) {
                 ))}
               </div>
             )}
+
+            {state.canColor && (
+              <button
+                type="button"
+                onClick={() => window.doty.lightsSetPulse(!state.pulse).then(adopt)}
+                aria-pressed={state.pulse}
+                title="Breathe between teal and violet — for lamps with no effects of their own"
+                style={{
+                  ...small,
+                  color: state.pulse ? '#6dbf95' : '#6d6a5f',
+                  border: `1px solid ${state.pulse ? '#6dbf95' : '#3d2f1c'}`,
+                  padding: '2px 8px',
+                }}
+              >
+                {state.pulse ? 'Pulsing' : 'Pulse'}
+              </button>
+            )}
           </>
         )}
 
