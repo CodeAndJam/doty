@@ -107,7 +107,7 @@ export default function LightPanel({ session }: { session: string | null }) {
             ))}
           </select>
         ) : (
-          <span style={small}>{connected ? 'no areas' : 'not connected'}</span>
+          <span style={small}>{connected ? 'Home Assistant reported no Areas for this token' : 'not connected'}</span>
         )}
 
         {connected && state.lights.length > 0 && (
@@ -248,6 +248,18 @@ export default function LightPanel({ session }: { session: string | null }) {
             )
           })}
         </div>
+      )}
+
+      {!connected && state.configured && (
+        <p style={{ ...small, marginTop: '2px', color: state.status === 'connecting' ? '#9d8b66' : '#b46a4a' }}>
+          {state.status === 'connecting' && 'Connecting to Home Assistant…'}
+          {state.status === 'needs-reconnect' && `${state.error ?? 'Home Assistant unreachable'} — fix it in Settings.`}
+          {state.status === 'off' && 'Not connected — add an address and token in Settings.'}
+        </p>
+      )}
+
+      {connected && state.areaId && state.lights.length === 0 && (
+        <p style={{ ...small, marginTop: '2px' }}>No lights in this Area.</p>
       )}
 
       {paused && (

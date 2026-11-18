@@ -8,7 +8,13 @@ import { createHaClient, type HaClient, isLanHost, socketUrl } from './home-assi
  * `state_changed` events. If this fake ever disagrees with a real HA, the fake
  * is the thing to fix.
  */
-async function fakeHa(options: { token?: string; areas?: unknown[]; entities?: unknown[]; states?: unknown[] }) {
+async function fakeHa(options: {
+  token?: string
+  areas?: unknown[]
+  entities?: unknown[]
+  devices?: unknown[]
+  states?: unknown[]
+}) {
   const token = options.token ?? 'good-token'
   const wss = new WebSocketServer({ port: 0 })
   await new Promise<void>((resolve) => wss.on('listening', () => resolve()))
@@ -30,6 +36,7 @@ async function fakeHa(options: { token?: string; areas?: unknown[]; entities?: u
       const reply = (result: unknown) => ws.send(JSON.stringify({ id: msg.id, type: 'result', success: true, result }))
       if (msg.type === 'config/area_registry/list') return reply(options.areas ?? [])
       if (msg.type === 'config/entity_registry/list') return reply(options.entities ?? [])
+      if (msg.type === 'config/device_registry/list') return reply(options.devices ?? [])
       if (msg.type === 'get_states') return reply(options.states ?? [])
       if (msg.type === 'call_service') return reply({ context: { id: `ours-${msg.id}` } })
       if (msg.type === 'subscribe_events') return reply(null)
@@ -120,6 +127,28 @@ describe('Home Assistant client', () => {
     })
   })
 
+  it('finds a light through the Area of its device', async () => {
+    ha = await fakeHa({
+      areas,
+      entities: [
+        {
+          entity_id: 'light.tuya',
+          area_id: null,
+          device_id: 'dev-1',
+          disabled_by: null,
+          hidden_by: null,
+          name: 'Tuya',
+        },
+      ],
+      devices: [{ id: 'dev-1', area_id: 'office' }],
+      states: [{ entity_id: 'light.tuya', state: 'on', attributes: { friendly_name: 'Quarto luz' } }],
+    })
+    client = await createHaClient({ url: ha.url, token: 'good-token' })
+    const lights = await client.lights('office')
+    expect(lights.map((l) => l.entityId)).toEqual(['light.tuya'])
+    expect(lights[0].name).toBe('Quarto luz')
+  })
+
   it('sends one group turn_on with colour, brightness and a transition', async () => {
     ha = await fakeHa({ areas, entities, states })
     client = await createHaClient({ url: ha.url, token: 'good-token' })
@@ -178,6 +207,23 @@ describe('Home Assistant client', () => {
     const call = ha.calls.find((c) => c.type === 'call_service')
     expect(call?.service_data).not.toHaveProperty('rgb_color')
     expect(call?.service_data).toMatchObject({ brightness_pct: 40 })
+  })
+  it('fails the handshake instead of hanging when nothing answers', async () => {
+    const wss = new WebSocketServer({ port: 0 })
+    await new Promise<void>((resolve) => wss.on('listening', () => resolve()))
+    const port = (wss.address() as { port: number }).port
+    wss.on('connection', (ws) => {
+      ws.send(JSON.stringify({ type: 'auth_required', ha_version: '2026.11.0' }))
+      // Deliberately never answers the auth frame.
+    })
+    try {
+      await expect(createHaClient({ url: `http://127.0.0.1:${port}`, token: 'any', timeoutMs: 100 })).rejects.toThrow(
+        /handshake/,
+      )
+    } finally {
+      for (const client of wss.clients) client.terminate()
+      await new Promise<void>((resolve) => wss.close(() => resolve()))
+    }
   })
 })
 

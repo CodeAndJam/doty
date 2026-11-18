@@ -100,7 +100,13 @@ function brightnessPct(brightness: unknown): number | undefined {
   return typeof brightness === 'number' ? Math.round((brightness / 255) * 100) : undefined
 }
 
-export async function createHaClient(options: { url: string; token: string }): Promise<HaClient> {
+export async function createHaClient(options: {
+  url: string
+  token: string
+  /** Overridden by tests; production waits ten seconds. */
+  timeoutMs?: number
+}): Promise<HaClient> {
+  const timeoutMs = options.timeoutMs ?? REQUEST_TIMEOUT_MS
   const socket = new WebSocket(socketUrl(options.url))
   const pending = new Map<number, Pending>()
   const ownContexts = new Set<string>()
@@ -131,7 +137,7 @@ export async function createHaClient(options: { url: string; token: string }): P
       const timer = setTimeout(() => {
         pending.delete(id)
         reject(new Error(`Home Assistant did not answer ${type}`))
-      }, REQUEST_TIMEOUT_MS)
+      }, timeoutMs)
       pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
       socket.send(JSON.stringify({ id, type, ...payload }))
     })
@@ -150,6 +156,21 @@ export async function createHaClient(options: { url: string; token: string }): P
   }
 
   await new Promise<void>((resolve, reject) => {
+    // Without a deadline a proxy that accepts the socket and never forwards the
+    // handshake leaves the panel stuck on "connecting" forever.
+    const timer = setTimeout(() => {
+      socket.off('message', onMessage)
+      reject(new Error('Home Assistant did not answer the handshake'))
+    }, timeoutMs)
+
+    const fail = (message: string) => {
+      clearTimeout(timer)
+      socket.off('message', onMessage)
+      reject(new Error(message))
+    }
+    socket.once('error', () => fail('Home Assistant unreachable'))
+    socket.once('close', () => fail('Home Assistant closed the connection'))
+
     const onMessage = (raw: WebSocket.RawData) => {
       const message = JSON.parse(raw.toString()) as WsMessage
       if (message.type === 'auth_required') {
@@ -157,11 +178,11 @@ export async function createHaClient(options: { url: string; token: string }): P
         return
       }
       if (message.type === 'auth_invalid') {
-        socket.off('message', onMessage)
-        reject(new Error(message.error?.message ?? 'Home Assistant refused the access token'))
+        fail(message.error?.message ?? 'Home Assistant refused the access token')
         return
       }
       if (message.type === 'auth_ok') {
+        clearTimeout(timer)
         socket.off('message', onMessage)
         socket.on('message', handleMessage)
         resolve()
@@ -203,15 +224,27 @@ export async function createHaClient(options: { url: string; token: string }): P
     },
 
     async lights(areaId) {
-      const [registry, states] = await Promise.all([
+      const [registry, devices, states] = await Promise.all([
         request<
-          Array<{ entity_id: string; area_id: string | null; disabled_by: string | null; hidden_by: string | null }>
+          Array<{
+            entity_id: string
+            area_id: string | null
+            device_id: string | null
+            disabled_by: string | null
+            hidden_by: string | null
+          }>
         >('config/entity_registry/list'),
+        request<Array<{ id: string; area_id: string | null }>>('config/device_registry/list'),
         request<Array<{ entity_id: string; state: string; attributes: Record<string, unknown> }>>('get_states'),
       ])
       const byId = new Map((states ?? []).map((s) => [s.entity_id, s]))
+      const deviceArea = new Map((devices ?? []).map((device) => [device.id, device.area_id]))
+      // An entity often has no Area of its own: it inherits the Area of its
+      // device. A Tuya lamp is exactly this — the registry says `area_id: null`.
+      const areaOf = (row: { area_id: string | null; device_id: string | null }) =>
+        row.area_id ?? (row.device_id ? (deviceArea.get(row.device_id) ?? null) : null)
       const inArea = (registry ?? []).filter(
-        (row) => row.entity_id.startsWith('light.') && row.area_id === areaId && !row.disabled_by && !row.hidden_by,
+        (row) => row.entity_id.startsWith('light.') && areaOf(row) === areaId && !row.disabled_by && !row.hidden_by,
       )
       const areaIds = new Set(inArea.map((row) => row.entity_id))
 
