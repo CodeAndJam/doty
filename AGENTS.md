@@ -92,8 +92,9 @@ Concretely, when changing anything in the recommendation or playback path:
 - **Measure the goal.** Overrides per session and time-to-first-manual-pick are
   the KPIs. Thresholds and heuristics change only against real session data (see
   `test-fixtures/` and the eval items in `TODO.md`), never on intuition.
-- **Everything local.** No telemetry, no cloud calls; model downloads are the
-  only network use.
+- **Everything local.** No telemetry, no cloud calls; network use is model
+  downloads and the DM's own Home Assistant on the LAN
+  (`docs/adr/0004-home-assistant-on-the-lan.md`).
 
 ## Contracts before you grep
 

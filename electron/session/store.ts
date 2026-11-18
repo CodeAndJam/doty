@@ -24,7 +24,7 @@ export interface DecisionRow {
   track: string | null
   probability: number
   mood: string | null
-  source: 'auto' | 'manual'
+  source: 'auto' | 'manual' | 'hint'
 }
 
 export interface PreferenceRow {
@@ -42,6 +42,14 @@ export interface SessionReport {
   manualPicks: number
   /** Share of acted-on suggestions the DM replaced. The KPI from AGENTS.md. */
   overrideRate: number
+}
+
+/** Where a session plays, and the DM's words about it. */
+export interface SessionLightsRow {
+  session: string
+  areaId: string
+  hint: string
+  pinned: boolean
 }
 
 const SCHEMA = `
@@ -73,6 +81,12 @@ CREATE TABLE IF NOT EXISTS session_preferences (
   source TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS session_preferences_at ON session_preferences (at);
+CREATE TABLE IF NOT EXISTS session_lights (
+  session TEXT PRIMARY KEY,
+  area TEXT NOT NULL,
+  hint TEXT NOT NULL,
+  pinned INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS track_vectors (
   path TEXT NOT NULL,
   model TEXT NOT NULL,
@@ -115,6 +129,8 @@ export interface SessionStore {
   recordDecision(row: DecisionRow): void
   recordPreference(row: PreferenceRow): void
   recentPreferences(limit: number): PreferenceRow[]
+  getLights(session: string): SessionLightsRow | null
+  setLights(row: SessionLightsRow): void
   report(since: number): SessionReport
   /** Stored embeddings, for retrieval once the embedder is installed. */
   putVector(path: string, model: string, vector: Float32Array): void
@@ -137,12 +153,19 @@ export function createSessionStore(db: Database.Database): SessionStore {
   const selectPreferences = db.prepare(
     'SELECT at, segment, track, scene, source FROM session_preferences ORDER BY at DESC LIMIT ?',
   )
+  // Music rows only: a light decision is not a track the DM overrode, and
+  // counting it would move the KPI AGENTS.md measures the product by.
   const selectReport = db.prepare(
     `SELECT
        COUNT(*) AS decisions,
        SUM(CASE WHEN source = 'auto' AND action != 'hold' THEN 1 ELSE 0 END) AS autoActions,
        SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END) AS manualPicks
-     FROM session_decisions WHERE at >= ?`,
+     FROM session_decisions WHERE at >= ? AND kind = 'music'`,
+  )
+  const selectLights = db.prepare('SELECT session, area, hint, pinned FROM session_lights WHERE session = ?')
+  const upsertLights = db.prepare(
+    `INSERT INTO session_lights (session, area, hint, pinned) VALUES (?, ?, ?, ?)
+     ON CONFLICT(session) DO UPDATE SET area = excluded.area, hint = excluded.hint, pinned = excluded.pinned`,
   )
   const upsertVector = db.prepare(
     `INSERT INTO track_vectors (path, model, dim, vector, updated_at) VALUES (?, ?, ?, ?, ?)
@@ -163,6 +186,15 @@ export function createSessionStore(db: Database.Database): SessionStore {
     },
     recentPreferences(limit) {
       return selectPreferences.all(limit) as PreferenceRow[]
+    },
+    getLights(session) {
+      const row = selectLights.get(session) as
+        | { session: string; area: string; hint: string; pinned: number }
+        | undefined
+      return row ? { session: row.session, areaId: row.area, hint: row.hint, pinned: row.pinned === 1 } : null
+    },
+    setLights(row) {
+      upsertLights.run(row.session, row.areaId, row.hint, row.pinned ? 1 : 0)
     },
     report(since) {
       const row = selectReport.get(since) as { decisions: number; autoActions: number; manualPicks: number }

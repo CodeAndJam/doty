@@ -5,6 +5,37 @@ export interface ProgressPayload {
   totalMB: number
 }
 
+/** The lights a session can reach, as the panel sees them. */
+export type LightStatus = 'off' | 'connecting' | 'connected' | 'needs-reconnect'
+
+export interface LightView {
+  entityId: string
+  name: string
+  on: boolean
+}
+
+export interface LightsState {
+  /** False until a Home Assistant URL and token are stored: the UI shows nothing. */
+  configured: boolean
+  status: LightStatus
+  /** Why the last connection attempt failed, when it did. */
+  error?: string
+  url: string
+  areas: Array<{ areaId: string; name: string }>
+  areaId: string
+  auto: boolean
+  /** The Session Hint, as stored for this session. */
+  hint: string
+  mood: string | null
+  /** Who set the current Area Preset. */
+  producer: 'mood' | 'hint' | null
+  /** When the DM's manual change stops pausing auto, in epoch ms. */
+  pausedUntil: number | null
+  /** False when any light in the Area cannot take a colour. */
+  canColor: boolean
+  lights: LightView[]
+}
+
 export interface SttDownloadState {
   downloading: { modelId: string; percent: number } | null
   error: { modelId: string; error: string } | null
@@ -243,6 +274,20 @@ export interface DotyAPI {
       ready: boolean
     }>
   >
+  // Lights (Home Assistant on the LAN)
+  lightsGetState: (session?: string | null) => Promise<LightsState>
+  lightsConfigure: (input: { url: string; token?: string }) => Promise<LightsState>
+  lightsClear: () => Promise<LightsState>
+  lightsDiscover: () => Promise<Array<{ name: string; url: string }>>
+  lightsSetArea: (session: string | null, areaId: string) => Promise<LightsState>
+  lightsSetAuto: (enabled: boolean) => Promise<LightsState>
+  lightsSetPower: (on: boolean) => Promise<LightsState>
+  lightsSetBrightness: (percent: number) => Promise<LightsState>
+  lightsSetMood: (mood: string) => Promise<LightsState>
+  lightsSetHint: (session: string | null, hint: string) => Promise<LightsState>
+  lightsResume: () => Promise<LightsState>
+  onLightsState: (cb: (state: LightsState) => void) => () => void
+
   rankerStatus: () => Promise<{ cached: boolean; downloading: boolean; languageCovered: boolean }>
   rankerDecide: (prompt: string, candidates: string[]) => Promise<number[]>
   rankerDownload: () => Promise<{ ok: boolean; reason?: string }>

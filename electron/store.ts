@@ -15,6 +15,11 @@ interface StoreData {
   sttOnboardingSkipped?: boolean // user chose to set up speech recognition later
   debugMode?: boolean // verbose logs to ~/.doty/logs/doty.log, for another Mac
   discordToken?: string // encrypted via safeStorage
+  // Lights (Home Assistant on the LAN). The token is encrypted like Discord's.
+  lightToken?: string
+  lightUrl?: string
+  lightArea?: string
+  lightAuto?: boolean
   discordVolume?: number // 0..1, independent of local volume
   discordAutoConnect?: boolean // auto-connect to last channel on startup
   discordLastGuildId?: string // last joined guild

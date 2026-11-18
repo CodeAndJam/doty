@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
@@ -78,8 +78,11 @@ import {
 import { ffmpegStatus } from './discord-audio'
 import { getCaptureState, setCaptureMode, setOnRemoteSegment, setOnRemoteState } from './discord-capture'
 import { downloadFile } from './download-file'
+import { createHaClient } from './home-assistant'
+import { discoverHomeAssistants } from './home-assistant-discovery'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
 import { createLibrary } from './library'
+import { createLighting } from './lighting'
 import { debugLogger, enableDebugLogging } from './logger'
 import { migrateFromJson } from './metadata-cache'
 import { createModelDownloads } from './model-downloads'
@@ -445,6 +448,10 @@ app.whenReady().then(async () => {
   // Auto-connect to last Discord voice channel if enabled
   tryAutoConnect()
 
+  // A configured Home Assistant reconnects at launch; an unconfigured one shows
+  // nothing anywhere.
+  void lighting.state(null)
+
   const ready = isAnySttModelReady()
   send(EVENTS.modelStatus, { ready })
 
@@ -572,6 +579,7 @@ handle(INVOKE.sttStart, () => {
   library.pause()
   startWavRecording()
   startStream()
+  void lighting.startSession()
   return { ok: true }
 })
 handle(INVOKE.sttStop, () => {
@@ -579,6 +587,7 @@ handle(INVOKE.sttStop, () => {
   finalizeWavRecording()
   recordingActive = false
   library.resume()
+  void lighting.endSession()
   return { ok: true }
 })
 
@@ -902,10 +911,69 @@ handle(INVOKE.rankerDownload, () => downloadRanker())
 
 const sessionStore = createSessionStore(getDb())
 
+// ── Lights: the DM's Home Assistant, on their LAN only (ADR-0004) ────────────
+// The token is encrypted at rest like Discord's; the keychain can refuse after a
+// signature change, and an unremembered token is one paste, not a broken app.
+async function saveLightToken(token: string): Promise<void> {
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      store.set('lightToken', safeStorage.encryptString(token).toString('base64'))
+    } else {
+      store.set('lightToken', token)
+    }
+  } catch (err) {
+    console.error('[lights] token not saved:', err)
+  }
+}
+
+function loadLightToken(): Promise<string> {
+  const raw = (store.get('lightToken', '') as string) || ''
+  if (!raw) return Promise.resolve('')
+  if (safeStorage.isEncryptionAvailable()) {
+    try {
+      return Promise.resolve(safeStorage.decryptString(Buffer.from(raw, 'base64')))
+    } catch {
+      // Ciphertext this build cannot read: treat it as no token.
+      return Promise.resolve('')
+    }
+  }
+  return Promise.resolve(raw)
+}
+
+const lighting = createLighting({
+  getSetting: (key, fallback) => {
+    const value = store.get(key as 'lightUrl', fallback as string)
+    return value === undefined || value === null ? fallback : String(value)
+  },
+  setSetting: (key, value) => store.set(key as 'lightUrl', value as string),
+  saveToken: saveLightToken,
+  loadToken: loadLightToken,
+  clearToken: () => store.set('lightToken', ''),
+  connect: (url, token) => createHaClient({ url, token }),
+  sessionStore,
+  now: () => Date.now(),
+  emit: (state) => send(EVENTS.lightsState, state),
+})
+
+handle(INVOKE.lightsGetState, (_e, session?: string | null) => lighting.state(session ?? null))
+handle(INVOKE.lightsConfigure, (_e, input: { url: string; token?: string }) => lighting.configure(input))
+handle(INVOKE.lightsClear, () => lighting.clear())
+handle(INVOKE.lightsDiscover, () => discoverHomeAssistants())
+handle(INVOKE.lightsSetArea, (_e, session: string | null, areaId: string) => lighting.setArea(session, areaId))
+handle(INVOKE.lightsSetAuto, (_e, enabled: boolean) => lighting.setAuto(enabled))
+handle(INVOKE.lightsSetPower, (_e, on: boolean) => lighting.setPower(on))
+handle(INVOKE.lightsSetBrightness, (_e, percent: number) => lighting.setBrightness(percent))
+handle(INVOKE.lightsSetMood, (_e, mood: string) => lighting.setMood(mood))
+handle(INVOKE.lightsSetHint, (_e, session: string | null, hint: string) => lighting.setHint(session, hint))
+handle(INVOKE.lightsResume, () => lighting.resume())
+
 const sessionPass = createSessionPass({
   evaluate: (state, candidates) => evaluateSession(state, candidates),
   store: sessionStore,
   now: () => Date.now(),
+  onScene: (scene, probability) => {
+    void lighting.observeScene(scene.mood, scene.intensity, probability)
+  },
 })
 
 handle(INVOKE.sessionEvaluate, (_e, request: PassRequest) => sessionPass.run(request))

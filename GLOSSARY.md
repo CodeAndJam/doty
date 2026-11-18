@@ -51,3 +51,35 @@ _Avoid_: lane, channel, stream, voice
 Which speakers the current recording takes in: `local`, the DM's microphone only, or `all`, the
 microphone plus every Discord participant.
 _Avoid_: listen mode, record mode, monitor
+
+**Session Scene**:
+Doty's reading of the moment of play: a mood, an intensity, and the confirmation behind them. It
+causes an Area Preset but is not the same thing.
+_Avoid_: scene, state, ambience (the mood is one field of it)
+
+## Smart home
+
+**Area**:
+A room in the DM's Home Assistant. It is the unit a session plays in, the only room Doty asks
+about, and the boundary of every light Doty may touch.
+_Avoid_: room, division, zone, place
+
+**Light**:
+A Home Assistant light entity inside the session's Area. The first device class Doty can act on,
+not the last.
+_Avoid_: bulb, lamp, device, fixture
+
+**Area Preset**:
+The fixed light state a mood maps to across the whole Area. Doty writes it; the DM may take it back
+by hand. The Session Scene's mood is the default producer, a Session Hint the other one.
+_Avoid_: scene, theme, palette, mood lighting
+
+**Session Hint**:
+The DM's own words about the moment of play, pinned beside the rolling transcript and read by the
+music, the effects and the lights alike. It nudges; the transcript still decides.
+_Avoid_: prompt, cue, note, scene description, static prompt
+
+**Playback Device**:
+A Home Assistant entity that plays audio. Not integrated yet; named now so that a smart speaker is
+never called a Speaker.
+_Avoid_: speaker, media player, output, stream

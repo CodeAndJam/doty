@@ -2,13 +2,23 @@
 
 ## Pending
 
+- [ ] Lights: the prototype ships token pairing, Area choice, group control and
+      mood-driven presets (`docs/adr/0004-home-assistant-on-the-lan.md`). Open:
+      the three `d1-omni` hint questions (hue, motion, brightness) once a real
+      session is logged, HA `effect` animation (needs a light that advertises
+      one), `playback_device` targets, `switch.*` lamps, switches as a device
+      class, and OAuth consent (ADR v2). Thresholds and the 25 s dwell move only
+      against `session_decisions` rows with `kind = 'light'`.
+- [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
+      soundboard until they are configured, the way the lights pane already
+      hides itself. Needs its own before/after; it moves muscle memory.
+
 - [ ] Discord capture: the feature is in place — `all` mode subscribes to every
       participant, labels segments with a `Speaker`, writes `<v>` voice spans and
       a `-remote.wav`, refuses to switch on with no model, settles a dead decode
       worker, and caps an utterance at 30 s. Still open: measure the shipped
-      batch-per-utterance decode against per-speaker streaming with
-      `pnpm spike:discord` on a 3+ person call, and add a remote-lane fixture to
-      `QUALITY.md`.
+      batch-per-utterance decode against per-speaker streaming on a real 3+
+      person call, and add a remote-lane fixture to `QUALITY.md`.
 
 - [x] STT: retry once on the CPU when the GPU fails to load, instead of ending
       the session. Ported from Handy's supervisor, which does the same.
