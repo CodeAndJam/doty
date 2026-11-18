@@ -33,3 +33,13 @@ Status: accepted
   the transcript never depend on it.
 - The Home Assistant client lives in the main process beside the session pass, so the rules for
   changing an Area Preset cannot drift between processes.
+
+## Amendment: the DM's own tailnet
+
+A DM whose Home Assistant sits on a Tailscale node is still on their own private network — WireGuard
+between their machines, not a public relay — so `*.ts.net` MagicDNS names and `100.64.0.0/10`
+addresses are accepted alongside LAN ones. A public domain and a Nabu Casa URL are still refused;
+the check is in `isLanHost`, and the DM can see it fail in Settings rather than wonder.
+
+mDNS does not cross a tailnet, so those instances are entered by address. The Settings card searches
+the link automatically and lists what answered, which covers the LAN case without a click.

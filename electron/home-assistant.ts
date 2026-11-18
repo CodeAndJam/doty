@@ -61,19 +61,19 @@ type WsMessage = {
 
 const REQUEST_TIMEOUT_MS = 10_000
 
-/** RFC 1918, loopback and IPv6 local addresses: the DM's own LAN. */
-const PRIVATE_IPV4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/
+/** RFC 1918, loopback, IPv6 local, and Tailscale's CGNAT range. */
+const PRIVATE_IPV4 = /^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/
 const PRIVATE_IPV6 = /^(::1|fe80:|f[cd])/i
 
 /**
- * ADR-0004: Home Assistant on the LAN, never through a public address. A
- * hostname only qualifies when it is link-local (`.local`) or has no dot, which
- * is how a bare mDNS name looks.
+ * ADR-0004: Home Assistant on the DM's own network, never a public address. A
+ * hostname qualifies when it is link-local (`.local`), a Tailscale MagicDNS
+ * name (the DM's private tailnet, not a public relay), or a bare mDNS name.
  */
 export function isLanHost(host: string): boolean {
   const bare = host.toLowerCase().replace(/^\[|\]$/g, '')
   if (bare.length === 0) return false
-  if (bare === 'localhost' || bare.endsWith('.local')) return true
+  if (bare === 'localhost' || bare.endsWith('.local') || bare.endsWith('.ts.net')) return true
   if (PRIVATE_IPV4.test(bare) || PRIVATE_IPV6.test(bare)) return true
   return !bare.includes('.') && !bare.includes(':')
 }

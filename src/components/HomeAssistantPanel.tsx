@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { LightsState } from '../types'
 
 const label: React.CSSProperties = {
@@ -37,15 +37,35 @@ export default function HomeAssistantPanel() {
   const [token, setToken] = useState('')
   const [found, setFound] = useState<Array<{ name: string; url: string }>>([])
   const [busy, setBusy] = useState(false)
+  const [searching, setSearching] = useState(false)
+  const [searched, setSearched] = useState(false)
   const [error, setError] = useState('')
 
+  const search = useCallback(async () => {
+    setSearching(true)
+    try {
+      setFound(await window.doty.lightsDiscover().catch(() => []))
+    } finally {
+      setSearching(false)
+      setSearched(true)
+    }
+  }, [])
+
   useEffect(() => {
+    let cancelled = false
     window.doty.lightsGetState(null).then((next) => {
+      if (cancelled) return
       setState(next)
       setUrl(next.url)
+      // Nothing configured yet: look for one before asking the DM to type.
+      if (!next.configured) void search()
     })
-    return window.doty.onLightsState(setState)
-  }, [])
+    const unsubscribe = window.doty.onLightsState(setState)
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
+  }, [search])
 
   if (!state) return null
 
@@ -147,11 +167,8 @@ export default function HomeAssistantPanel() {
             />
             <button
               type="button"
-              onClick={async () => {
-                setBusy(true)
-                setFound(await window.doty.lightsDiscover().catch(() => []))
-                setBusy(false)
-              }}
+              disabled={searching}
+              onClick={search}
               style={{
                 fontSize: '12px',
                 fontFamily: "'IBM Plex Mono', monospace",
@@ -159,7 +176,7 @@ export default function HomeAssistantPanel() {
                 whiteSpace: 'nowrap',
               }}
             >
-              Find
+              {searching ? 'Searching…' : 'Search again'}
             </button>
           </div>
           {found.length > 0 && (
@@ -169,12 +186,21 @@ export default function HomeAssistantPanel() {
                   key={entry.url}
                   type="button"
                   onClick={() => setUrl(entry.url)}
-                  style={{ fontSize: '12px', fontFamily: "'IBM Plex Mono', monospace", color: '#d9a441' }}
+                  style={{
+                    fontSize: '12px',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    color: url === entry.url ? '#e4d6b4' : '#d9a441',
+                    border: `1px solid ${url === entry.url ? '#d9a441' : '#3d2f1c'}`,
+                    padding: '2px 8px',
+                  }}
                 >
                   {entry.name} · {entry.url}
                 </button>
               ))}
             </div>
+          )}
+          {searched && found.length === 0 && (
+            <p style={hint}>No Home Assistant answered mDNS here. On a VLAN or a tailnet, type its address above.</p>
           )}
           <input
             type="password"

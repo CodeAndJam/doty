@@ -170,6 +170,8 @@ describe('lan guard', () => {
       'http://homeassistant.local:8123',
       'http://homeassistant:8123',
       'http://[::1]:8123',
+      'http://100.101.102.103:8123',
+      'https://raspberrypi.tail843ac4.ts.net:8124',
     ]) {
       expect(socketUrl(url)).toMatch(/\/api\/websocket$/)
     }
@@ -178,6 +180,7 @@ describe('lan guard', () => {
   it('refuses a public address, as ADR-0004 requires', () => {
     expect(isLanHost('example.com')).toBe(false)
     expect(isLanHost('8.8.8.8')).toBe(false)
+    expect(isLanHost('100.128.0.1')).toBe(false)
     expect(() => socketUrl('https://ha.example.com')).toThrow(/local network/)
   })
 })
