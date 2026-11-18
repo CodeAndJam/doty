@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { groupParagraphs } from '../lib/paragraphs'
 import { defaultSessionName } from '../lib/sessionName'
+import { speakerPrefix } from '../lib/speaker'
 import type { MicPermission } from '../types'
 
 interface SessionMeta {
@@ -12,6 +14,8 @@ interface SessionMeta {
 export interface TranscriptSegment {
   text: string
   elapsedMs: number
+  /** Discord participant's display name; absent = the DM's microphone. */
+  speaker?: string
   /** true = system message (model switch, etc) */
   system?: boolean
   /** true = starts a new paragraph (after long silence) */
@@ -157,25 +161,12 @@ export default function Transcript({
     return () => document.removeEventListener('mousedown', handler)
   }, [showDropdown])
 
-  // Group segments into paragraphs
-  const paragraphs: TranscriptSegment[][] = []
-  let currentParagraph: TranscriptSegment[] = []
-  for (const seg of segments) {
-    if (seg.system || seg.paragraphStart) {
-      if (currentParagraph.length > 0) {
-        paragraphs.push(currentParagraph)
-        currentParagraph = []
-      }
-      if (seg.system) {
-        paragraphs.push([seg])
-      } else {
-        currentParagraph.push(seg)
-      }
-    } else {
-      currentParagraph.push(seg)
-    }
-  }
-  if (currentParagraph.length > 0) paragraphs.push(currentParagraph)
+  // Group segments into paragraphs — a new voice starts a new one.
+  const paragraphs = groupParagraphs(segments)
+
+  // A speaker is only named once the session holds more than one voice; until
+  // then a mic-only transcript reads exactly as it always has.
+  const hasRemoteSpeakers = segments.some((s) => s.speaker)
 
   return (
     <div
@@ -487,7 +478,9 @@ export default function Transcript({
               )
             }
             // Regular paragraph — flowing text with timestamp on first segment
-            const firstTs = para[0]?.elapsedMs
+            const first = para.find((s) => s.text)
+            const firstTs = first?.elapsedMs ?? 0
+            const speaker = speakerPrefix(first?.speaker, hasRemoteSpeakers)
             const paragraphText = para.map((s) => s.text).join(' ')
             return (
               <div key={pi} className="group relative" style={{ marginBottom: '16px' }}>
@@ -513,6 +506,19 @@ export default function Transcript({
                     paddingLeft: '12px',
                   }}
                 >
+                  {speaker && (
+                    <span
+                      style={{
+                        color: '#d9a441',
+                        fontFamily: "'Cinzel', serif",
+                        fontSize: '14px',
+                        letterSpacing: '0.06em',
+                        marginRight: '6px',
+                      }}
+                    >
+                      {speaker}:
+                    </span>
+                  )}
                   {paragraphText}
                 </p>
               </div>

@@ -108,6 +108,20 @@ but its language prior to fill the silence, and it fills it with words nobody
 said. Seen on a real session: “Resurrê? O presužma”, “Gareth”. The same audio
 decoded as a 15 s window is clean.
 
+### Discord participants
+
+A second capture source, off unless the DM turns it on. `selfDeaf: false` was
+already set, so `connection.receiver` delivers each participant's Opus stream;
+prism decodes it, ffmpeg resamples 48 kHz stereo to 16 kHz mono, and the whole
+speech burst (Discord's 1.2 s silence boundary) is decoded at once by a worker of
+its own. Batch-per-utterance is deliberate: one compute in flight per model means
+per-speaker streaming needs a model per head, and an utterance decoded whole is
+both cheaper and the shape `ChunkBuffer` already proved better than short frames.
+Cues are written as WebVTT voice spans (`<v Ana>…</v>`), so one session file stays
+valid for any player, and `loadSessionAsync` reads the tag back into a speaker.
+The lane's audio is written beside the mic's take as `session-…-remote.wav`,
+opened on the first remote utterance so a mic-only session leaves no empty file.
+
 ## Transcript to a music decision
 
 Two authorities, by design, and only one of them runs at a time.
@@ -310,6 +324,7 @@ Nothing here may stop playback or hide the suggestions.
 | Ranking | `ranker:decide` · `ranker:status` · `session:sfx-rank` |
 | Director | `session:evaluate` · `session:decision` · `session:preference` · `session:report` |
 | Playback | player, queue and SFX channels in `electron/ipc.ts` |
+| Discord capture | `discord:get-capture-state` · `discord:set-capture-mode` · `capture:state` |
 
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a

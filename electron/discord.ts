@@ -16,6 +16,7 @@ import {
 import { ChannelType, Client, GatewayIntentBits, type Guild, type VoiceBasedChannel } from 'discord.js'
 import { safeStorage } from 'electron'
 import { createMusicResource, createSfxResource } from './discord-audio'
+import { attachCapture, detachCapture, getCaptureMode } from './discord-capture'
 import { store } from './store'
 
 // ── Verbose logging ───────────────────────────────────────────────────────────
@@ -420,6 +421,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
       // Reconnecting...
     } catch {
       // Gave up — destroy connection
+      detachCapture({ resetLabels: true })
       connection?.destroy()
       connection = null
       setState({
@@ -431,6 +433,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
   })
 
   connection.on(VoiceConnectionStatus.Destroyed, () => {
+    detachCapture({ resetLabels: true })
     connection = null
     setState({
       voiceStatus: 'idle',
@@ -451,6 +454,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
     store.set('discordLastGuildId', guildId)
     store.set('discordLastChannelId', channelId)
     console.log(`[discord] Joined voice channel: ${channel.name}`)
+    refreshCapture()
 
     // If a track was already playing locally, start streaming it
     if (currentTrack) {
@@ -466,6 +470,7 @@ export async function joinChannel(guildId: string, channelId: string): Promise<v
 }
 
 export function leaveChannel(): void {
+  detachCapture({ resetLabels: true })
   sfxPlaying = false
   sfxTransitioning = false
   currentSfxPath = null
@@ -483,6 +488,21 @@ export function leaveChannel(): void {
     voiceStatus: 'idle',
     currentGuildId: null,
     currentChannelId: null,
+  })
+}
+
+// ── Participant capture ──────────────────────────────────────────────────────
+
+/**
+ * (Re)attach participant capture to the current connection. Called on join and
+ * whenever the DM flips the capture mode, so the switch takes effect live.
+ */
+export function refreshCapture(): void {
+  detachCapture()
+  if (!connection || !client || getCaptureMode() !== 'all') return
+  const guild = state.currentGuildId ? client.guilds.cache.get(state.currentGuildId) : null
+  attachCapture(connection.receiver, (userId: string) => {
+    return guild?.members.cache.get(userId)?.displayName ?? client?.users.cache.get(userId)?.username ?? ''
   })
 }
 

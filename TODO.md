@@ -2,6 +2,14 @@
 
 ## Pending
 
+- [ ] Discord capture: the feature is in place — `all` mode subscribes to every
+      participant, labels segments with a `Speaker`, writes `<v>` voice spans and
+      a `-remote.wav`, refuses to switch on with no model, settles a dead decode
+      worker, and caps an utterance at 30 s. Still open: measure the shipped
+      batch-per-utterance decode against per-speaker streaming with
+      `pnpm spike:discord` on a 3+ person call, and add a remote-lane fixture to
+      `QUALITY.md`.
+
 - [x] STT: retry once on the CPU when the GPU fails to load, instead of ending
       the session. Ported from Handy's supervisor, which does the same.
 - [x] STT: transcribe.cpp 0.4.2 (parakeet mel-padding fix, mmapped weights).

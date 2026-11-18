@@ -14,6 +14,8 @@ export interface VttCue {
   start: string
   end: string
   text: string
+  /** Set when the cue is a WebVTT voice span (`<v Ana>…</v>`). */
+  speaker?: string
 }
 
 const DEFAULT_SESSIONS_DIR = join(DOTY_HOME, 'sessions')
@@ -81,7 +83,8 @@ export function loadSession(file: string): VttCue[] {
         textLines.push(lines[i])
         i++
       }
-      cues.push({ start, end, text: textLines.join('\n') })
+      const parsed = parseVoiceSpan(textLines.join('\n'))
+      cues.push({ start, end, ...parsed })
     } else {
       i++
     }
@@ -89,11 +92,42 @@ export function loadSession(file: string): VttCue[] {
   return cues
 }
 
-export function appendCue(file: string, elapsedMs: number, text: string): void {
+export function appendCue(file: string, elapsedMs: number, text: string, speaker?: string): void {
   const start = formatTimestamp(elapsedMs)
   const end = formatTimestamp(elapsedMs + 3000)
-  const cue = `${start} --> ${end}\n${text}\n\n`
+  // WebVTT voice span: the file stays valid for any player, and loadSession
+  // reads the tag back into a speaker instead of showing it as text.
+  const body = speaker ? `<v ${safeVoiceName(speaker)}>${safeVoiceText(text)}</v>` : text
+  const cue = `${start} --> ${end}\n${body}\n\n`
   fs.appendFileSync(file, cue, 'utf-8')
+}
+
+/**
+ * A display name is user input: `>` closes the tag early, and a newline ends the
+ * cue. Both would make the file parse as a different speaker than it says.
+ */
+function safeVoiceName(name: string): string {
+  return (
+    name
+      .replace(/[<>\r\n]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Remote'
+  )
+}
+
+/** The closing tag must survive the text as well. */
+function safeVoiceText(text: string): string {
+  return text.replace(/<\/v>/gi, '')
+}
+
+/**
+ * WebVTT's own speaker markup. A cue with no `<v>` span is the DM's mic, which
+ * is every session recorded before participant capture existed.
+ */
+function parseVoiceSpan(text: string): { text: string; speaker?: string } {
+  const match = /^<v(?:\.[^ >]+)*\s+([^>]+)>([\s\S]*)<\/v>$/.exec(text.trim())
+  if (!match) return { text }
+  return { text: match[2], speaker: match[1].trim() }
 }
 
 /** Start timestamp of the last cue in a session, in ms (0 for a new/empty file). */
@@ -196,7 +230,8 @@ function parseVttCues(content: string): VttCue[] {
         textLines.push(lines[i])
         i++
       }
-      cues.push({ start, end, text: textLines.join('\n') })
+      const parsed = parseVoiceSpan(textLines.join('\n'))
+      cues.push({ start, end, ...parsed })
     } else {
       i++
     }
@@ -209,6 +244,9 @@ export function deleteSession(file: string): void {
     if (fs.existsSync(file)) fs.unlinkSync(file)
     const wavPath = file.replace(/\.vtt$/, '.wav')
     if (fs.existsSync(wavPath)) fs.unlinkSync(wavPath)
+    // The remote lane keeps its own take beside the mic's.
+    const remoteWavPath = file.replace(/\.vtt$/, '-remote.wav')
+    if (fs.existsSync(remoteWavPath)) fs.unlinkSync(remoteWavPath)
   } catch {
     /* non-fatal */
   }

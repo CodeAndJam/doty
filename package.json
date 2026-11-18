@@ -26,6 +26,7 @@
     "ranker:eval": "RANKER_EVAL=1 vitest run electron/session/ranker-quality.test.ts",
     "ranker:headless": "RANKER_HEADLESS=1 vitest run electron/session/headless.test.ts",
     "ranker:lab": "node tools/ranker-lab/serve.mjs",
+    "spike:discord": "node spike/discord-receive.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.node.json --noEmit",
     "verify:build": "node scripts/verify-build.mjs",
     "check": "biome check . && node scripts/forbidden-apis.mjs && pnpm typecheck && vitest run"

@@ -54,8 +54,8 @@ the M4 Pro developer run.
 
 | Model | pt FLEURS WER\* | DM clean WER | DM + 12 dB noise | Music-masked | Speed | Latency |
 |---|---:|---:|---:|---:|---:|---|
-| **Nemotron 3.5 Streaming** (default) | 8.5% | 22.4% | 24.5% | 33.3% | ~10× RT | ~0.4 s |
-| Parakeet Ultra (accuracy option) | 4.2% | **16.3%** | **23.5%** | 38.1% | ~25× RT | ≤10 s chunks |
+| **Parakeet Ultra** (default) | 4.2% | **16.3%** | **23.5%** | 38.1% | ~25× RT | ≤10 s chunks |
+| Nemotron 3.5 Streaming (lowest latency) | 8.5% | 22.4% | 24.5% | 33.3% | ~10× RT | ~0.4 s |
 | Voxtral Mini 4B Realtime (experimental) | 3.9% | 15.3% | — | 38.1% | **0.6–1.4× RT** | ~2.4 s |
 | Whisper large-v3-turbo (not shipped) | 4.2% | 15.3% | — | 33.3% | ~16× RT | not wired |
 
@@ -69,10 +69,9 @@ not in the absolute gate.
 
 ### Choosing between the two Portuguese models
 
-**Nemotron 3.5 Streaming is the default** because the transcript drives live
-recommendations: ~0.4 s after a phrase starts, text exists.
-
-**Parakeet Ultra is the accuracy option** (Settings → Speech Recognition):
+**Parakeet Ultra is the default**: it is the most accurate model that clears
+the absolute gate on every fixture (16.3% vs 22.4% WER on the DM fixture), and
+its own voice-activity head keeps music and room noise out of the decoder.
 
 - 25 European languages, 4.2% FLEURS pt vs 8.5% for Nemotron.
 - On our own DM fixture it is 6–7 pp better (16.3% vs 22.4% WER).
@@ -81,14 +80,18 @@ recommendations: ~0.4 s after a phrase starts, text exists.
 - It cannot drift to English on short spans the way `parakeet-tdt-0.6b-v3`
   auto-detect does.
 
+**Nemotron 3.5 Streaming is the latency option** (Settings → Speech
+Recognition): ~0.4 s after a phrase starts, text exists, which keeps live
+recommendations typing along with the table.
+
 The trade-off is latency: a batch model only has text once a chunk is cut
 (≤10 s, or 1.5 s of silence). `ChunkBuffer` cuts in the quietest 100 ms window
 of the last 2.5 s and keeps the remainder, which keeps boundary damage to the
 occasional fricative instead of a blind mid-word cut.
 
-If accuracy matters more than the typing effect (saved transcripts, session
-reprocessing, noisy rooms), pick Ultra. The gate measures both, and the
-absolute bar stays on the default so it cannot silently get worse.
+If the typing effect matters more than accuracy, pick Nemotron. The gate
+measures both, and the absolute bar stays on the default so it cannot silently
+get worse.
 
 ## Adding fixtures
 
@@ -116,8 +119,12 @@ the audio pipeline is the problem.
   white noise at 12 dB SNR (`electron/stt-quality/augment.ts`). A far-field
   table recording (laptop mic, 6 speakers, music playing) would be strictly
   better; add it as `conference-pt.wav`.
-- No multi-speaker or diarization gate — the transcript is intentionally a
-  single stream today.
+- No multi-speaker or diarization gate. The mic lane is still a single stream;
+  Discord participants are a separate lane with a label from Discord itself, so
+  nothing measures the two overlapping in one utterance.
+- Remote-lane accuracy is unmeasured: its audio is each participant's own Opus
+  stream downsampled to 16 kHz, not a room recording, and the 10 s chunking the
+  mic lane relies on does not apply — an utterance is decoded whole.
 - No end-to-end latency gate for the renderer (interim text at 60 fps); the
   worker-side latency is gated, the paint path is not.
 

@@ -19,6 +19,7 @@ interface StoreData {
   discordAutoConnect?: boolean // auto-connect to last channel on startup
   discordLastGuildId?: string // last joined guild
   discordLastChannelId?: string // last joined channel
+  discordCaptureMode?: 'local' | 'all' // local = DM mic only, all = plus Discord participants
   // Sessions / models
   lastSession?: string
   // Autopilot (#12). The master switch is on the header and off by default; the
