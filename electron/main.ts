@@ -391,8 +391,22 @@ function createWindow() {
   // Nothing in this app navigates: every link is either a card or `shell.openExternal`.
   // Denying both also keeps `window.doty` out of reach of a rendered link in track
   // names, Discord names or Home Assistant labels.
-  const devUrl = process.env.ELECTRON_RENDERER_URL
-  const allowedNavigation = (url: string) => (devUrl ? url.startsWith(devUrl) : false) || url.startsWith('app://doty')
+  const devOrigin = (() => {
+    try {
+      return process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL).origin : null
+    } catch {
+      return null
+    }
+  })()
+  const allowedNavigation = (url: string) => {
+    try {
+      const target = new URL(url)
+      if (target.protocol === 'app:') return target.host === 'doty'
+      return devOrigin !== null && target.origin === devOrigin
+    } catch {
+      return false
+    }
+  }
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!allowedNavigation(url)) event.preventDefault()
   })
@@ -644,6 +658,9 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   // library, even though the DM's own click normally comes from a card.
   if (!isAllowedMediaPath(from)) return { ok: false, reason: 'not in a library folder' }
   if (!fs.existsSync(from)) return { ok: false, reason: 'file not found' }
+  // `a/..` resolves to the library root itself, which exists and would rename the
+  // whole folder. Only a regular file can move.
+  if (!fs.statSync(from).isFile()) return { ok: false, reason: 'not a file' }
 
   const dir = join(destination, '..')
   fs.mkdirSync(dir, { recursive: true })

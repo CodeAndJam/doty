@@ -35,8 +35,10 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
   })
 
   let previousFolder: string | null = null
+  let pageRef: Page | null = null
   try {
     const page = await app.firstWindow()
+    pageRef = page
     await page.waitForLoadState('domcontentloaded')
 
     page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
@@ -114,9 +116,11 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
     ).toBeGreaterThan(50)
 
   } finally {
-    const page = await app.firstWindow().catch(() => null)
-    if (page && previousFolder) {
-      await page.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {})
+    if (pageRef && previousFolder !== null) {
+      await Promise.race([
+        pageRef.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 10_000)),
+      ])
     }
     await gracefulClose(app)
   }

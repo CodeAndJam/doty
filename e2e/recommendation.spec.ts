@@ -118,7 +118,7 @@ test('keyword fallback answers while the model loads, then the model takes over'
     )
 
   } finally {
-    if (page && previousFolder) {
+    if (page && previousFolder !== null) {
       await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), previousFolder).catch(() => {})
     }
     await gracefulClose(app)
