@@ -39,7 +39,6 @@ function renderBoard() {
       sfxRecommendations={[]}
       sfxAutopilot={[]}
       lastConfidence={0}
-      lastChoiceConfidence={0}
       probabilities={{}}
       candidates={['battle-theme.mp3']}
       sessionText=""

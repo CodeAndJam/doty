@@ -661,9 +661,10 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
 handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
   if (lane !== 'music' && lane !== 'sfx') return { ok: false }
   const item = library.items().find((candidate) => candidate.key === key)
-  // Choosing the folder's own lane is not an override; writing one would pin the
-  // file forever and the classifier could never be improved.
-  if (item && item.origin === lane) library.clearLane(key)
+  // Choosing the folder's own lane is not an override, but only when the file
+  // already resolves there. A cue the classifier called an effect must be
+  // overridable back to music; clearing that request would re-apply the verdict.
+  if (item && item.origin === lane && item.lane === lane) library.clearLane(key)
   else library.setLane(key, lane)
   // Every panel and the director read the same label, so they all have to hear it.
   send(EVENTS.sfxChanged)

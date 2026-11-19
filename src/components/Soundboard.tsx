@@ -161,8 +161,6 @@ interface Props {
   /** The `sfxRecommendations` the model was sure enough about for autopilot to fire. */
   sfxAutopilot: string[]
   lastConfidence: number
-  /** TypeSafe choice confidence: how settled the pick is across the candidates. */
-  lastChoiceConfidence: number
   /** Per-file probability, aligned with the suggestions. */
   probabilities: Record<string, number>
   /** Every candidate the model ranked, best first. */
@@ -194,7 +192,6 @@ export default function Soundboard({
   sfxProbabilities = {},
   sfxAutopilot,
   lastConfidence,
-  lastChoiceConfidence,
   probabilities,
   candidates,
   sessionText,
@@ -1230,7 +1227,7 @@ export default function Soundboard({
                           color: lastRanker === 'model' ? '#d9a441' : '#a5813f',
                           letterSpacing: '0.05em',
                         }}
-                        title={`Ranked by ${lastRanker}${lastChoiceConfidence > 0 ? ` — confidence ${(lastChoiceConfidence * 100).toFixed(1)}% (how settled the choice is; each card shows its own probability)` : ''}`}
+                        title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` — the first card's probability is ${(lastConfidence * 100).toFixed(0)}%` : ''}`}
                       >
                         {lastRanker === 'model'
                           ? 'model'
@@ -1241,9 +1238,7 @@ export default function Soundboard({
                                 ? 'keywords · model downloading'
                                 : 'keywords · no model'
                               : 'keywords'}
-                        {lastRanker === 'model' &&
-                          lastChoiceConfidence > 0 &&
-                          ` ${(lastChoiceConfidence * 100).toFixed(0)}% conf`}
+                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}% conf`}
                       </span>
                     )}
                     {scene && (

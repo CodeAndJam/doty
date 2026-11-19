@@ -119,12 +119,14 @@ describe('music-protocol', () => {
       expect(resp.headers.get('Content-Range')).toBe('bytes 990-999/1000')
     })
 
-    it('still rejects a Range that starts at or past the file', () => {
+    it('serves the last byte when a Range starts at or past the file', () => {
       const resp = handleMusicRequest(
         { url: `music://play/${testFile}`, rangeHeader: 'bytes=1000-' },
         { musicFolder: tmpDir },
       )
-      expect(resp.status).toBe(416)
+      expect(resp.status).toBe(206)
+      expect(resp.headers.get('Content-Length')).toBe('1')
+      expect(resp.headers.get('Content-Range')).toBe('bytes 999-999/1000')
     })
 
     it('returns 403 for a path outside the configured folders', () => {

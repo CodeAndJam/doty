@@ -386,4 +386,9 @@ describe('candidateSet', () => {
     const set = candidateSet('   ', files, metadata, 3, {}, { 'Campfire.mp3': 4 })
     expect(set).toContain('Campfire.mp3')
   })
+
+  it('pads the no-prompt shelf deterministically', () => {
+    // Clearing the prompt must not reshuffle the shelf on the next repaint.
+    expect(candidateSet('', files, metadata, 5)).toEqual(candidateSet('', files, metadata, 5))
+  })
 })

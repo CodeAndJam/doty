@@ -490,13 +490,18 @@ function defaultRecommendations(files: string[], playFrequencies: Record<string,
 
   const results = byFrequency.slice(0, count)
 
-  // If we don't have enough history, pad with random tracks
+  // If we don't have enough history, pad with a deterministic shuffle: clearing
+  // the prompt must not reshuffle the shelf under the DM's eyes.
   if (results.length < count) {
     const remaining = files.filter((f) => !results.includes(f))
-    // Fisher-Yates with the session seed (a sort comparator cannot shuffle correctly)
     const shuffled = [...remaining]
+    let seed = hash(`${files.join('|')}:${JSON.stringify(playFrequencies)}`) || 1
+    const next = () => {
+      seed = (seed * 9301 + 49297) % 233280
+      return seed / 233280
+    }
     for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(seededRandom(i) * (i + 1))
+      const j = Math.floor(next() * (i + 1))
       ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
     }
     results.push(...shuffled.slice(0, count - results.length))
@@ -505,9 +510,8 @@ function defaultRecommendations(files: string[], playFrequencies: Record<string,
   return results.slice(0, count)
 }
 
-/** Simple seeded pseudo-random for deterministic shuffle within a session */
-let _seed = Date.now() % 10000
-function seededRandom(_hint: number): number {
-  _seed = (_seed * 9301 + 49297) % 233280
-  return _seed / 233280
+function hash(text: string): number {
+  let value = 0
+  for (let i = 0; i < text.length; i++) value = (value * 31 + text.charCodeAt(i)) >>> 0
+  return value
 }

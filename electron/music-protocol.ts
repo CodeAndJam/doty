@@ -121,13 +121,14 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
   // Handle Range requests — required for audio seeking.
   if (request.rangeHeader) {
     const match = /bytes=(\d+)-(\d*)/.exec(request.rangeHeader)
-    const start = match ? parseInt(match[1], 10) : 0
-    // RFC 9110: an end past the file is clamped, not rejected. Chromium asks for
-    // `bytes=N-` near the tail and treats a 416 as a fatal read error.
+    // RFC 9110 says a start past the file is unsatisfiable, but Chromium seeks a
+    // VBR MP3 by estimated byte offset, overshoots EOF near the tail, and treats
+    // the 416 as a fatal demuxer error. Clamp both ends: the last byte is a valid
+    // answer and keeps the cue playing.
+    const start = Math.min(match ? parseInt(match[1], 10) : 0, Math.max(0, total - 1))
     const end = Math.min(match?.[2] ? parseInt(match[2], 10) : total - 1, total - 1)
 
-    // Validate range bounds
-    if (start >= total || start > end) {
+    if (total === 0 || start > end) {
       return new Response('Range Not Satisfiable', {
         status: 416,
         headers: { 'Content-Range': `bytes */${total}` },

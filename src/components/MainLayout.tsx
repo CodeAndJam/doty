@@ -27,7 +27,6 @@ export default function MainLayout() {
   const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
-  const [lastChoiceConfidence, setLastChoiceConfidence] = useState(0)
   const [probabilities, setProbabilities] = useState<Record<string, number>>({})
   const [candidates, setCandidates] = useState<string[]>([])
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -249,7 +248,6 @@ export default function MainLayout() {
     setRecommendations(ordered)
     // The headline confidence must describe the card that is actually first.
     setLastConfidence(top ? (result.probabilities[top] ?? result.confidence) : result.confidence)
-    setLastChoiceConfidence(result.choiceConfidence)
     setProbabilities(result.probabilities)
     setCandidates(result.candidates)
     setAppliedRanker(result.ranker)
@@ -927,7 +925,6 @@ export default function MainLayout() {
               sfxProbabilities={sfxProbabilities}
               sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
-              lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}
               candidates={candidates}
               sessionText={sessionText}
