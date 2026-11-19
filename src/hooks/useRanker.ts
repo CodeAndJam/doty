@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type RankerType, rankTracks } from '../lib/rankTracks'
-import type { TrackMeta } from '../types'
 
 export type { RankerType } from '../lib/rankTracks'
 
@@ -96,11 +95,7 @@ export function useRanker() {
       return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
     }
 
-    const [metadata, tagsMap, playFrequencies] = await Promise.all([
-      window.doty.getAllMetadata() as Promise<Record<string, TrackMeta>>,
-      window.doty.getTagsMap(),
-      window.doty.getPlayFrequencies('music'),
-    ])
+    const { metadata, tagsMap, playFrequencies } = await window.doty.recommendSignals()
 
     const ready = _currentStatus === 'ready'
     if (!ready) requestWarmup(setModelStatus)

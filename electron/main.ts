@@ -309,13 +309,19 @@ function finalizeWavRecording(): void {
   remoteWav = null
 }
 
+let lastScanInvalidate = 0
 function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
     (done, total, current) => {
-      // Each analysed file changes the duration the lane rule reads, so a library
-      // built mid-scan is stale before the scan even finishes.
-      library.invalidate()
+      // Each analysed file changes the duration the lane rule reads, but rebuilding
+      // the library for every file during a 5k-track scan is wasted work. Readers
+      // see a fresh library at most every two seconds; the completion callback
+      // always invalidates.
+      if (Date.now() - lastScanInvalidate > 2_000) {
+        lastScanInvalidate = Date.now()
+        library.invalidate()
+      }
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
@@ -768,7 +774,7 @@ handle(INVOKE.triggerScan, () => {
   return { ok: true }
 })
 
-handle(INVOKE.getAllMetadata, () => {
+function metadataWithLanes() {
   const all = getAllMetadata()
   const kinds = library.kinds()
   // One library read for both the lane map and the items that have no analysed
@@ -794,7 +800,17 @@ handle(INVOKE.getAllMetadata, () => {
     if (!withKind[key]) withKind[key] = { lane: item.lane } as Row
   }
   return withKind
-})
+}
+
+handle(INVOKE.getAllMetadata, () => metadataWithLanes())
+
+// One round trip for everything a ranking pass reads: three separate IPCs
+// serialised the same library three times per prompt.
+handle(INVOKE.recommendSignals, () => ({
+  metadata: metadataWithLanes(),
+  tagsMap: getTagsMap(),
+  playFrequencies: getPlayFrequencies('music'),
+}))
 
 // ── IPC: Tags ─────────────────────────────────────────────────────────────────
 
@@ -1122,15 +1138,22 @@ async function startSfxDurations(): Promise<void> {
   const missing = listSfx(folder).filter((item) => !cached[item.filename])
   if (missing.length === 0) return
   const { parseFile } = await import('music-metadata')
-  for (const item of missing) {
-    try {
-      const meta = await parseFile(item.filename, { duration: true })
-      const seconds = meta.format.duration
-      if (seconds) setSfxDuration(item.filename, seconds)
-    } catch {
-      /* unreadable: it keeps the folder's answer */
+  // A folder of hundreds of effects: four parsers at a time keeps the main
+  // process responsive without opening one fd per file.
+  let next = 0
+  const probe = async () => {
+    while (next < missing.length) {
+      const item = missing[next++]
+      try {
+        const meta = await parseFile(item.filename, { duration: true })
+        const seconds = meta.format.duration
+        if (seconds) setSfxDuration(item.filename, seconds)
+      } catch {
+        /* unreadable: it keeps the folder's answer */
+      }
     }
   }
+  await Promise.all(Array.from({ length: Math.min(4, missing.length) }, probe))
   // The lanes were resolved with the old numbers.
   library.invalidate()
   send(EVENTS.sfxChanged)

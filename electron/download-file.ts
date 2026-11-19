@@ -174,7 +174,11 @@ function transfer(
 
           res.on('data', (chunk: Buffer) => {
             downloaded += chunk.length
-            file?.write(chunk)
+            // A slow disk must slow the socket, not grow an unbounded buffer.
+            if (file && !file.write(chunk)) {
+              res.pause()
+              file.once('drain', () => res.resume())
+            }
             if (total > 0 && onProgress) {
               onProgress(
                 Math.round((downloaded / total) * 100),

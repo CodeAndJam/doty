@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('doty', {
   setMusicFolder: (path: string) => invoke(INVOKE.setMusicFolder, path),
   listMusic: () => invoke(INVOKE.listMusic),
   getAllMetadata: () => invoke(INVOKE.getAllMetadata),
+  recommendSignals: () => invoke(INVOKE.recommendSignals),
 
   // Model
   modelStatus: () => invoke(INVOKE.modelStatus),

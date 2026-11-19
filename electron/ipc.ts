@@ -21,6 +21,7 @@ export const INVOKE = {
   setMusicFolder: 'music:set-folder',
   listMusic: 'music:list',
   getAllMetadata: 'music:get-all-metadata',
+  recommendSignals: 'recommend:signals',
   // Model
   modelStatus: 'model:status',
   downloadModel: 'model:download',

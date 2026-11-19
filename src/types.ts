@@ -284,6 +284,12 @@ export interface DotyAPI {
   setMusicFolder: (path: string) => Promise<{ ok: boolean }>
   listMusic: () => Promise<string[]>
   getAllMetadata: () => Promise<Record<string, TrackMeta>>
+  /** Everything a ranking pass reads, in one round trip. */
+  recommendSignals: () => Promise<{
+    metadata: Record<string, TrackMeta>
+    tagsMap: Record<string, string[]>
+    playFrequencies: Record<string, number>
+  }>
 
   // Model
   modelStatus: () => Promise<{ ready: boolean; onboardingSkipped: boolean }>
