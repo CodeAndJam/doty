@@ -194,6 +194,16 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
 
+/** An empty string clears the folder; anything else must be a directory. */
+function isDirectoryOrEmpty(folderPath: string): boolean {
+  if (!folderPath) return true
+  try {
+    return fs.statSync(folderPath).isDirectory()
+  } catch {
+    return false
+  }
+}
+
 /** True when the path is inside the configured music or SFX folder. */
 function isAllowedMediaPath(filePath: string): boolean {
   const roots = [store.get('musicFolder', ''), store.get('sfxFolder', '')]
@@ -343,7 +353,13 @@ function registerAppProtocol() {
   const rendererRoot = join(__dirname, '../renderer')
   protocol.handle('app', (request) => {
     const url = new URL(request.url)
-    const filePath = join(rendererRoot, url.pathname === '/' ? 'index.html' : url.pathname)
+    const root = resolve(rendererRoot)
+    const filePath = resolve(root, `.${decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)}`)
+    // URL normalisation usually prevents this; a custom scheme is reachable from
+    // the renderer, so prove the file is inside the bundle.
+    if (filePath !== root && !filePath.startsWith(root + sep)) {
+      return new Response('Forbidden', { status: 403 })
+    }
     return net.fetch(pathToFileURL(filePath).toString())
   })
 }
@@ -703,6 +719,7 @@ handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
 })
 
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
+  if (!isDirectoryOrEmpty(folderPath)) return { ok: false, reason: 'not a folder' }
   store.set('musicFolder', folderPath)
   library.invalidate()
   launchScanner(folderPath)
@@ -950,12 +967,15 @@ const sessionStore = createSessionStore(getDb())
 // ── Lights: the DM's Home Assistant, on their LAN only (ADR-0004) ────────────
 // The token is encrypted at rest like Discord's; the keychain can refuse after a
 // signature change, and an unremembered token is one paste, not a broken app.
+let sessionLightToken = ''
+
 async function saveLightToken(token: string): Promise<void> {
   try {
     if (safeStorage.isEncryptionAvailable()) {
       store.set('lightToken', safeStorage.encryptString(token).toString('base64'))
     } else {
-      store.set('lightToken', token)
+      // No keychain: keep it for this run rather than on disk in clear text.
+      sessionLightToken = token
     }
   } catch (err) {
     console.error('[lights] token not saved:', err)
@@ -963,6 +983,7 @@ async function saveLightToken(token: string): Promise<void> {
 }
 
 function loadLightToken(): Promise<string> {
+  if (sessionLightToken) return Promise.resolve(sessionLightToken)
   const raw = (store.get('lightToken', '') as string) || ''
   if (!raw) return Promise.resolve('')
   if (safeStorage.isEncryptionAvailable()) {
@@ -984,7 +1005,10 @@ const lighting = createLighting({
   setSetting: (key, value) => store.set(key as 'lightUrl', value as string),
   saveToken: saveLightToken,
   loadToken: loadLightToken,
-  clearToken: () => store.set('lightToken', ''),
+  clearToken: () => {
+    sessionLightToken = ''
+    store.set('lightToken', '')
+  },
   connect: (url, token) => createHaClient({ url, token }),
   sessionStore,
   now: () => Date.now(),
@@ -1480,6 +1504,7 @@ handle(INVOKE.pickSfxFolder, async () => {
 })
 
 handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
+  if (!isDirectoryOrEmpty(folderPath)) return { ok: false, reason: 'not a folder' }
   store.set('sfxFolder', folderPath)
   library.invalidate()
   send(EVENTS.sfxChanged)

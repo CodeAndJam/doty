@@ -121,14 +121,18 @@ export function getState(): DiscordState {
 /** A Discord bot token: three dot-separated segments. */
 const BOT_TOKEN = /^[\w-]+\.[\w-]+\.[\w-]+$/
 
+/** Kept in memory when the keychain is unavailable: never written cleartext. */
+let sessionToken = ''
+
 async function saveToken(token: string): Promise<void> {
   try {
     if (await safeStorage.isAsyncEncryptionAvailable()) {
       const encrypted = await safeStorage.encryptStringAsync(token)
       store.set('discordToken', encrypted.toString('base64'))
     } else {
-      // Fallback: store as-is (less secure, but functional)
-      store.set('discordToken', token)
+      // The keychain is the only safe place for a secret. Without it the token
+      // lasts for this run instead of living in config.json.
+      sessionToken = token
     }
   } catch (err) {
     // The keychain refuses access when the app's signature changed (a reinstall
@@ -138,6 +142,7 @@ async function saveToken(token: string): Promise<void> {
 }
 
 export async function loadToken(): Promise<string> {
+  if (sessionToken) return sessionToken
   const raw = store.get('discordToken', '') as string
   if (!raw) return ''
   if (await safeStorage.isAsyncEncryptionAvailable()) {
@@ -155,6 +160,7 @@ export async function loadToken(): Promise<string> {
 }
 
 export function clearToken(): void {
+  sessionToken = ''
   store.set('discordToken', '')
 }
 

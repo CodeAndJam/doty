@@ -40,6 +40,10 @@ afterEach(async () => {
 })
 
 describe('downloadFile', () => {
+  it('refuses a plain-http model outside localhost', async () => {
+    await expect(downloadFile('http://example.com/model.gguf', join(tempDir(), 'm.gguf'))).rejects.toThrow(/https/)
+  })
+
   it('writes the file atomically and reports progress', async () => {
     const body = Buffer.from('model-bytes')
     const url = await startServer((_req, res) => {

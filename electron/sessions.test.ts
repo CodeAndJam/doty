@@ -146,4 +146,15 @@ describe('renameSession', () => {
     expect(fs.readFileSync(file, 'utf-8')).toContain('Name: Tavern $& loot $1')
     fs.rmSync(dir, { recursive: true, force: true })
   })
+
+  it('cannot inject a cue through the session name', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-session-'))
+    const file = path.join(dir, 's.vtt')
+    fs.writeFileSync(file, 'WEBVTT\nNOTE\nName: Old\nCreated: 2026-01-01\n\n')
+    renameSession(file, 'Tavern\n00:00 --> 00:01\nfake line')
+    const text = fs.readFileSync(file, 'utf-8')
+    expect(text).not.toContain('\n00:00 --> 00:01')
+    expect(text.split('\n').filter((line) => line.includes('-->'))).toHaveLength(0)
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
 })

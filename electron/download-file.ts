@@ -4,6 +4,17 @@ import https from 'node:https'
 import { join } from 'node:path'
 import { withDownloadLock } from './download-lock'
 
+/** Plain http is only for a local test server; a model must not travel cleartext. */
+function allowedUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    if (url.protocol === 'https:') return true
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
+
 export interface DownloadOptions {
   /** Abort the transfer. The `.part` file is kept so the next attempt can resume. */
   signal?: AbortSignal
@@ -102,6 +113,7 @@ function transfer(
 
     const get = (u: string) => {
       if (settled) return
+      if (!allowedUrl(u)) return fail(new Error(`Refusing ${u}: downloads must be https`), false)
       if (redirectCount++ > 10) return fail(new Error('Too many redirects'), false)
       const mod = u.startsWith('https') ? https : http
       const headers = existingBytes > 0 ? { Range: `bytes=${existingBytes}-` } : undefined

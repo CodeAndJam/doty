@@ -152,7 +152,11 @@ export function renameSession(file: string, newName: string): void {
   if (!fs.existsSync(file)) return
   const content = fs.readFileSync(file, 'utf-8')
   // A function replacement: a typed `$&` is part of the name, not a pattern.
-  const updated = content.replace(/^(NOTE\n)Name: .*/m, (_match, note: string) => `${note}Name: ${newName}`)
+  const safe = newName
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/-->/g, '->')
+    .trim()
+  const updated = content.replace(/^(NOTE\n)Name: .*/m, (_match, note: string) => `${note}Name: ${safe}`)
   fs.writeFileSync(file, updated, 'utf-8')
 }
 
