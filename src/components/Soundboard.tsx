@@ -10,6 +10,7 @@ import { formatTime } from '../lib/formatTime'
 import { indexChipText } from '../lib/indexStatus'
 import { skipTarget } from '../lib/queueSkip'
 import { describeTrack } from '../lib/rankTracks'
+import { trackEndPlan } from '../lib/trackEnd'
 import { trackKindOf } from '../lib/trackKind'
 import type { DecisionLogEntry, IndexProgress, SessionReport, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
@@ -326,13 +327,17 @@ export default function Soundboard({
   // Keep the ref in sync with current queue/loop/playback state
   useEffect(() => {
     trackEndRef.current = () => {
-      const tracks = queue.tracks
-      if (tracks.length === 0) {
+      const plan = trackEndPlan({
+        tracks: queue.tracks,
+        currentIndex: queue.currentIndex,
+        playing,
+        loopMode,
+      })
+      if (!plan) {
         stopPlayback()
         return
       }
 
-      const isLast = queue.currentIndex >= tracks.length - 1
       const start = (track: string) => {
         const queued = lastQueued.current
         if (queued && queued.track === track) {
@@ -356,27 +361,16 @@ export default function Soundboard({
         autopilot.notePlayed(track)
       }
 
-      // A queued next cue wins even in single mode. "Repeat this one" only means
-      // there is nothing lined up after it, not that the queue is ignored.
-      if (!isLast) {
-        const track = queue.next()
-        if (track) start(track)
-        else stopPlayback()
+      // Repeating a cue is not a new pick: no play-frequency bump and no decision.
+      if (plan.index === null) {
+        playTrack(plan.track, true)
         return
       }
-      if (loopMode === 'queue') {
-        const track = queue.next(true)
-        if (track) start(track)
-        else stopPlayback()
-        return
-      }
-      if (loopMode === 'single' && queue.currentTrack) {
-        playTrack(queue.currentTrack, true)
-        return
-      }
-      stopPlayback()
+
+      queue.setCurrentIndex(plan.index)
+      start(plan.track)
     }
-  }, [queue, loopMode, playTrack, stopPlayback, refreshReport])
+  }, [queue, loopMode, playing, playTrack, stopPlayback, refreshReport])
 
   // ── Data loading ─────────────────────────────────────────────────────
 

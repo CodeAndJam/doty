@@ -200,8 +200,8 @@ test.describe('DM input box', () => {
       // Type into the input
       await input.fill('tavern')
 
-      // Wait for debounce to fire (500ms) + processing
-      await page.waitForTimeout(2000)
+      // Wait for the idle commit (900ms) + processing
+      await page.waitForTimeout(2500)
 
       // Verify the recommendation pipeline was triggered by checking console logs.
       // MainLayout.handleDmChange logs: '[recommend] handleDmChange: ...'

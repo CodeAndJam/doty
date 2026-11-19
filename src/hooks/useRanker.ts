@@ -54,7 +54,6 @@ function requestWarmup(setModelStatus: (s: Status) => void): void {
 
 export function useRanker() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
-  const [lastRanker, setLastRanker] = useState<RankerType>(null)
 
   useEffect(() => {
     const unsub = window.doty.onRankerStatus((status: string) => {
@@ -114,9 +113,8 @@ export function useRanker() {
       count,
     )
 
-    setLastRanker(result.ranker)
     return result
   }, [])
 
-  return { recommend, modelStatus, lastRanker }
+  return { recommend, modelStatus }
 }

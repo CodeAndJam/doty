@@ -122,10 +122,12 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
   if (request.rangeHeader) {
     const match = /bytes=(\d+)-(\d*)/.exec(request.rangeHeader)
     const start = match ? parseInt(match[1], 10) : 0
-    const end = match?.[2] ? parseInt(match[2], 10) : total - 1
+    // RFC 9110: an end past the file is clamped, not rejected. Chromium asks for
+    // `bytes=N-` near the tail and treats a 416 as a fatal read error.
+    const end = Math.min(match?.[2] ? parseInt(match[2], 10) : total - 1, total - 1)
 
     // Validate range bounds
-    if (start >= total || end >= total || start > end) {
+    if (start >= total || start > end) {
       return new Response('Range Not Satisfiable', {
         status: 416,
         headers: { 'Content-Range': `bytes */${total}` },

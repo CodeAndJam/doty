@@ -108,6 +108,25 @@ describe('music-protocol', () => {
       expect(resp.headers.get('Content-Range')).toBe('bytes 0-999/1000')
     })
 
+    it('clamps a Range end past the file instead of failing the read', () => {
+      // Near-tail seek: Chromium treats a 416 as a fatal demuxer error.
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=990-1200' },
+        { musicFolder: tmpDir },
+      )
+      expect(resp.status).toBe(206)
+      expect(resp.headers.get('Content-Length')).toBe('10')
+      expect(resp.headers.get('Content-Range')).toBe('bytes 990-999/1000')
+    })
+
+    it('still rejects a Range that starts at or past the file', () => {
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=1000-' },
+        { musicFolder: tmpDir },
+      )
+      expect(resp.status).toBe(416)
+    })
+
     it('returns 403 for a path outside the configured folders', () => {
       const resp = handleMusicRequest(
         { url: 'music://play/../../etc/passwd', rangeHeader: null },
