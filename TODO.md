@@ -201,6 +201,16 @@
       `nomic-embed-text-v2-moe.Q8_0.gguf` (~487 MB) stay in `~/.doty/models/`
       after the decision-model swap. Harmless; delete by exact filename later if
       anyone complains.
+- [ ] Footprint: `pnpm footprint` measures phys_footprint, CPU, machine GPU and
+      swap per stage (cold / idle / decide / search), gates idle memory, CPU and
+      decision latency against `test-fixtures/footprint/baseline.json` per Mac,
+      and writes `test-results/footprint.{json,md}`. First M4 Pro run: ~7.6 GB
+      idle and 4.4 s per decision, dominated by the in-process workers; the
+      2 s recommendation cadence means latency saturates before memory does.
+      Still open: re-record the baseline on the quiet target M1 (the committed
+      M4 Pro entry is provisional), add a Discord-connected stage (needs a token
+      and a voice channel), a co-tenancy stage with OBS and a browser, and a
+      clean way to run the gate without GitHub's 7 GB macOS runners.
 
 ## Music Player — Implementation Order
 
