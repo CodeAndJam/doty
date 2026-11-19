@@ -38,6 +38,18 @@ describe('withDownloadLock', () => {
     expect(fs.existsSync(`${dest}.lock`)).toBe(false)
   })
 
+  it('creates the destination folder on a fresh install', async () => {
+    const dest = join(tempDir(), 'missing', 'models', 'model.gguf')
+    let ran = false
+
+    await withDownloadLock(dest, undefined, async () => {
+      ran = true
+    })
+
+    expect(ran).toBe(true)
+    expect(fs.existsSync(join(dest, '..'))).toBe(true)
+  })
+
   it('waits for the other process and skips a file it finished', async () => {
     const dir = tempDir()
     const dest = join(dir, 'model.gguf')

@@ -52,9 +52,13 @@ export default function MainLayout() {
   )
   const [dmPrompt, setDmPrompt] = useState('')
   const [rankerCached, setRankerCached] = useState<boolean | null>(null)
+  const [rankerDownloading, setRankerDownloading] = useState(false)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
+  /** The last SFX query and when it ran: the same text is not re-ranked on a loop. */
+  const sfxLastText = useRef('')
+  const sfxLastAt = useRef(0)
   const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
@@ -191,8 +195,12 @@ export default function MainLayout() {
 
   // Check if the ranker model is already on disk on mount
   useEffect(() => {
-    window.doty.rankerStatus().then(({ cached }) => setRankerCached(cached))
+    window.doty.rankerStatus().then(({ cached, downloading }) => {
+      setRankerCached(cached)
+      setRankerDownloading(downloading)
+    })
     const unsubRankerDownload = window.doty.onRankerDownloadProgress((p) => {
+      setRankerDownloading(p.status === 'downloading')
       if (p.status === 'done') setRankerCached(true)
     })
     return unsubRankerDownload
@@ -233,6 +241,13 @@ export default function MainLayout() {
   }, [])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
+    // Every recommendation re-sends the same DM text. Re-ranking it within a few
+    // seconds returns the same answer and adds work to the worker queue that the
+    // director's music pass is waiting in.
+    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
+    if (text === sfxLastText.current && Date.now() - sfxLastAt.current < 5_000) return
+    sfxLastText.current = text
+    sfxLastAt.current = Date.now()
     const sfxList = await window.doty.getSfxList()
     console.log('[sfx-recommend] sfxList:', sfxList.length, 'items')
     if (sfxList.length === 0) {
@@ -241,7 +256,6 @@ export default function MainLayout() {
     }
     const tagsMap = await window.doty.getTagsMap()
     const playFrequencies = await window.doty.getPlayFrequencies('sfx')
-    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
     console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
     const count = sfxRecommendCountRef.current
     const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
@@ -272,7 +286,7 @@ export default function MainLayout() {
       return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
     })
     if (descriptions.length === 0) return
-    window.doty
+    await window.doty
       .sfxRank(text, descriptions)
       .then((probabilities) => {
         // The column shows the model's ranking — nothing fires from it, so a
@@ -608,9 +622,19 @@ export default function MainLayout() {
                 fontSize: '11px',
                 fontFamily: "'IBM Plex Mono', monospace",
               }}
-              title="The ranker model is not installed. Recommendations use heuristics until it is."
+              title={
+                rankerDownloading
+                  ? 'The decision model is downloading. Recommendations use keywords until it lands.'
+                  : modelStatus === 'error'
+                    ? 'The decision model failed to load. Recommendations use keywords until it is installed in Settings.'
+                    : 'The decision model is not installed. Recommendations use heuristics until it is.'
+              }
             >
-              Ranker warming up
+              {rankerDownloading
+                ? 'Ranker downloading · keywords'
+                : modelStatus === 'error'
+                  ? 'Ranker unavailable · keywords'
+                  : 'Ranker warming up'}
             </span>
           )}
           {/* The master switch. Off until the DM asks for it: suggestions are
@@ -659,9 +683,9 @@ export default function MainLayout() {
           </button>
         </div>
 
-        {/* Title */}
+        {/* Title — the narrow header has no room for it between the controls */}
         <h1
-          className="text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2"
+          className={`${showRankerMissing || sttDownload || sttDownloadError ? 'hidden xl:block' : 'hidden lg:block'} text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2`}
           style={{ fontFamily: "'Cinzel', serif", color: '#d9a441', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
         >
           Doty
@@ -817,6 +841,7 @@ export default function MainLayout() {
               speakerDeviceId={speakerDeviceId}
               settingsOpen={showSettings}
               sessionStartTime={sessionStartTime}
+              rankerDownloading={rankerDownloading}
               autopilotEnabled={autopilotEnabled}
               onNoFolder={() => setShowSettings(true)}
             />

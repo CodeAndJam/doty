@@ -128,6 +128,7 @@ Running the app yourself:
   Playwright handle; a pattern kill ends the DM's session too.
 - **Verify a UI slice with `pnpm test:e2e`.** Specs run one at a time (each
   launches its own app); `DOTY_E2E_HIDE_WINDOW=1` runs them without a window.
+  Playback is muted by default so the suite is silent; `DOTY_E2E_MUTE=0` hears it.
 - **Check the lights against a real Home Assistant** with
   `HA_LIVE=1 HA_URL=… HA_TOKEN=… npx vitest run electron/home-assistant-live.test.ts`.
   It picks the Area, writes one light and puts it back; `pnpm check` never runs it.

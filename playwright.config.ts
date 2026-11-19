@@ -1,5 +1,9 @@
 import { defineConfig } from '@playwright/test'
 
+// Playback is real in the app, so the suite would play music out of the machine's
+// speakers. Mute the window for every run; `DOTY_E2E_MUTE=0` opts back in.
+process.env.DOTY_E2E_MUTE ??= '1'
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 300_000, // 5 min — first run downloads the reranker model (~80 MB)

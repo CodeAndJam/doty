@@ -50,6 +50,7 @@ function renderBoard() {
       musicFolder="/music"
       settingsOpen={false}
       sessionStartTime={null}
+      rankerDownloading={false}
       autopilotEnabled={false}
       onNoFolder={() => {}}
     />,

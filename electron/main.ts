@@ -373,6 +373,9 @@ function createWindow() {
     },
   })
 
+  // E2E drives playback on purpose; nobody at the keyboard needs to hear it.
+  if (process.env.DOTY_E2E_MUTE === '1') mainWindow.webContents.setAudioMuted(true)
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {

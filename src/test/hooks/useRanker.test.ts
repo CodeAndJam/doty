@@ -19,6 +19,7 @@ describe('useRanker warmup', () => {
       configurable: true,
       value: {
         onRankerStatus: vi.fn(() => unsub),
+        onRankerDownloadProgress: vi.fn(() => unsub),
         rankerStatus,
         rankerDecide,
       },

@@ -94,12 +94,9 @@ export function useAudioPlayer({
     }
   }, [effectiveVolume])
 
-  // Apply loop changes to current audio element
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.loop = loopMode === 'single'
-    }
-  }, [loopMode])
+  // Loop is decided when a track ends, not by the audio element: a queued next
+  // cue must be allowed to start even when the mode is "repeat this one".
+  // `audio.loop` would swallow `ended` and make every queue inert.
 
   // Update audio output device when speaker selection changes
   useEffect(() => {
@@ -208,7 +205,6 @@ export function useAudioPlayer({
       // Create new audio element and fade in
       const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
       audio.volume = 0 // start silent for fade-in
-      audio.loop = loopMode === 'single'
 
       if (speakerDeviceId) {
         ;(audio as any).setSinkId(speakerDeviceId).catch((e: unknown) => {
@@ -227,6 +223,7 @@ export function useAudioPlayer({
         }
       }
       audio.onerror = () => {
+        console.error(`[player] could not play ${filename}:`, audio.error?.message ?? audio.error?.code ?? 'unknown')
         setPlaying(null)
         setIsAudioPlaying(false)
         setProgress(0)

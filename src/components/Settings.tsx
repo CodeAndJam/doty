@@ -243,6 +243,9 @@ export default function Settings({
     window.doty.rankerStatus().then((s) => {
       setRankerInstalled(s.cached)
       setRankerLanguageCovered(s.languageCovered)
+      // A download may already be running from launch; the label must say so
+      // rather than "failed" until the first progress event arrives.
+      if (s.downloading) setRankerProgress((prev) => prev ?? 0)
     })
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
@@ -415,13 +418,27 @@ export default function Settings({
       ? [sttLanguage, ...activeSttLanguages]
       : activeSttLanguages
 
-  const rankerDotColor = rankerIsReady ? '#6dbf95' : rankerIsError ? '#ef4444' : '#d9a441'
+  const rankerDotColor = rankerIsReady
+    ? '#6dbf95'
+    : rankerProgress !== null
+      ? '#d9a441'
+      : rankerIsError
+        ? '#ef4444'
+        : '#d9a441'
   const rankerDotShadow = rankerIsReady
     ? '0 0 6px rgba(74,138,106,0.7)'
-    : rankerIsError
-      ? '0 0 6px rgba(239,68,68,0.7)'
-      : '0 0 6px rgba(200,146,42,0.7)'
-  const rankerLabel = rankerIsReady ? 'Attuned' : rankerIsError ? 'Failed — using heuristic fallback' : 'Summoning...'
+    : rankerProgress !== null
+      ? '0 0 6px rgba(200,146,42,0.7)'
+      : rankerIsError
+        ? '0 0 6px rgba(239,68,68,0.7)'
+        : '0 0 6px rgba(200,146,42,0.7)'
+  const rankerLabel = rankerIsReady
+    ? 'Attuned'
+    : rankerProgress !== null
+      ? `Downloading${rankerProgress > 0 ? ` ${rankerProgress}%` : '…'}`
+      : rankerIsError
+        ? 'Failed — using heuristic fallback'
+        : 'Summoning...'
 
   const inputStyle: React.CSSProperties = {
     width: '100%',

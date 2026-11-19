@@ -23,10 +23,27 @@ function requestWarmup(setModelStatus: (s: Status) => void): void {
   if (_warmupRequested) return
   _warmupRequested = true
   window.doty
-    .rankerDecide('', [])
-    .then(() => {
-      _currentStatus = 'ready'
-      setModelStatus('ready')
+    .rankerStatus()
+    .then(({ cached }) => {
+      if (!cached) {
+        // Deciding without the graph can only throw ENOENT and log an unhandled
+        // handler error. Stay on keywords until the download finishes.
+        _warmupRequested = false
+        _currentStatus = 'error'
+        setModelStatus('error')
+        return
+      }
+      return window.doty
+        .rankerDecide('', [])
+        .then(() => {
+          _currentStatus = 'ready'
+          setModelStatus('ready')
+        })
+        .catch(() => {
+          _warmupRequested = false
+          _currentStatus = 'error'
+          setModelStatus('error')
+        })
     })
     .catch(() => {
       _warmupRequested = false
@@ -50,6 +67,15 @@ export function useRanker() {
     // Warm the model during idle time so startup stays snappy. Recommendations
     // use the heuristic path until it is ready.
     const warm = () => requestWarmup(setModelStatus)
+
+    // The download lands long after launch; warm the graph then instead of
+    // waiting for the next recommendation to notice.
+    const unsubDownload = window.doty.onRankerDownloadProgress((p) => {
+      if (p.status !== 'done') return
+      _warmupRequested = false
+      warm()
+    })
+
     let idleId: number | undefined
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     if (typeof window.requestIdleCallback === 'function') {
@@ -60,6 +86,7 @@ export function useRanker() {
 
     return () => {
       unsub()
+      unsubDownload()
       if (idleId !== undefined) window.cancelIdleCallback(idleId)
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }

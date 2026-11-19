@@ -53,8 +53,10 @@ export function createSessionPass(deps: PassDeps): SessionPass {
   let liveScene: Scene | null = null
   let lastChangeAt = 0
   let lastLoggedAt = 0
-  /** One pass at a time: two in flight would race the scene and the clock. */
-  let pipeline: Promise<unknown> = Promise.resolve()
+  /** One pass at a time; later requests replace each other rather than queueing. */
+  let running = false
+  let queued: PassRequest | null = null
+  let waiting: Array<{ resolve: (result: PassResult) => void; reject: (reason: unknown) => void }> = []
 
   async function pass(request: PassRequest): Promise<PassResult> {
     const { tracks, moods } = await deps.evaluate(request.state, request.candidates)
@@ -151,11 +153,39 @@ export function createSessionPass(deps: PassDeps): SessionPass {
     }
   }
 
+  /**
+   * A transcript window updates every 1.5 s; the decision model may take longer.
+   * Run one pass at a time, and when requests arrive meanwhile keep only the
+   * newest: a stale state would produce a decision the table has already moved
+   * past, and a backlog makes every answer arrive late.
+   */
+  async function drain(): Promise<void> {
+    running = true
+    try {
+      while (queued) {
+        const request = queued
+        queued = null
+        const batch = waiting
+        waiting = []
+        try {
+          const result = await pass(request)
+          for (const waiter of batch) waiter.resolve(result)
+        } catch (reason) {
+          for (const waiter of batch) waiter.reject(reason)
+        }
+      }
+    } finally {
+      running = false
+    }
+  }
+
   return {
     run(request) {
-      const run = pipeline.then(() => pass(request))
-      pipeline = run.catch(() => {})
-      return run
+      queued = request
+      return new Promise<PassResult>((resolve, reject) => {
+        waiting.push({ resolve, reject })
+        if (!running) void drain()
+      })
     },
   }
 }

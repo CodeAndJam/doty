@@ -9,6 +9,7 @@
  * The lock carries the owner's pid so a crashed download does not block forever.
  */
 import fs from 'node:fs'
+import { dirname } from 'node:path'
 
 const POLL_MS = 100
 /** A lock with no readable pid is only trusted this long: a crash between create and write leaves one. */
@@ -51,6 +52,9 @@ export async function withDownloadLock(
   write: () => Promise<void>,
 ): Promise<void> {
   const lockPath = `${destPath}.lock`
+  // A fresh install has no ~/.doty/models yet; the lock creates it before any
+  // transfer would have.
+  fs.mkdirSync(dirname(lockPath), { recursive: true })
   for (;;) {
     if (signal?.aborted) throw new Error('Download cancelled')
     try {
