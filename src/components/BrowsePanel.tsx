@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { playablePath, useLibrarySearch } from '../hooks/useLibrarySearch'
 import { searchModeLabel } from '../lib/searchLabel'
 import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
@@ -22,6 +23,8 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
   const [search, setSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(rootRef)
 
   // The panel covers the shelf: focus belongs inside it, and leaving the panel
   // returns the DM to the control that opened it.
@@ -91,6 +94,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-modal="true"
       aria-label="Browse tracks"
@@ -219,6 +223,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
               <button
                 type="button"
                 onClick={() => onPlay(f)}
+                aria-label={`${isPlaying ? 'Pause' : 'Play'} ${trackName(f)}`}
                 className="w-5 h-5 flex items-center justify-center shrink-0"
                 style={{
                   border: `1px solid ${isPlaying ? 'rgba(200,146,42,0.4)' : '#3d2f1c'}`,

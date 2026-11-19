@@ -319,7 +319,7 @@ export default function RecommendCard({
           <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
             <button
               type="button"
-              className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+              className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               title="Details"
               style={{ color: expanded ? tone.accent : undefined }}
             >
@@ -333,7 +333,7 @@ export default function RecommendCard({
           <button
             type="button"
             onClick={() => setEditingTags((e) => !e)}
-            className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+            className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
             title="Edit tags"
             style={{ color: editingTags ? tone.accent : undefined, fontSize: '14px' }}
           >
@@ -344,7 +344,7 @@ export default function RecommendCard({
         <button
           type="button"
           onClick={onPin}
-          className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+          className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           title={isPinned ? 'Unpin' : 'Pin'}
           style={{ color: isPinned ? tone.accent : undefined }}
         >

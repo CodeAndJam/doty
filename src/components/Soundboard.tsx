@@ -909,7 +909,7 @@ export default function Soundboard({
               onClick={() =>
                 ch?.playing ? sfxPlayer.toggleLoop(ch.id) : handlePlaySfx(sfx.id, sfx.label, sfx.filename, true)
               }
-              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               title={ch?.looping ? 'Stop looping' : 'Loop'}
               style={{ color: ch?.looping ? 'var(--rune)' : 'var(--ink-muted)' }}
             >
@@ -986,7 +986,7 @@ export default function Soundboard({
                   })
                 }}
                 title={isSfxFile ? 'Move to the music library' : 'Move to the effects library'}
-                className="px-1 shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                className="px-1 shrink-0 opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                 style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--accent-dim)' }}
               >
                 {isSfxFile ? '→ music' : '→ fx'}

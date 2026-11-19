@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useCallback, useEffect, useRef } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { CloseIcon, DragHandleIcon, PauseIcon, PlayIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
@@ -157,6 +158,8 @@ export default function QueuePanel({
   // even if the same file appears multiple times in the queue
   const itemIds = tracks.map((f, i) => `${i}:${f}`)
 
+  useFocusTrap(rootRef)
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event
@@ -229,7 +232,12 @@ export default function QueuePanel({
               Clear
             </button>
           )}
-          <button type="button" onClick={onClose} className="p-1 hover:opacity-80 transition-opacity">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close the queue"
+            className="p-1 hover:opacity-80 transition-opacity"
+          >
             <CloseIcon />
           </button>
         </div>

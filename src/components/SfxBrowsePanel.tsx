@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { useLibrarySearch } from '../hooks/useLibrarySearch'
 import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
 import { searchModeLabel } from '../lib/searchLabel'
@@ -44,6 +45,8 @@ export default function SfxBrowsePanel({
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
   const searchRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(rootRef)
 
   // The panel covers the shelf: focus belongs inside it, and closing returns the
   // DM to the control that opened it.
@@ -236,6 +239,7 @@ export default function SfxBrowsePanel({
 
   return (
     <div
+      ref={rootRef}
       role="dialog"
       aria-modal="true"
       aria-label="Browse effects"

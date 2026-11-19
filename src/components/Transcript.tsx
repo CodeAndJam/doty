@@ -294,6 +294,10 @@ export default function Transcript({
                 setShowDropdown((open) => !open)
               }}
               onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setShowDropdown(false)
+                  return
+                }
                 // Mouse users toggle on mousedown; the button's own click is a
                 // no-op after a rename, so keyboard gets the toggle here.
                 if (e.key !== 'Enter' && e.key !== ' ') return

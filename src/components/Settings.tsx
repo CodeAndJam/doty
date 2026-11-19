@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress } from '../types'
@@ -146,32 +147,7 @@ export default function Settings({
     }
   }, [])
 
-  // Keep Tab inside the dialog: the backdrop covers the app but the app is still
-  // in the tab order.
-  useEffect(() => {
-    const root = dialogRef.current
-    if (!root) return
-    function onKey(e: KeyboardEvent) {
-      if (e.key !== 'Tab' || !root) return
-      const focusable = Array.from(
-        root.querySelectorAll<HTMLElement>(
-          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        ),
-      ).filter((el) => el.getClientRects().length > 0)
-      if (focusable.length === 0) return
-      const first = focusable[0]
-      const last = focusable[focusable.length - 1]
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault()
-        last.focus()
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault()
-        first.focus()
-      }
-    }
-    root.addEventListener('keydown', onKey)
-    return () => root.removeEventListener('keydown', onKey)
-  }, [])
+  useFocusTrap(dialogRef)
 
   /** One rail: a column on a wide window, a wrapped tab row on a narrow one. */
   const settingsNav = () => (
@@ -558,6 +534,7 @@ export default function Settings({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close settings"
               style={{
                 color: '#9d8b66',
                 transition: 'color 0.2s',
@@ -641,6 +618,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="Crossfade duration"
                   min={0}
                   max={5000}
                   step={100}
@@ -835,6 +813,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="SFX suggestions"
                   min={1}
                   max={10}
                   value={sfxRecommendCount}
@@ -1078,6 +1057,7 @@ export default function Settings({
                 >
                   <span style={{ color: '#a5813f' }}>Language</span>
                   <select
+                    aria-label="Speech language"
                     value={sttLanguage}
                     onChange={async (e) => {
                       const language = e.target.value
@@ -1253,6 +1233,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="Recommendations per query"
                   min={1}
                   max={20}
                   value={recommendCount}
@@ -1398,6 +1379,7 @@ export default function Settings({
                     </div>
                     <input
                       type="range"
+                      aria-label="Autopilot confidence threshold"
                       min={80}
                       max={99}
                       value={Math.round(autopilotThreshold * 100)}
@@ -1423,6 +1405,7 @@ export default function Settings({
                     </div>
                     <input
                       type="range"
+                      aria-label="Autopilot crossfade duration"
                       min={1}
                       max={10}
                       value={autopilotCrossfade}

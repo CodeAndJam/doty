@@ -33,6 +33,8 @@ export default function VolumePopover({
   const panelRef = useRef<HTMLDivElement>(null)
   const sliderRef = useRef<HTMLInputElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  /** Escape dismissed the panel; do not pull focus back into it until blur. */
+  const dismissedRef = useRef(false)
 
   useEffect(() => {
     if (!show || !btnRef.current) return
@@ -44,7 +46,7 @@ export default function VolumePopover({
   // leave it behind. If the keyboard opened it, put focus on the slider; Escape
   // returns it to the trigger.
   useEffect(() => {
-    if (!show || !pos) return
+    if (!show || !pos || dismissedRef.current) return
     if (btnRef.current?.matches(':focus-visible')) sliderRef.current?.focus()
   }, [show, pos])
 
@@ -57,7 +59,10 @@ export default function VolumePopover({
       onFocus={() => setShow(true)}
       onBlur={(e) => {
         const next = e.relatedTarget as Node | null
-        if (!e.currentTarget.contains(next) && !panelRef.current?.contains(next)) setShow(false)
+        if (!e.currentTarget.contains(next) && !panelRef.current?.contains(next)) {
+          dismissedRef.current = false
+          setShow(false)
+        }
       }}
     >
       <button
@@ -79,6 +84,7 @@ export default function VolumePopover({
             onKeyDown={(e) => {
               if (e.key !== 'Escape') return
               e.stopPropagation()
+              dismissedRef.current = true
               setShow(false)
               btnRef.current?.focus()
             }}
