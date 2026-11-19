@@ -89,6 +89,11 @@ export interface MusicProtocolOptions {
 export function handleMusicRequest(request: MusicRequestInfo, options: MusicProtocolOptions): Response {
   const { musicFolder, sfxFolder } = options
   const filename = parseMusicUrl(request.url)
+  // Turn on when debugging playback: a seek that fails is a range request and
+  // nothing else tells you which one the demuxer asked for.
+  if (process.env.DOTY_DEBUG_PROTOCOL === '1') {
+    console.log('[music]', request.rangeHeader ?? 'full', filename)
+  }
 
   // Support absolute paths (for SFX) or relative paths (for music).
   // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path

@@ -129,6 +129,9 @@ Running the app yourself:
 - **Verify a UI slice with `pnpm test:e2e`.** Specs run one at a time (each
   launches its own app); `DOTY_E2E_HIDE_WINDOW=1` runs them without a window.
   Playback is muted by default so the suite is silent; `DOTY_E2E_MUTE=0` hears it.
+  Copy the temp-profile harness in `e2e/library-search.spec.ts` for a new spec;
+  one that touches the real profile must restore the folder/model in `finally`
+  (`scripts/forbidden-apis.mjs` refuses a spec that does not).
 - **Check the lights against a real Home Assistant** with
   `HA_LIVE=1 HA_URL=… HA_TOKEN=… npx vitest run electron/home-assistant-live.test.ts`.
   It picks the Area, writes one light and puts it back; `pnpm check` never runs it.

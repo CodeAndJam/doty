@@ -91,10 +91,10 @@ describe('QueuePanel', () => {
       const svg = b.querySelector('svg')
       return svg && b.classList.contains('w-6')
     })
-    if (playButtons.length >= 2) {
-      fireEvent.click(playButtons[1])
-      expect(onPlay).toHaveBeenCalledWith(1)
-    }
+    // A selector that finds nothing must fail, not silently pass.
+    expect(playButtons).toHaveLength(defaultProps.tracks.length)
+    fireEvent.click(playButtons[1])
+    expect(onPlay).toHaveBeenCalledWith(1)
   })
 
   it('calls onRemove with correct index when remove button is clicked', () => {

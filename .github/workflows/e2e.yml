@@ -1,0 +1,69 @@
+name: E2E (UI slices)
+
+# The model-backed specs (seek, dm-input, recommendation, transcribe-cpp) need a
+# DM's real library and models; they stay on the laptop. These slices run on a
+# clean macOS machine with a temp profile, in a window that is never shown and
+# never heard.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 7 * * *' # nightly, an hour after the STT gate
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Setup Python 3.10 (native addon rebuild)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        env:
+          npm_config_python: python3
+
+      - name: Build
+        run: pnpm build
+
+      - name: Run isolated specs
+        run: >
+          npx playwright test
+          e2e/smoke.spec.ts
+          e2e/library-search.spec.ts
+          e2e/sfx-shelf.spec.ts
+          e2e/lane-badge.spec.ts
+          e2e/settings.spec.ts
+          e2e/library-watch.spec.ts
+          e2e/autopilot-toggle.spec.ts
+          e2e/session-naming.spec.ts
+          --reporter=line
+        env:
+          DOTY_E2E_HIDE_WINDOW: '1'
+          DOTY_E2E_MUTE: '1'
+
+      - name: Upload failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results
+          path: test-results/
+          retention-days: 7
