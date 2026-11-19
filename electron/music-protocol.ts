@@ -113,7 +113,21 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
     return new Response('Not found', { status: 404 })
   }
 
-  const stat = fs.statSync(resolved)
+  // A symlink inside the library can point anywhere: check where the bytes really
+  // live, not just the lexical path.
+  const real = fs.realpathSync(resolved)
+  const realRoots = roots.map((root) => {
+    try {
+      return fs.realpathSync(root)
+    } catch {
+      return root
+    }
+  })
+  if (!realRoots.some((root) => real === root || real.startsWith(root + sep))) {
+    return new Response('Forbidden', { status: 403 })
+  }
+
+  const stat = fs.statSync(real)
   const total = stat.size
   const ext = resolved.slice(resolved.lastIndexOf('.'))
   const mime = audioMime(ext)
@@ -137,7 +151,7 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
 
     const chunkSize = end - start + 1
 
-    const readable = nodeStreamToWeb(fs.createReadStream(resolved, { start, end }))
+    const readable = nodeStreamToWeb(fs.createReadStream(real, { start, end }))
 
     return new Response(readable, {
       status: 206,
@@ -152,7 +166,7 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
 
   // Full file response — advertise Accept-Ranges so Chromium knows
   // it can send Range requests for seeking.
-  const readable = nodeStreamToWeb(fs.createReadStream(resolved))
+  const readable = nodeStreamToWeb(fs.createReadStream(real))
 
   return new Response(readable, {
     status: 200,

@@ -35,6 +35,7 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
@@ -52,6 +53,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -75,6 +77,10 @@ test.describe('DM input box', () => {
       await input.fill('campfire')
       await expect(input).toHaveValue('campfire')
     } finally {
+      const page = await app.firstWindow().catch(() => null)
+      if (page && previousFolder) {
+        await page.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {})
+      }
       await gracefulClose(app)
     }
   })
@@ -84,6 +90,7 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
@@ -101,6 +108,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -153,6 +161,10 @@ test.describe('DM input box', () => {
       // We just verify that tracks are still shown (the app didn't break).
       expect(clearedNames.length).toBeGreaterThan(0)
     } finally {
+      const page = await app.firstWindow().catch(() => null)
+      if (page && previousFolder) {
+        await page.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {})
+      }
       await gracefulClose(app)
     }
   })
@@ -162,6 +174,7 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
@@ -185,6 +198,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -236,6 +250,10 @@ test.describe('DM input box', () => {
         `Captured logs: ${consoleLogs.filter(l => l.includes('[recommend]')).join(' | ')}`,
       ).toBe(true)
     } finally {
+      const page = await app.firstWindow().catch(() => null)
+      if (page && previousFolder) {
+        await page.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {})
+      }
       await gracefulClose(app)
     }
   })

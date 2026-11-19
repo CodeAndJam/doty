@@ -388,6 +388,16 @@ function createWindow() {
   mainWindow.webContents.on('render-process-gone', () => library.resume())
   mainWindow.webContents.on('did-finish-load', () => library.resume())
 
+  // Nothing in this app navigates: every link is either a card or `shell.openExternal`.
+  // Denying both also keeps `window.doty` out of reach of a rendered link in track
+  // names, Discord names or Home Assistant labels.
+  const devUrl = process.env.ELECTRON_RENDERER_URL
+  const allowedNavigation = (url: string) => (devUrl ? url.startsWith(devUrl) : false) || url.startsWith('app://doty')
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!allowedNavigation(url)) event.preventDefault()
+  })
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
   // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -630,6 +640,9 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   if (!source || !destination) return { ok: false, reason: 'both folders must be set' }
 
   const from = join(source, trackPath)
+  // The renderer chooses the path; `../../` must not relocate a file outside the
+  // library, even though the DM's own click normally comes from a card.
+  if (!isAllowedMediaPath(from)) return { ok: false, reason: 'not in a library folder' }
   if (!fs.existsSync(from)) return { ok: false, reason: 'file not found' }
 
   const dir = join(destination, '..')

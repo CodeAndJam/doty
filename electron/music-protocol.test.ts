@@ -137,6 +137,15 @@ describe('music-protocol', () => {
       expect(resp.status).toBe(403)
     })
 
+    it('refuses a symlink that points outside the library', () => {
+      const outside = path.join(os.tmpdir(), `doty-outside-${process.pid}.mp3`)
+      fs.writeFileSync(outside, testContent)
+      fs.symlinkSync(outside, path.join(tmpDir, 'link.mp3'))
+      const resp = handleMusicRequest({ url: 'music://play/link.mp3', rangeHeader: null }, { musicFolder: tmpDir })
+      expect(resp.status).toBe(403)
+      fs.rmSync(outside, { force: true })
+    })
+
     it('serves absolute SFX paths only from the SFX folder', () => {
       const sfxDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-sfx-test-'))
       const sfxFile = path.join(sfxDir, 'boom.mp3')

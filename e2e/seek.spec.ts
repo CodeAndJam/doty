@@ -34,6 +34,7 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
     args: [join(__dirname, '../out/main/index.js')],
   })
 
+  let previousFolder: string | null = null
   try {
     const page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
@@ -61,6 +62,7 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
     }
 
     // Point app at fixtures folder
+    previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
     await page.evaluate((dir: string) => {
       return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
     }, FIXTURES_DIR)
@@ -112,6 +114,10 @@ test('seek bar reflects correct position after seeking to 75%', async () => {
     ).toBeGreaterThan(50)
 
   } finally {
+    const page = await app.firstWindow().catch(() => null)
+    if (page && previousFolder) {
+      await page.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {})
+    }
     await gracefulClose(app)
   }
 })
