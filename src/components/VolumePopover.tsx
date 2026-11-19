@@ -56,7 +56,11 @@ export default function VolumePopover({
       className="relative flex items-center shrink-0"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
-      onFocus={() => setShow(true)}
+      onFocus={() => {
+        // Escape closes the panel and returns focus to this button; that focus
+        // must not count as a fresh request to open it.
+        if (!dismissedRef.current) setShow(true)
+      }}
       onBlur={(e) => {
         const next = e.relatedTarget as Node | null
         if (!e.currentTarget.contains(next) && !panelRef.current?.contains(next)) {
