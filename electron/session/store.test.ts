@@ -106,6 +106,80 @@ describe('session store', () => {
     expect(s.report(at).overrideRate).toBe(0)
   })
 
+  it('does not retain an auto pick the DM skipped within 30 s', () => {
+    const s = store()
+    s.recordDecision({
+      at,
+      kind: 'music',
+      action: 'queue-next',
+      reason: '',
+      track: 'a.mp3',
+      probability: 0.6,
+      mood: null,
+      source: 'auto',
+    })
+    s.recordDecision({
+      at: at + 120_000,
+      kind: 'music',
+      action: 'play-now',
+      reason: '',
+      track: 'b.mp3',
+      probability: 0.7,
+      mood: null,
+      source: 'auto',
+    })
+    // a.mp3 was skipped five seconds later; b.mp3 eighty seconds later, which is
+    // past the window and therefore not a rejection of the automatic choice.
+    s.recordPreference({ at: at + 5_000, segment: '', track: 'a.mp3', scene: null, source: 'reject' })
+    s.recordPreference({ at: at + 200_000, segment: '', track: 'b.mp3', scene: null, source: 'reject' })
+
+    const report = s.report(at)
+    expect(report.autoActions).toBe(2)
+    expect(report.autoChangeRetention).toBeCloseTo(0.5, 6)
+  })
+
+  it('ignores a skip of a track the automation did not pick', () => {
+    const s = store()
+    s.recordDecision({
+      at,
+      kind: 'music',
+      action: 'play-now',
+      reason: '',
+      track: 'a.mp3',
+      probability: 0.9,
+      mood: null,
+      source: 'auto',
+    })
+    s.recordPreference({ at: at + 1_000, segment: '', track: 'z.mp3', scene: null, source: 'reject' })
+
+    expect(s.report(at).autoChangeRetention).toBe(1)
+  })
+
+  it('measures the first manual pick from the session start', () => {
+    const s = store()
+    s.recordPreference({ at: at + 1_000, segment: '', track: 'a.mp3', scene: null, source: 'reject' })
+    s.recordPreference({ at: at + 9_000, segment: '', track: 'b.mp3', scene: null, source: 'manual' })
+    s.recordPreference({ at: at + 12_000, segment: '', track: 'c.mp3', scene: null, source: 'manual' })
+
+    expect(s.report(at).timeToFirstManualPickMs).toBe(9_000)
+  })
+
+  it('reports no first pick and no retention when nothing was acted on', () => {
+    const s = store()
+    s.recordDecision({
+      at,
+      kind: 'music',
+      action: 'hold',
+      reason: '',
+      track: null,
+      probability: 0.1,
+      mood: null,
+      source: 'auto',
+    })
+
+    expect(s.report(at)).toMatchObject({ autoChangeRetention: null, timeToFirstManualPickMs: null })
+  })
+
   it('keeps light decisions out of the music KPI', () => {
     const s = store()
     s.recordDecision({

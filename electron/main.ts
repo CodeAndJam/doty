@@ -79,6 +79,7 @@ import {
 import { ffmpegStatus } from './discord-audio'
 import { getCaptureState, setCaptureMode, setOnRemoteSegment, setOnRemoteState } from './discord-capture'
 import { downloadFile } from './download-file'
+import { downloadEmbedder } from './embedder-model'
 import { createHaClient } from './home-assistant'
 import { discoverHomeAssistants } from './home-assistant-discovery'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
@@ -1002,6 +1003,27 @@ async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedde
   return embedder
 }
 
+/**
+ * The model is not bundled: ~378 MiB travels on first use, like the ranker.
+ * One attempt at a time; a failed fetch is retried on the next pass rather than
+ * on every scan.
+ */
+let embedderFetch: Promise<void> | null = null
+
+const embedderReady = () => embedderAvailable(EMBEDDER_DIR) && audioAvailable(EMBEDDER_DIR)
+
+function ensureEmbedder(): Promise<void> {
+  if (embedderReady()) return Promise.resolve()
+  embedderFetch ??= downloadEmbedder(downloadFile, EMBEDDER_DIR, (percent) => {
+    if (percent >= 100) console.log('[library] embedding model installed')
+  }).catch((e) => {
+    embedderFetch = null
+    console.warn('[library] embedding model download failed:', e instanceof Error ? e.message : e)
+    throw e
+  })
+  return embedderFetch
+}
+
 const library = createLibrary({
   folders: () => ({
     music: store.get('musicFolder', '') as string,
@@ -1067,6 +1089,13 @@ function startBackgroundPasses(): void {
   passesTimer = setTimeout(() => {
     passesTimer = null
     void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
+    // Search by meaning and the audio lane verdict both need the embedder. Fetch
+    // it in the background, then run the pass again with it on disk.
+    if (!embedderReady()) {
+      ensureEmbedder()
+        .then(() => startBackgroundPasses())
+        .catch(() => {})
+    }
     library
       .ensureIndexed()
       .then(() => {

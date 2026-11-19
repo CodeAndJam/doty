@@ -56,10 +56,6 @@
 - [x] Architecture: `override` and the autopilot master switch are deleted; a
       profile that had `autopilotEnabled: false` is migrated to both channels
       off. The per-channel switches are the only gates.
-- [ ] Wire the UI to the new backend: lane badge per row, index chip with the two
-      phases, semantic search in both browse panels (`library:search` returns
-      `{ mode, items }`), and the session-name prompt. The channels and the lane
-      label in `getAllMetadata` / `getSfxList` exist; nothing draws them yet.
 - [x] STT: VAD gating. `silero-vad-v6.2-F32.gguf` (1.2 MB) is loaded when present
       and gates live audio by speech probability; the RMS gate remains the
       fallback. Measured: 0.00 s emitted for a loud music bed, pink noise and
@@ -67,9 +63,9 @@
       models download with the ASR model. Room fixtures (vocal music crossing the
       gate, overlapping speakers) still need a real recording — see
       `test-results/stt-room.md` (gitignored) or `electron/stt/room.test.ts`.
-- [ ] Profiles: instances share `~/.doty/models`, so two profiles downloading the
-      same model at once write the same `.part` file. Serialize on a lock file or
-      give the `.part` a per-process suffix before this bites a first run.
+- [x] Profiles: every download holds `<file>.lock`, so two profiles fetching the
+      same model wait for each other instead of interleaving one `.part`. A lock
+      left by a dead process is stolen by pid.
 
 - [ ] STT quality: record a real conference-mic fixture (laptop mic, far field,
       6 speakers, music playing) and replace the synthetic 12 dB SNR noise gate.
@@ -180,19 +176,21 @@
       `sentence_embedding` output, 768 dims, and a calm transcript scores 0.241
       against Campfire versus 0.166 against The Enemy. Task prefixes are applied
       (query vs document), which the model card requires.
-- [ ] Embeddings: hosting. The model is installed by hand today; a first-run
-      download (or bundling, see README) has to ship with the app.
+- [x] Embeddings: hosting. The seven files download on first use from
+      `onnx-community/embeddinggemma-2-ONNX` (~378 MiB), one locked file at a
+      time; the pass reruns and indexes when the model lands.
 - [ ] App updates never re-download models: they live in `~/.doty/models`, outside
       the app bundle, so a new DMG reuses them. Do not move them into the bundle.
 - [x] Preferences: read. Where the model's top two are within 0.02, the track the
       DM chose for this scene before breaks the tie. Probabilities are never
       rewritten — that would fake confidence the model did not have — and a
       decisive model is never overruled.
-- [ ] Session report UI: overrides per session and time-to-first-manual-pick, the
-      KPI from AGENTS.md.
-      narration plus the 20 candidates and the track you would have picked — and
-      record top-1 for d1-omni against the current cross-encoder. This set also
-      sets `RANK_SWITCH_FLOOR`.
+- [x] Session report: the chip now reads auto changes, manual picks, override
+      rate, the share of automatic picks kept (not skipped within 30 s) and time
+      to the DM's first own pick — the KPIs from AGENTS.md. A queued pick is
+      stamped when it starts playing, not when it was queued.
+- [ ] Ranker: record top-1 for d1-omni against a fixed baseline (the cross-encoder
+      was deleted with the generative stack) and confirm the set on real narration.
 - [ ] Audio metadata: integrated loudness (LUFS) and onset rate per track, for the
       candidate prefilter. Deferred until the ranker eval shows combat and horror
       being confused; both need a versioned metadata cache and a background

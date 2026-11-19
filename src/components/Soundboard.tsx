@@ -6,10 +6,11 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { formatTime } from '../lib/formatTime'
 import { indexChipText } from '../lib/indexStatus'
 import { describeTrack } from '../lib/rankTracks'
 import { trackKindOf } from '../lib/trackKind'
-import type { DecisionLogEntry, IndexProgress, SfxMeta, TrackMeta } from '../types'
+import type { DecisionLogEntry, IndexProgress, SessionReport, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
 import {
@@ -176,6 +177,8 @@ interface Props {
   speakerDeviceId?: string
   settingsOpen: boolean
   /** The header's master switch: with it off nothing changes on its own. */
+  /** When the current (or last) recording started; the session report counts from here. */
+  sessionStartTime: number | null
   autopilotEnabled: boolean
   onNoFolder: () => void
 }
@@ -198,6 +201,7 @@ export default function Soundboard({
   musicFolder,
   speakerDeviceId,
   settingsOpen,
+  sessionStartTime,
   autopilotEnabled,
   onNoFolder,
 }: Props) {
@@ -230,10 +234,27 @@ export default function Soundboard({
   useEffect(() => {
     sceneRef.current = scene
   }, [scene])
-  const [report, setReport] = useState<{ autoActions: number; manualPicks: number; overrideRate: number } | null>(null)
+  const [report, setReport] = useState<SessionReport | null>(null)
   const sessionStartedAt = useRef(Date.now())
+  // The header owns the real clock: mount time is only a fallback before the
+  // first recording, and the anchor stays after stop so the report keeps its meaning.
+  useEffect(() => {
+    if (sessionStartTime) sessionStartedAt.current = sessionStartTime
+  }, [sessionStartTime])
   /** Guards against queueing the same pick on every pass while a track is ending. */
-  const lastQueued = useRef<{ track: string; at: number } | null>(null)
+  /**
+   * An automatic pick waiting at the boundary. The decision row is written when
+   * the track actually starts, not when it is queued: retention counts skips
+   * within 30 s of playback, and a queue can sit for a whole track first.
+   */
+  const lastQueued = useRef<{
+    track: string
+    queuedAt: number
+    action: string
+    reason: string
+    probability: number
+    scene: string | null
+  } | null>(null)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
   const lastAutoLogEntryRef = useRef<object | null>(null)
@@ -251,6 +272,17 @@ export default function Soundboard({
     decisionLogRef.current = [entry, ...decisionLogRef.current].slice(0, 50)
     setDecisionLog([...decisionLogRef.current])
   }, [recommendations, lastConfidence, lastRanker, lastTranscriptSnippet])
+
+  const refreshReport = useCallback(() => {
+    window.doty
+      .sessionReport(sessionStartedAt.current)
+      .then(setReport)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshReport()
+  }, [refreshReport])
 
   // ── Audio player ─────────────────────────────────────────────────────
   const trackEndRef = useRef<() => void>(() => {})
@@ -290,6 +322,24 @@ export default function Soundboard({
       } else if (loopMode === 'queue' || !isLast) {
         const track = queue.next(loopMode === 'queue')
         if (track) {
+          const queued = lastQueued.current
+          if (queued && queued.track === track) {
+            lastQueued.current = null
+            // The queued pick is the automatic change; this is its real start.
+            window.doty
+              .sessionDecision({
+                at: Date.now(),
+                kind: 'music',
+                action: queued.action,
+                reason: queued.reason,
+                track,
+                probability: queued.probability,
+                mood: queued.scene,
+                source: 'auto',
+              })
+              .then(refreshReport)
+              .catch(() => {})
+          }
           playTrack(track, true)
           autopilot.notePlayed(track)
         } else stopPlayback()
@@ -297,7 +347,7 @@ export default function Soundboard({
         stopPlayback()
       }
     }
-  }, [queue, loopMode, playTrack, stopPlayback])
+  }, [queue, loopMode, playTrack, stopPlayback, refreshReport])
 
   // ── Data loading ─────────────────────────────────────────────────────
 
@@ -602,17 +652,6 @@ export default function Soundboard({
    *  must not mean the boundary goes unplanned. */
   const nearEnd = duration > 0 && duration - currentTime <= 21
 
-  const refreshReport = useCallback(() => {
-    window.doty
-      .sessionReport(sessionStartedAt.current)
-      .then((r) => setReport({ autoActions: r.autoActions, manualPicks: r.manualPicks, overrideRate: r.overrideRate }))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    refreshReport()
-  }, [refreshReport])
-
   useEffect(() => {
     if (lastRanker !== 'model' || candidates.length === 0 || !sessionText) return
     let cancelled = false
@@ -671,10 +710,16 @@ export default function Soundboard({
           // The DM may have lined up the next track by hand. Their choice wins.
           if (queue.currentIndex >= 0 && queue.currentIndex < queue.tracks.length - 1) return
           const already = lastQueued.current
-          if (already && already.track === track && Date.now() - already.at < 120_000) return
-          lastQueued.current = { track, at: Date.now() }
+          if (already && already.track === track && Date.now() - already.queuedAt < 120_000) return
+          lastQueued.current = {
+            track,
+            queuedAt: Date.now(),
+            action: plan.action,
+            reason: plan.reason,
+            probability: tracks[best] ?? 0,
+            scene: plan.scene,
+          }
           queue.playNext(track)
-          recordAuto(tracks[best] ?? 0)
         } else {
           lastQueued.current = null
           handlePlayTrack(track, true, 'auto')
@@ -1167,10 +1212,14 @@ export default function Soundboard({
                       <span
                         data-testid="session-report"
                         style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#96825f' }}
-                        title="Automatic changes, manual picks, and the share of acted-on decisions the DM replaced"
+                        title="Automatic changes, manual picks, the share the DM replaced, the share of automatic picks kept, and when the DM first chose by hand"
                       >
                         auto {report.autoActions} · manual {report.manualPicks} · override{' '}
                         {Math.round(report.overrideRate * 100)}%
+                        {report.autoChangeRetention != null &&
+                          ` · kept ${Math.round(report.autoChangeRetention * 100)}%`}
+                        {report.timeToFirstManualPickMs != null &&
+                          ` · first pick ${formatTime(report.timeToFirstManualPickMs / 1000)}`}
                       </span>
                     )}
                     {indexChipText(indexStatus) && (

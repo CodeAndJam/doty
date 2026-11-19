@@ -78,6 +78,16 @@ export interface IndexProgress {
   phaseTotal: number
 }
 
+/** The session KPI chip: what the automation did, and what the DM took back. */
+export interface SessionReport {
+  decisions: number
+  autoActions: number
+  manualPicks: number
+  overrideRate: number
+  autoChangeRetention: number | null
+  timeToFirstManualPickMs: number | null
+}
+
 export interface TrackMeta {
   bpm: number
   bpmConfidence: number
@@ -370,12 +380,7 @@ export interface DotyAPI {
   /** Label a track without touching the disk: a lane is a label, not a folder. */
   setLane: (key: string, lane: 'music' | 'sfx') => Promise<{ ok: boolean }>
   onEmbeddingProgress: (cb: (p: IndexProgress) => void) => () => void
-  sessionReport: (since: number) => Promise<{
-    decisions: number
-    autoActions: number
-    manualPicks: number
-    overrideRate: number
-  }>
+  sessionReport: (since: number) => Promise<SessionReport>
   onRankerDownloadProgress: (cb: (p: { percent: number; status: string; reason?: string }) => void) => () => void
   onRankerStatus: (cb: (status: string) => void) => () => void
   getRecommendationCount: () => Promise<number>

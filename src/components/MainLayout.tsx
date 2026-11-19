@@ -816,6 +816,7 @@ export default function MainLayout() {
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               settingsOpen={showSettings}
+              sessionStartTime={sessionStartTime}
               autopilotEnabled={autopilotEnabled}
               onNoFolder={() => setShowSettings(true)}
             />

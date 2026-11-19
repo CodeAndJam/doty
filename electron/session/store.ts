@@ -42,6 +42,13 @@ export interface SessionReport {
   manualPicks: number
   /** Share of acted-on suggestions the DM replaced. The KPI from AGENTS.md. */
   overrideRate: number
+  /**
+   * Share of automatic changes the DM did not skip within 30 s, or null when
+   * nothing was acted on. "Keeps playing" is the goal, not "picked correctly".
+   */
+  autoChangeRetention: number | null
+  /** Distance from the session start to the DM's first own pick, or null. */
+  timeToFirstManualPickMs: number | null
 }
 
 /** Where a session plays, and the DM's words about it. */
@@ -155,11 +162,23 @@ export function createSessionStore(db: Database.Database): SessionStore {
   )
   // Music rows only: a light decision is not a track the DM overrode, and
   // counting it would move the KPI AGENTS.md measures the product by.
+  //
+  // Retention looks at the rejection that follows an automatic pick: a skip is
+  // recorded against the track that was skipped, so a match inside the 30 s
+  // window is the DM saying "not this". A rejection of the same track later (a
+  // second play, another scene) is not evidence against this choice.
   const selectReport = db.prepare(
     `SELECT
        COUNT(*) AS decisions,
        SUM(CASE WHEN source = 'auto' AND action != 'hold' THEN 1 ELSE 0 END) AS autoActions,
-       SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END) AS manualPicks
+       SUM(CASE WHEN source = 'manual' THEN 1 ELSE 0 END) AS manualPicks,
+       SUM(CASE WHEN source = 'auto' AND action != 'hold'
+         AND EXISTS (
+           SELECT 1 FROM session_preferences p
+           WHERE p.source = 'reject' AND p.track = session_decisions.track
+             AND p.at >= session_decisions.at AND p.at <= session_decisions.at + 30000
+         ) THEN 1 ELSE 0 END) AS skippedWithin30s,
+       (SELECT MIN(at) FROM session_preferences WHERE at >= ? AND source = 'manual') AS firstManualAt
      FROM session_decisions WHERE at >= ? AND kind = 'music'`,
   )
   const selectLights = db.prepare('SELECT session, area, hint, pinned FROM session_lights WHERE session = ?')
@@ -197,15 +216,24 @@ export function createSessionStore(db: Database.Database): SessionStore {
       upsertLights.run(row.session, row.areaId, row.hint, row.pinned ? 1 : 0)
     },
     report(since) {
-      const row = selectReport.get(since) as { decisions: number; autoActions: number; manualPicks: number }
+      const row = selectReport.get(since, since) as {
+        decisions: number
+        autoActions: number
+        manualPicks: number
+        skippedWithin30s: number | null
+        firstManualAt: number | null
+      }
       const manual = row.manualPicks ?? 0
       const auto = row.autoActions ?? 0
       const acted = manual + auto
+      const skipped = row.skippedWithin30s ?? 0
       return {
         decisions: row.decisions ?? 0,
         autoActions: auto,
         manualPicks: manual,
         overrideRate: acted === 0 ? 0 : manual / acted,
+        autoChangeRetention: auto === 0 ? null : 1 - skipped / auto,
+        timeToFirstManualPickMs: row.firstManualAt == null ? null : row.firstManualAt - since,
       }
     },
     putVector(path, model, vector) {

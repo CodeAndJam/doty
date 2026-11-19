@@ -32,7 +32,7 @@ export interface SttModelInfo {
 }
 
 /** Doty targets European Portuguese first; override in Settings. */
-export const DEFAULT_STT_MODEL: SttModelType = 'nemotron-3.5-streaming'
+export const DEFAULT_STT_MODEL: SttModelType = 'parakeet-ultra'
 export const DEFAULT_STT_LANGUAGE = 'pt-PT'
 
 export { MODELS_DIR }
@@ -100,7 +100,6 @@ export const STT_MODELS: SttModelInfo[] = [
       'ro-RO',
       'et-EE',
     ],
-    default: true,
     isReady: () => isModelFileReady('nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf'),
   },
   {
@@ -134,6 +133,7 @@ export const STT_MODELS: SttModelInfo[] = [
     url: 'https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/main/parakeet-ultra-Q8_0.gguf',
     streaming: false,
     languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'pl', 'ro', 'sv'],
+    default: true,
     isReady: () => isModelFileReady('parakeet-ultra-Q8_0.gguf'),
   },
   {
