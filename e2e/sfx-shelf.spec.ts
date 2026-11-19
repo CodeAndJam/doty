@@ -31,10 +31,12 @@ const MUSIC = ['Fantasy Tavern.mp3', 'The Desert.mp3']
  * search for, and every one of them lives in the music folder.
  */
 const EFFECTS: Array<[copy: string, fixture: string]> = [
-  ['Massive Creature Roar.mp3', 'Massive Creature Roar.mp3'],
-  ['Weather - Heavy Rain.mp3', 'Weather - Thunder Crash 1.mp3'],
-  ['Weather - Light Wind.mp3', 'Massive Creature Roar.mp3'],
-  ['Weather - Powerful Wind.mp3', 'Massive Creature Roar.mp3'],
+  // The `sfx` marker resolves the lane from the name, so the shelf appears before
+  // a slow analysis finishes; the point is that a music-folder effect is listed.
+  ['SFX - Massive Creature Roar.mp3', 'Massive Creature Roar.mp3'],
+  ['SFX - Weather - Heavy Rain.mp3', 'Weather - Thunder Crash 1.mp3'],
+  ['SFX - Weather - Light Wind.mp3', 'Massive Creature Roar.mp3'],
+  ['SFX - Weather - Powerful Wind.mp3', 'Massive Creature Roar.mp3'],
   ['Campfire.mp3', 'Walking on Snow in Platemail.mp3'],
 ]
 

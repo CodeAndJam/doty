@@ -14,6 +14,7 @@ function stubDoty() {
       getAllTags: vi.fn().mockResolvedValue([]),
       getSfxList: vi.fn().mockResolvedValue([]),
       onSfxChanged: vi.fn(() => () => {}),
+      onScanProgress: vi.fn(() => () => {}),
       onScanComplete: vi.fn((cb: () => void) => {
         handlers.scan = cb
         return () => {}

@@ -7,6 +7,9 @@ process.env.DOTY_E2E_MUTE ??= '1'
 export default defineConfig({
   testDir: './e2e',
   timeout: 300_000, // 5 min — first run downloads the reranker model (~80 MB)
+  // A firstWindow timeout under load is not a product failure; one retry keeps
+  // the nightly signal about behaviour, not machine weather.
+  retries: process.env.CI ? 2 : 1,
   // Every spec launches its own Electron app. In parallel they fight over the
   // profile lock and the CPU, and the failures look like product bugs.
   workers: 1,

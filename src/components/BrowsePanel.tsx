@@ -248,8 +248,8 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
                 }
                 className="shrink-0"
                 style={{
-                  width: '24px',
-                  height: '20px',
+                  width: '26px',
+                  height: '24px',
                   fontFamily: "'IBM Plex Mono', monospace",
                   fontSize: '11px',
                   lineHeight: '18px',

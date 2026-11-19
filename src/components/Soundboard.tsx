@@ -411,9 +411,18 @@ export default function Soundboard({
     load()
     const offSfx = window.doty.onSfxChanged(load)
     const offScan = window.doty.onScanComplete(load)
+    // The shelf is empty until the first pass otherwise: a 5k-track analysis can
+    // take minutes, and the effects already on disk are listable now.
+    let lastProgressLoad = 0
+    const offProgress = window.doty.onScanProgress(() => {
+      if (Date.now() - lastProgressLoad < 2_000) return
+      lastProgressLoad = Date.now()
+      load()
+    })
     return () => {
       offSfx()
       offScan()
+      offProgress()
     }
   }, [])
 
