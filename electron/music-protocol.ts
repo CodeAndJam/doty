@@ -36,7 +36,10 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
       nodeStream.on('data', (chunk: Buffer | string) => {
         if (!closed) {
           try {
+            // Respect the consumer: a 24 MB range must not be buffered whole
+            // because the demuxer is behind.
             controller.enqueue(chunk)
+            if ((controller.desiredSize ?? 1) <= 0) nodeStream.pause()
           } catch {
             closed = true
             nodeStream.destroy()
@@ -63,6 +66,9 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
           }
         }
       })
+    },
+    pull() {
+      nodeStream.resume()
     },
     cancel() {
       closed = true

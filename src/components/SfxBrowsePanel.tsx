@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLibrarySearch } from '../hooks/useLibrarySearch'
 import type { UseSfxPlayerReturn } from '../hooks/useSfxPlayer'
 import { searchModeLabel } from '../lib/searchLabel'
@@ -43,6 +43,15 @@ export default function SfxBrowsePanel({
   const [search, setSearch] = useState('')
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // The panel covers the shelf: focus belongs inside it, and closing returns the
+  // DM to the control that opened it.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    searchRef.current?.focus()
+    return () => previous?.focus?.()
+  }, [])
 
   const refresh = async () => {
     // Settled independently: a failed lane lookup must not empty the shelf.
@@ -227,6 +236,9 @@ export default function SfxBrowsePanel({
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Browse effects"
       className="absolute inset-0 z-10 flex flex-col"
       style={{ background: '#080705', border: '1px solid rgba(74,138,106,0.3)' }}
     >
@@ -237,10 +249,12 @@ export default function SfxBrowsePanel({
       >
         <SearchIcon />
         <input
+          ref={searchRef}
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search effects"
+          aria-label="Search effects"
           className="flex-1 bg-transparent outline-none text-sm"
           style={{ fontFamily: "'Crimson Text', serif", fontSize: '14px', color: '#6dbf95' }}
         />
@@ -290,6 +304,7 @@ export default function SfxBrowsePanel({
             onClose()
           }}
           className="p-2 hover:opacity-80"
+          aria-label="Close the effects browser"
           style={{ cursor: 'pointer' }}
         >
           <CloseIcon />

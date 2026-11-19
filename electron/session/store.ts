@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS session_preferences (
   source TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS session_preferences_at ON session_preferences (at);
+-- The retention KPI matches rejections by source, track and time per decision.
+CREATE INDEX IF NOT EXISTS session_preferences_reject ON session_preferences (source, track, at);
 CREATE TABLE IF NOT EXISTS session_lights (
   session TEXT PRIMARY KEY,
   area TEXT NOT NULL,
@@ -142,6 +144,8 @@ export interface SessionStore {
   /** Stored embeddings, for retrieval once the embedder is installed. */
   putVector(path: string, model: string, vector: Float32Array): void
   getVector(path: string, model: string): Float32Array | null
+  /** Presence only: `counts()` runs per progress event and must not copy vectors. */
+  hasVector(path: string, model: string): boolean
 }
 
 export function createSessionStore(db: Database.Database): SessionStore {
@@ -192,6 +196,7 @@ export function createSessionStore(db: Database.Database): SessionStore {
        vector = excluded.vector, updated_at = excluded.updated_at`,
   )
   const selectVector = db.prepare('SELECT dim, vector FROM track_vectors WHERE path = ? AND model = ?')
+  const selectHasVector = db.prepare('SELECT 1 AS found FROM track_vectors WHERE path = ? AND model = ? LIMIT 1')
 
   return {
     recordScene(row) {
@@ -246,6 +251,9 @@ export function createSessionStore(db: Database.Database): SessionStore {
       const copy = new Float32Array(row.vector.byteLength / 4)
       Buffer.from(row.vector).copy(Buffer.from(copy.buffer))
       return copy
+    },
+    hasVector(path, model) {
+      return selectHasVector.get(path, model) !== undefined
     },
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { playablePath, useLibrarySearch } from '../hooks/useLibrarySearch'
 import { searchModeLabel } from '../lib/searchLabel'
 import { CloseIcon, PauseIcon, PinIcon, PlayIcon, SearchIcon, TagIcon } from './Icons'
@@ -21,6 +21,15 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
   )
   const [search, setSearch] = useState('')
   const [activeTagFilters, setActiveTagFilters] = useState<string[]>([])
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  // The panel covers the shelf: focus belongs inside it, and leaving the panel
+  // returns the DM to the control that opened it.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    searchRef.current?.focus()
+    return () => previous?.focus?.()
+  }, [])
 
   const refresh = async () => {
     // Settled independently: a failed lane lookup must not empty the list.
@@ -82,6 +91,9 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Browse tracks"
       className="absolute inset-0 z-10 flex flex-col"
       style={{
         background: '#080705',
@@ -92,10 +104,12 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
       <div className="flex items-center gap-2 px-3 py-2 shrink-0" style={{ borderBottom: '1px solid #3d2f1c' }}>
         <SearchIcon />
         <input
+          ref={searchRef}
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search the library"
+          aria-label="Search the library"
           className="flex-1 bg-transparent outline-none text-sm"
           style={{
             fontFamily: "'Crimson Text', serif",
@@ -138,6 +152,7 @@ export default function BrowsePanel({ pinned, playing, tagsMap, allTags, onPlay,
             onClose()
           }}
           className="p-2 hover:opacity-80"
+          aria-label="Close the library browser"
           style={{ cursor: 'pointer' }}
         >
           <CloseIcon />

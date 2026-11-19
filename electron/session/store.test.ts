@@ -228,6 +228,13 @@ describe('session store', () => {
     expect(s.getVector('a.mp3', 'model-b')).toBeNull()
   })
 
+  it('answers presence without copying the vector', () => {
+    const s = store()
+    s.putVector('a.mp3', 'text-model', Float32Array.from([1, 2]))
+    expect(s.hasVector('a.mp3', 'text-model')).toBe(true)
+    expect(s.hasVector('a.mp3', 'other-model')).toBe(false)
+  })
+
   it('keeps a text and an audio vector for the same track', () => {
     // The two indexers both write the same path. With `path` as the primary key
     // they overwrote each other on every launch, which made every pass re-embed

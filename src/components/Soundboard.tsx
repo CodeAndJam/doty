@@ -680,6 +680,13 @@ export default function Soundboard({
 
   useEffect(() => {
     if (lastRanker !== 'model' || candidates.length === 0 || !sessionText) return
+    // Two forwards (tracks + moods) are only worth paying when the answer can
+    // change what plays: at a boundary, with nothing playing, or with Autopilot
+    // on. Mid-track with the automation off, the scene chip can wait.
+    const boundarySoon = nearEnd
+    const nothingPlaying = !playing || duration <= 0
+    const automationOwns = autopilotEnabled && autopilot.config.musicEnabled
+    if (!boundarySoon && !nothingPlaying && !automationOwns) return
     let cancelled = false
     const { currentTime: at, duration: total } = playerRef.current
     const remaining = total > 0 ? Math.max(0, (total - at) * 1000) : null
@@ -763,6 +770,8 @@ export default function Soundboard({
     lastRanker,
     sessionText,
     nearEnd,
+    playing,
+    duration,
     refreshReport,
     metaMap,
     tagsMap,
@@ -1360,7 +1369,7 @@ export default function Soundboard({
                 <span
                   style={{
                     fontSize: '11px',
-                    color: autopilot.lastAutoSfx ? '#6dbf95' : '#3f7d5c',
+                    color: autopilot.lastAutoSfx ? '#6dbf95' : '#a8d5b8',
                     border: `1px solid ${autopilot.lastAutoSfx ? 'rgba(74,138,106,0.5)' : 'rgba(74,138,106,0.3)'}`,
                     padding: '1px 4px',
                     fontFamily: "'IBM Plex Mono', monospace",

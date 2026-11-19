@@ -114,6 +114,7 @@ export default function PlayerBar({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={Math.round(progress * 100)}
+        aria-valuetext={`${formatTime(currentTime)} of ${formatTime(duration)}`}
         tabIndex={0}
         onKeyDown={handleSeekKeyDown}
         onPointerDown={(e) => {

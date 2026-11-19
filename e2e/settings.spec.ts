@@ -72,6 +72,12 @@ async function openApp(h: Harness): Promise<{ app: ElectronApplication; page: Pa
   await page.waitForLoadState('domcontentloaded')
   page.on('pageerror', (err) => console.error('[renderer:error]', err.message))
   const skip = page.getByText('Skip for now — set it up later in Settings')
+  // The first paint may land after domcontentloaded; a one-shot isVisible() misses
+  // the onboarding button on a loaded machine and the test then waits on a covered UI.
+  await Promise.race([
+    skip.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    page.getByTestId('dm-input').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+  ])
   if (await skip.isVisible().catch(() => false)) await skip.click()
   await page.evaluate(
     ([music, sfx]: string[]) => Promise.all([window.doty.setMusicFolder(music), window.doty.setSfxFolder(sfx)]),

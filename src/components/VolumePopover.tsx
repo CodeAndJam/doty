@@ -30,6 +30,8 @@ export default function VolumePopover({
 }: VolumePopoverProps) {
   const [show, setShow] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const sliderRef = useRef<HTMLInputElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
 
   useEffect(() => {
@@ -37,6 +39,14 @@ export default function VolumePopover({
     const rect = btnRef.current.getBoundingClientRect()
     setPos({ top: rect.top, left: rect.left + rect.width / 2 })
   }, [show])
+
+  // The panel is portalled to the end of <body>, so Tab from the trigger would
+  // leave it behind. If the keyboard opened it, put focus on the slider; Escape
+  // returns it to the trigger.
+  useEffect(() => {
+    if (!show || !pos) return
+    if (btnRef.current?.matches(':focus-visible')) sliderRef.current?.focus()
+  }, [show, pos])
 
   return (
     // Keyboard users get the same slider the pointer users see.
@@ -46,7 +56,8 @@ export default function VolumePopover({
       onMouseLeave={() => setShow(false)}
       onFocus={() => setShow(true)}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShow(false)
+        const next = e.relatedTarget as Node | null
+        if (!e.currentTarget.contains(next) && !panelRef.current?.contains(next)) setShow(false)
       }}
     >
       <button
@@ -63,7 +74,14 @@ export default function VolumePopover({
         pos &&
         ReactDOM.createPortal(
           <div
+            ref={panelRef}
             className="fixed"
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              e.stopPropagation()
+              setShow(false)
+              btnRef.current?.focus()
+            }}
             style={{
               zIndex: 99999,
               top: pos.top,
@@ -87,6 +105,7 @@ export default function VolumePopover({
               }}
             >
               <input
+                ref={sliderRef}
                 type="range"
                 min={0}
                 max={100}

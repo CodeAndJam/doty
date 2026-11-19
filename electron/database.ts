@@ -69,6 +69,7 @@ export function getDb(): Database.Database {
     )
   `)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_item ON play_history(item_id, item_type)`)
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_type ON play_history(item_type, item_id)`)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at)`)
 
   // Effects never enter `tracks`, so their measured duration needs its own row.

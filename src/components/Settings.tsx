@@ -146,6 +146,33 @@ export default function Settings({
     }
   }, [])
 
+  // Keep Tab inside the dialog: the backdrop covers the app but the app is still
+  // in the tab order.
+  useEffect(() => {
+    const root = dialogRef.current
+    if (!root) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Tab' || !root) return
+      const focusable = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => el.getClientRects().length > 0)
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
+    root.addEventListener('keydown', onKey)
+    return () => root.removeEventListener('keydown', onKey)
+  }, [])
+
   /** One rail: a column on a wide window, a wrapped tab row on a narrow one. */
   const settingsNav = () => (
     <div

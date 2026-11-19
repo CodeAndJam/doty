@@ -56,6 +56,7 @@ function harness(overrides: Partial<LibraryDeps> = {}) {
     embedAudio: async () => null,
     store: {
       getVector: (key, model) => vectors.get(`${key}|${model}`) ?? null,
+      hasVector: (key, model) => vectors.has(`${key}|${model}`),
       putVector: (key, model, v) => vectors.set(`${key}|${model}`, v),
     },
     onStatus: () => {},
@@ -232,6 +233,9 @@ describe('library', () => {
     const { library } = harness({
       store: {
         getVector: () => {
+          throw new Error('The database connection is not open')
+        },
+        hasVector: () => {
           throw new Error('The database connection is not open')
         },
         putVector: () => {},
