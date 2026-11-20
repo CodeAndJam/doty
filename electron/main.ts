@@ -1270,28 +1270,39 @@ handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 // ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Embedder | null = null
+/** The first load takes a fork plus a 200 MB read; concurrent callers join it. */
+let embedderLoad: Promise<Embedder | null> | null = null
 
-async function loadEmbedderOnce(): Promise<Embedder | null> {
-  if (embedder) return embedder
-  if (!embedderAvailable(EMBEDDER_DIR)) return null
+async function startEmbedder(): Promise<Embedder | null> {
   // Loaded on demand, in a utility process: onnxruntime cannot be unloaded from
   // the main process without a native abort on quit, and a session that never
   // indexes should not pay for it at all. Imported statically so the worker path
   // is built from `out/main`, not from a chunk.
   try {
-    embedder = await createEmbedder(EMBEDDER_DIR, {
-      audio: audioAvailable(EMBEDDER_DIR),
-      onExit: () => {
-        embedder = null
+    const model = await createEmbedder(EMBEDDER_DIR, {
+      // A process that died later clears only its own handle: another may have
+      // replaced it while this one was on its way out.
+      onExit: (died) => {
+        if (embedder === died) embedder = null
       },
     })
+    embedder = model
+    return model
   } catch (e) {
     // A process that will not start degrades search to names and tags; it never
     // blocks the library.
     console.warn('[library] the embedder process did not start:', e instanceof Error ? e.message : e)
     return null
   }
-  return embedder
+}
+
+function loadEmbedderOnce(): Promise<Embedder | null> {
+  if (embedder) return Promise.resolve(embedder)
+  if (!embedderAvailable(EMBEDDER_DIR)) return Promise.resolve(null)
+  embedderLoad ??= startEmbedder().finally(() => {
+    embedderLoad = null
+  })
+  return embedderLoad
 }
 
 /**
@@ -1333,7 +1344,13 @@ const library = createLibrary({
   kindAnchors: (model) => loadKindAnchors(model),
   // The decoder needs the real path. A relative one makes ffmpeg fail for every
   // track, silently, because the audio indexer treats a failure as unclassified.
-  embedAudio: (absolute, durationSeconds) => embedTrackAudio(embedder!, absolute, clipWindow(durationSeconds)),
+  embedAudio: (absolute, durationSeconds) => {
+    // The process can die mid-pass; a missing handle is a skipped clip, not a
+    // TypeError inside the indexer.
+    const model = embedder
+    if (!model?.embedAudio) return Promise.resolve(null)
+    return embedTrackAudio(model, absolute, clipWindow(durationSeconds))
+  },
   store: sessionStore,
   onStatus: (status) => {
     send(EVENTS.embeddingProgress, status)

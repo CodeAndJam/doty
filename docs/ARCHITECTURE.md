@@ -11,7 +11,11 @@ Reading order: [process map](#process-map) → [audio to transcript](#audio-to-t
 
 ## Process map
 
-Three processes, one database, and models that are files on disk.
+Four processes, one database, and models that are files on disk.
+
+The embedder is the exception to "a worker lives in a thread": onnxruntime
+cannot unload inside Electron's main process, so the encoder is forked as a
+`utilityProcess` that is killed on quit rather than finalised.
 
 ```mermaid
 flowchart LR
@@ -40,6 +44,10 @@ flowchart LR
     RK[ranker-worker<br/>d1-omni]
   end
 
+  subgraph utility["utilityProcess"]
+    EMB[embedder-worker<br/>EmbeddingGemma · audio encoder]
+  end
+
   MODELS[(~/.doty/models<br/>STT · VAD · embedder · ranker)]
 
   UI <--> API
@@ -63,6 +71,8 @@ flowchart LR
   LIB --> DB
   LIB --> FS
   LIB --> MODELS
+  LIB --> EMB
+  EMB --> MODELS
   STT --> MODELS
   RK --> MODELS
   RANK -->|librarySearch| API

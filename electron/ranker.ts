@@ -58,8 +58,17 @@ const sameCandidates = (a: string[], b: string[]) => a.length === b.length && a.
 function nextJob(): { question: Question; job: Job } | null {
   for (const [question, jobs] of queued) {
     const job = jobs.shift()
-    if (job && jobs.length === 0) queued.delete(question)
-    if (job) return { question, job }
+    if (!job) {
+      queued.delete(question)
+      continue
+    }
+    // Round-robin: a question that keeps arriving must not starve the others.
+    if (jobs.length === 0) queued.delete(question)
+    else {
+      queued.delete(question)
+      queued.set(question, jobs)
+    }
+    return { question, job }
   }
   return null
 }
@@ -204,11 +213,20 @@ async function drain(): Promise<void> {
       const next = nextJob()
       if (!next) return
       const exit = await Effect.runPromise(Effect.exit(runJob(next.question, next.job)))
-      // One answer settles the whole batch.
+      // One answer settles the whole batch. A caller left unsettled here would
+      // wait for the life of the app: there is no second deadline behind this.
       for (const reply of next.job.replies) Deferred.doneUnsafe(reply, exit)
     }
   } finally {
     draining = false
+  }
+}
+
+/** Fail every queued job, so a dispose cannot be followed by a fresh load. */
+function failQueued(err: Error): void {
+  for (const [question, jobs] of queued) {
+    queued.delete(question)
+    for (const job of jobs) for (const reply of job.replies) Deferred.doneUnsafe(reply, Exit.fail(err))
   }
 }
 
@@ -257,12 +275,16 @@ export async function evaluateSession(
  * thread mid-Run aborts the whole process inside onnxruntime.
  */
 export async function disposeRanker(): Promise<void> {
+  const disposed = new Error('Ranker disposed')
+  // Queued callers are settled before the worker check: otherwise a job that was
+  // waiting would fork a fresh worker for a model that is being deleted.
+  failQueued(disposed)
   const w = worker
   if (!w) return
   worker = null
   ready = false
   loadPromise = null
-  failPending(new Error('Ranker disposed'))
+  failPending(disposed)
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       // Still loading or mid-run. Terminating a worker in that state aborts the

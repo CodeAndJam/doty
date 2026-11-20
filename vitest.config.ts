@@ -25,6 +25,7 @@ export default defineConfig({
         'electron/asr-worker.ts',
         'electron/transcribe-worker.ts',
         'electron/analyze-worker.ts',
+        'electron/session/embedder-worker.ts',
         'electron/preload.ts',
         'src/main.tsx',
       ],

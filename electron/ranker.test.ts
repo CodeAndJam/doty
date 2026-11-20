@@ -78,7 +78,7 @@ async function waitFor(check: () => boolean, timeoutMs = 5_000): Promise<void> {
   }
 }
 
-/** A short pause for negative assertions: the permit must prevent the post. */
+/** A short pause for negative assertions: one batch must be all that is queued. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
 
 const decidePosts = () => fake.FakeWorker.latest?.posted.filter((message) => message.type === 'decide') ?? []
@@ -139,6 +139,48 @@ describe('ranker supervisor', () => {
     await ranker.disposeRanker()
   })
 
+  it('rejects queued callers on dispose without starting another worker', async () => {
+    const ranker = await load()
+
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const queued = ranker.decide('second', ['x'])
+    await settle()
+    const dead = fake.FakeWorker.latest!
+
+    // Attach the expectations before disposing: both promises reject while
+    // `disposeRanker` is awaited, and an unobserved rejection is an error here.
+    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
+    const queuedFailed = expect(queued).rejects.toThrow(/disposed/)
+    await ranker.disposeRanker()
+    await firstFailed
+    await queuedFailed
+    // A job that was waiting must not fork a fresh worker for a model the DM is
+    // deleting.
+    expect(fake.FakeWorker.latest).toBe(dead)
+  })
+
+  it('does not merge a reordered option list', async () => {
+    const ranker = await load()
+
+    const first = ranker.decide('first', ['x', 'y'])
+    await waitFor(() => decidePosts().length === 1)
+    const second = ranker.decide('second', ['y', 'x'])
+    await settle()
+    expect(decidePosts()).toHaveLength(1)
+
+    const worker = fake.FakeWorker.latest!
+    worker.hold = false
+    worker.answer(worker.posted[0])
+    await expect(first).resolves.toEqual([0.5])
+    await waitFor(() => decidePosts().length === 2)
+    worker.answer(worker.posted[1])
+    await expect(second).resolves.toEqual([0.5])
+    expect(decidePosts()).toHaveLength(2)
+
+    await ranker.disposeRanker()
+  })
+
   it('does not merge a question whose options changed', async () => {
     const ranker = await load()
 
@@ -175,9 +217,10 @@ describe('ranker supervisor', () => {
 
     fake.FakeWorker.latest!.emit('exit', 1)
 
+    const dead = fake.FakeWorker.latest!
     await expect(first).rejects.toThrow(/exited/)
     // The queued caller is not lost: the next pass starts a fresh worker.
-    await waitFor(() => fake.FakeWorker.latest!.posted.length >= 1)
+    await waitFor(() => fake.FakeWorker.latest !== dead && fake.FakeWorker.latest!.posted.length >= 1)
     fake.FakeWorker.latest!.hold = false
     fake.FakeWorker.latest!.answer(fake.FakeWorker.latest!.posted[0])
     await expect(second).resolves.toEqual([0.5])
