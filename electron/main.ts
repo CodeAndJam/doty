@@ -28,7 +28,6 @@ import {
   rankerPaths,
   sha256File,
 } from './d1-model'
-import { MOODS } from './d1-omni'
 import {
   clearLaneOverride,
   clearSfxDurations,
@@ -105,8 +104,10 @@ import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
-import { audioAvailable, embedderAvailable, loadEmbedder, RETRIEVAL_KEY } from './session/embedder'
+import type { Embedder } from './session/embedder-files'
+import { audioAvailable, embedderAvailable, RETRIEVAL_KEY } from './session/embedder-files'
 import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
+import { MOODS } from './session/moods'
 import { createSessionPass, type PassRequest } from './session/pass'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
@@ -1193,11 +1194,14 @@ handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
 // ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
-let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
+let embedder: Embedder | null = null
 
-async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedder>> | null> {
+async function loadEmbedderOnce(): Promise<Embedder | null> {
   if (embedder) return embedder
   if (!embedderAvailable(EMBEDDER_DIR)) return null
+  // Loaded on demand: a session that never indexes must not initialise ONNX in
+  // the main process.
+  const { loadEmbedder } = await import('./session/embedder')
   embedder = await loadEmbedder(EMBEDDER_DIR)
   return embedder
 }

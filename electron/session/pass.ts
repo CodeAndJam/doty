@@ -8,8 +8,9 @@
  * coordination around them — the scene between calls, the change clock, the
  * logging throttle, and one pass at a time — with its dependencies injected.
  */
-import { MOODS } from '../d1-omni'
+
 import { planStep } from './director'
+import { MOODS } from './moods'
 import { DEFAULT_POLICY } from './policy'
 import { learnedPick } from './preferences'
 import type { Scene } from './scene'

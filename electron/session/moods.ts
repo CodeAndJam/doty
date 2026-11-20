@@ -1,0 +1,15 @@
+export const MOODS = [
+  'combat',
+  'chase',
+  'tense',
+  'horror',
+  'mystery',
+  'exploration',
+  'tavern',
+  'celebration',
+  'sad',
+  'epic',
+  'peaceful',
+  'voyage',
+  'stealth',
+] as const

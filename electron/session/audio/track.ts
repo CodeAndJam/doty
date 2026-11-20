@@ -13,7 +13,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { ffmpegBinary } from '../../ffmpeg'
-import { EMBEDDING_MODEL, type Embedder } from '../embedder'
+import { EMBEDDING_MODEL, type Embedder } from '../embedder-files'
 import { decideKindFor, KIND_QUERIES, type KindAnchors, type KindDecision } from '../kindDecision'
 
 /**
