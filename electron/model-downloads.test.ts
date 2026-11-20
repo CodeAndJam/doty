@@ -73,4 +73,34 @@ describe('model downloads', () => {
       error: { modelId: 'nemotron', error: 'HTTP 404' },
     })
   })
+
+  it('holds the slot through verification and install', async () => {
+    let release = () => {}
+    const download: Download = async () => {}
+    const { downloads, events } = harness(download)
+
+    const first = downloads.start(MODEL, DEST, () => new Promise<void>((resolve) => (release = resolve)))
+    await Promise.resolve()
+    await expect(downloads.start(MODEL, DEST)).resolves.toEqual({
+      ok: false,
+      reason: 'download already in progress',
+    })
+
+    release()
+    await expect(first).resolves.toEqual({ ok: true })
+    expect(events.at(-1)).toEqual({ type: 'done', modelId: 'nemotron' })
+  })
+
+  it('reports a failed finish as the reason and releases the slot', async () => {
+    const download: Download = async () => {}
+    const { downloads, events } = harness(download)
+
+    await expect(
+      downloads.start(MODEL, DEST, () => {
+        throw new Error('checksum mismatch')
+      }),
+    ).resolves.toEqual({ ok: false, reason: 'checksum mismatch' })
+    expect(events.at(-1)).toEqual({ type: 'error', modelId: 'nemotron', error: 'checksum mismatch' })
+    expect(downloads.state().downloading).toBeNull()
+  })
 })

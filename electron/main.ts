@@ -150,15 +150,12 @@ if (app.isPackaged) {
   process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
 }
 
-let rankerDownloading = false
-
 const rankerDownloads = createModelDownloads({
   download: downloadFile,
   onEvent: (event) => {
     if (event.type === 'progress') {
       send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
     } else if (event.type === 'error') {
-      rankerDownloading = false
       // The reason travels with the event: a button that silently returns to its
       // resting state is indistinguishable from one that never ran.
       send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error', reason: event.error })
@@ -174,30 +171,21 @@ const rankerDownloads = createModelDownloads({
  */
 async function downloadRanker(): Promise<{ ok: boolean; reason?: string }> {
   if (isRankerInstalled()) return { ok: true }
-  if (rankerDownloading) return { ok: false, reason: 'already downloading' }
-
-  rankerDownloading = true
   const { archive } = rankerPaths()
-  try {
-    const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive)
-    if (!result.ok) {
-      rankerDownloading = false
-      return result
+  const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive, (path) => {
+    try {
+      installRankerArchive(path)
+    } catch (e) {
+      // A broken archive is not resumable: drop it so the retry starts clean.
+      fs.rmSync(path, { force: true })
+      throw e
     }
-    installRankerArchive(archive)
-    rankerDownloading = false
-    send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
-    // Warm the fresh graph so the first prompt is not the first load.
-    decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
-    return { ok: true }
-  } catch (e) {
-    rankerDownloading = false
-    fs.rmSync(archive, { force: true })
-    const reason = e instanceof Error ? e.message : String(e)
-    console.error('[ranker] install failed:', reason)
-    send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
-    return { ok: false, reason }
-  }
+  })
+  if (!result.ok) return result
+  send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
+  // Warm the fresh graph so the first prompt is not the first load.
+  decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
+  return { ok: true }
 }
 
 // Register app:// as a privileged scheme BEFORE app is ready.
@@ -1183,7 +1171,7 @@ handle(INVOKE.modelStatus, () => ({
 
 handle(INVOKE.rankerStatus, () => ({
   cached: isRankerInstalled(),
-  downloading: rankerDownloading,
+  downloading: rankerDownloads.state().downloading !== null,
   languageCovered: coversLanguage(rankerLanguages(), store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string),
 }))
 
@@ -1463,15 +1451,13 @@ async function ensureSideModels(): Promise<void> {
   for (const side of STT_SIDE_MODELS) {
     if (side.isReady()) continue
     const dest = join(MODELS_DIR, side.ggufFile)
-    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest)
-    if (!result.ok) {
-      console.warn(`[model] optional ${side.id} not installed:`, result)
-      continue
-    }
-    if (side.sha256 && sha256File(dest) !== side.sha256) {
-      fs.rmSync(dest, { force: true })
-      console.error(`[model] ${side.id} failed its checksum and was removed`)
-    }
+    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest, (path) => {
+      if (side.sha256 && sha256File(path) !== side.sha256) {
+        fs.rmSync(path, { force: true })
+        throw new Error(`${side.id} failed its checksum`)
+      }
+    })
+    if (!result.ok) console.warn(`[model] optional ${side.id} not installed:`, result)
   }
 }
 
@@ -1491,16 +1477,14 @@ handle(INVOKE.downloadModel, async (_e, modelId?: string) => {
   const result = await sttDownloads.start(
     { id: modelInfo.id, url: modelInfo.url },
     join(MODELS_DIR, modelInfo.ggufFile),
+    (path) => {
+      if (modelInfo.sha256 && sha256File(path) !== modelInfo.sha256) {
+        fs.rmSync(path, { force: true })
+        throw new Error('download failed its checksum')
+      }
+    },
   )
   if (!result.ok) return result
-
-  if (modelInfo.sha256) {
-    const dest = join(MODELS_DIR, modelInfo.ggufFile)
-    if (sha256File(dest) !== modelInfo.sha256) {
-      fs.rmSync(dest, { force: true })
-      return { ok: false, reason: 'download failed its checksum' }
-    }
-  }
 
   store.set('sttModel', modelInfo.id)
   await ensureSideModels()
