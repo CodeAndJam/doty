@@ -48,6 +48,8 @@ export const INVOKE = {
   setLane: 'library:set-lane',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
+  getContext: 'settings:get-context',
+  setContext: 'settings:set-context',
   // STT model selection
   getSttModel: 'stt:get-model',
   setSttModel: 'stt:set-model',

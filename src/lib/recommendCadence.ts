@@ -25,3 +25,27 @@ export function waitBeforeRecommending(msSinceLast: number): number {
 export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
+
+/**
+ * Words spoken since the last ranking. A counter, not a buffer-length
+ * difference: the window is trimmed, so a seeded session makes the difference
+ * negative and no line ever ranks again.
+ */
+export interface Cadence {
+  words: number
+  /** When the last ranking was applied. */
+  at: number
+}
+
+export function seedCadence(now: number): Cadence {
+  return { words: 0, at: now }
+}
+
+export function noteSpokenWords(cadence: Cadence, line: string): Cadence {
+  return { words: cadence.words + countWords(line), at: cadence.at }
+}
+
+/** A ranking just landed. Words spoken while it ran stay counted. */
+export function noteRanked(cadence: Cadence, now: number, fromWords: number): Cadence {
+  return { words: Math.max(0, cadence.words - fromWords), at: now }
+}

@@ -1,8 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type RankerType, type RecommendResult, useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
+import {
+  type ContextConfig,
+  composeState,
+  DEFAULT_CONTEXT,
+  embedQuery,
+  MODEL_STATE_CHARS,
+  mergeContext,
+  seedWindow,
+} from '../lib/context'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
-import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
+import {
+  MIN_NEW_WORDS,
+  noteRanked,
+  noteSpokenWords,
+  seedCadence,
+  shouldRecommend,
+  waitBeforeRecommending,
+} from '../lib/recommendCadence'
 import { confidentSfx, mergeSfxCandidates, rankAllSfx } from '../lib/sfxRank'
 import { speakerPrefix } from '../lib/speaker'
 import { stableOrder } from '../lib/stableOrder'
@@ -60,6 +76,11 @@ export default function MainLayout() {
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
+  /** The budget the models read by; the ref keeps a callback from closing over an old value. */
+  const [context, setContext] = useState<ContextConfig>(DEFAULT_CONTEXT)
+  const contextRef = useRef<ContextConfig>(DEFAULT_CONTEXT)
+  /** Set by the first slider move, so a slow mount reply cannot undo it. */
+  const contextDirtyRef = useRef(false)
   /** The last SFX query and when it ran: the same text is not re-ranked on a loop. */
   const sfxLastText = useRef('')
   const sfxLastAt = useRef(0)
@@ -112,8 +133,14 @@ export default function MainLayout() {
     }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** What the last recommendation was based on, for the two cadence gates. */
-  const lastRunRef = useRef({ at: 0, words: 0 })
+  /** Words spoken since the last ranking and when that was, for the two gates. */
+  const cadenceRef = useRef(seedCadence(0))
+  /** The state the shelf is showing; null when the shelf paints nothing yet. */
+  const lastRecTextRef = useRef<string | null>(null)
+  /** The state a ranking is already working on, so two callers do not both run it. */
+  const recInFlightRef = useRef<string | null>(null)
+  /** Which run holds the in-flight marker: a superseded run must not clear a newer one. */
+  const recInFlightRunRef = useRef(0)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** The prompt the shelf is following; empty means the transcript owns it. */
@@ -127,6 +154,8 @@ export default function MainLayout() {
   const lastRecApplied = useRef(0)
   const sfxSeq = useRef(0)
   const lastSfxApplied = useRef(0)
+  /** Only the last session load may paint: an older answer can resolve later. */
+  const sessionSeqRef = useRef(0)
   const appliedRankerRef = useRef<RankerType>(null)
   const [dmBusy, setDmBusy] = useState(false)
   /** The ranker behind the list on screen: not the model's latest, transient answer. */
@@ -140,6 +169,8 @@ export default function MainLayout() {
   // Stable handle for the IPC effect below (a plain function is rebuilt every render)
   const toggleRecordingRef = useRef<() => void>(() => {})
   toggleRecordingRef.current = toggleRecording
+  /** Re-asks for both shelves when a session load wipes them. */
+  const rerankAfterLoadRef = useRef<() => void>(() => {})
 
   // A different folder or session is a different scene: no held pick crosses it.
   useEffect(() => {
@@ -157,6 +188,75 @@ export default function MainLayout() {
     sfxRecommendCountRef.current = sfxRecommendCount
   }, [sfxRecommendCount])
 
+  /** Persist only what changed: a whole object built before the mount fetch
+   *  lands would overwrite the budgets the DM never touched. */
+  const applyContext = useCallback((patch: Partial<ContextConfig>) => {
+    // Merge exactly as main does, so the panel never shows a value the store refuses.
+    const next = mergeContext(contextRef.current, patch)
+    contextDirtyRef.current = true
+    setContext(next)
+    contextRef.current = next
+    window.doty.setContext(patch).catch((e) => {
+      console.error('[settings] context not saved:', e)
+    })
+  }, [])
+
+  /**
+   * One session's cues: what the pane shows and what the models read. Opening a
+   * session is the only time its file seeds the window; nothing re-reads it per
+   * decision. Answers still in flight belong to the session that started them.
+   */
+  const adoptSession = useCallback((cues: Array<{ text: string; speaker?: string }>) => {
+    lastRecApplied.current = ++recSeq.current
+    lastSfxApplied.current = ++sfxSeq.current
+    lastDmApplied.current = ++dmSeq.current
+    recInFlightRef.current = null
+    setDmBusy(false)
+    setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+    transcriptBufferRef.current = seedWindow(
+      cues.map((c) => c.text),
+      contextRef.current.windowChars,
+    )
+    // A new buffer is a new zero: the gate counts words spoken since the last
+    // ranking, never a buffer length, which trimming makes negative.
+    cadenceRef.current = seedCadence(Date.now())
+    // The director and the shelf keep their own copies of the old room.
+    const seeded = transcriptBufferRef.current.slice(-contextRef.current.rankerChars).trim()
+    setSessionText(seeded)
+    setLastTranscriptSnippet(seeded.slice(-120))
+    setRecommendations([])
+    setCandidates([])
+    setProbabilities({})
+    setLastConfidence(0)
+    setSfxRecommendations([])
+    setSfxCandidates([])
+    setSfxProbabilities({})
+    setSfxAutopilot([])
+    // Both dedupes hold the room that just went away.
+    sfxLastText.current = ''
+    sfxLastAt.current = 0
+    lastRecTextRef.current = null
+    // The wipe above must not leave the DM looking at empty columns.
+    rerankAfterLoadRef.current()
+  }, [])
+
+  /** Load a session, and let only the last load start paint the pane. */
+  const loadSession = useCallback(
+    async (file: string) => {
+      const run = ++sessionSeqRef.current
+      const cues = await window.doty.sessionLoad(file)
+      if (run !== sessionSeqRef.current) return
+      adoptSession(cues)
+    },
+    [adoptSession],
+  )
+
+  /** A fresh session has no cues; it also cancels a load that is still in flight. */
+  const resetSession = useCallback(() => {
+    sessionSeqRef.current++
+    adoptSession([])
+  }, [adoptSession])
+
   // Load recommendation count and the autopilot master switch on mount
   useEffect(() => {
     window.doty.getRecommendationCount().then(setRecommendCount)
@@ -167,13 +267,17 @@ export default function MainLayout() {
   // Load sessions and restore last active session on mount
   useEffect(() => {
     async function loadSessions() {
-      const list = await window.doty.sessionList()
+      // The window budget must be known before the first session seeds it.
+      const [list, saved] = await Promise.all([window.doty.sessionList(), window.doty.getContext().catch(() => null)])
+      if (saved && !contextDirtyRef.current) {
+        setContext(saved)
+        contextRef.current = saved
+      }
       setSessions(list)
       const last = await window.doty.sessionGetLast()
       if (last) {
         setActiveSession(last)
-        const cues = await window.doty.sessionLoad(last)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+        await loadSession(last)
       } else if (list.length === 0) {
         // Auto-create first session
         const s = await window.doty.sessionCreate()
@@ -181,12 +285,11 @@ export default function MainLayout() {
         setActiveSession(s.file)
       } else {
         setActiveSession(list[0].file)
-        const cues = await window.doty.sessionLoad(list[0].file)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+        await loadSession(list[0].file)
       }
     }
     loadSessions()
-  }, [])
+  }, [loadSession])
 
   // Tell the main process which session new transcript cues belong to.
   // (session:load only records the last *viewed* session.)
@@ -202,8 +305,7 @@ export default function MainLayout() {
       setReprocessingFile(null)
       // Reload the session if it's the active one
       if (r.file === activeSession) {
-        const cues = await window.doty.sessionLoad(r.file)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+        await loadSession(r.file)
       }
     })
     const unsubError = window.doty.onReprocessError(() => {
@@ -215,7 +317,7 @@ export default function MainLayout() {
       unsubDone()
       unsubError()
     }
-  }, [activeSession])
+  }, [activeSession, loadSession])
 
   // Check if the ranker model is already on disk on mount
   useEffect(() => {
@@ -258,39 +360,68 @@ export default function MainLayout() {
     // A typed prompt owns the shelf. Doing the work and throwing it away only
     // queues behind the DM's answer in the same worker.
     if (dmPromptRef.current.trim()) return
-    const run = ++recSeq.current
-    const files = await window.doty.listMusic()
-    console.log('[recommend] runRecommendation called, files:', files.length)
-    if (files.length === 0) {
-      console.log('[recommend] no files, skipping')
-      return
-    }
-    const recentTranscript = transcriptBufferRef.current.slice(-500).trim()
+    const recentTranscript = transcriptBufferRef.current
+      .slice(-Math.min(contextRef.current.rankerChars, MODEL_STATE_CHARS))
+      .trim()
     const state = recentTranscript
-    console.log(
-      '[recommend] transcript context:',
-      recentTranscript.length,
-      'chars, preview:',
-      recentTranscript.slice(0, 80),
-    )
-    const result = await recommendRef.current(state, files, recommendCountRef.current)
-    // The DM prompt owns the shelf while it is set. An answer that started
-    // earlier may still land later; it only loses to a newer answer of the same
-    // kind, so the list can refine but never revert.
-    if (dmPromptRef.current.trim() || run < lastRecApplied.current) return
-    lastRecApplied.current = run
-    console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
-    showRanking(result)
-    setLastTranscriptSnippet(recentTranscript.slice(-120))
-    setSessionText(state)
-    lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
+    // The same words are not ranked twice: a folder event and a session load can
+    // both ask. A session load clears this, because it also cleared the shelf.
+    if (state === lastRecTextRef.current || state === recInFlightRef.current) return
+    const run = ++recSeq.current
+    // Words already spoken when this run starts are the ones it accounts for;
+    // anything said while it runs stays pending.
+    const rankedWords = cadenceRef.current.words
+    recInFlightRef.current = state
+    recInFlightRunRef.current = run
+    try {
+      const files = await window.doty.listMusic()
+      console.log('[recommend] runRecommendation called, files:', files.length)
+      if (files.length === 0) {
+        console.log('[recommend] no files, skipping')
+        return
+      }
+      console.log(
+        '[recommend] transcript context:',
+        recentTranscript.length,
+        'chars, preview:',
+        recentTranscript.slice(0, 80),
+      )
+      const result = await recommendRef.current(state, files, recommendCountRef.current)
+      // The DM prompt owns the shelf while it is set. An answer that started
+      // earlier may still land later; it only loses to a newer answer of the same
+      // kind, so the list can refine but never revert.
+      if (dmPromptRef.current.trim() || run < lastRecApplied.current) return
+      lastRecApplied.current = run
+      console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
+      showRanking(result)
+      setLastTranscriptSnippet(recentTranscript.slice(-120))
+      setSessionText(state)
+      lastRecTextRef.current = state
+      cadenceRef.current = noteRanked(cadenceRef.current, Date.now(), rankedWords)
+    } catch (e) {
+      // Keep the previous list on screen; the next line retries.
+      console.error('[recommend] ranking failed:', e)
+    } finally {
+      if (recInFlightRunRef.current === run) recInFlightRef.current = null
+    }
   }, [showRanking])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     // Every recommendation re-sends the same DM text. Re-ranking it within a few
     // seconds returns the same answer and adds work to the worker queue that the
     // director's music pass is waiting in.
-    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
+    const text =
+      overrideText ??
+      transcriptBufferRef.current.slice(-Math.min(contextRef.current.sfxChars, MODEL_STATE_CHARS)).trim()
+    // An empty room has nothing to rank, and the three library reads behind it
+    // are the expensive part: clear the column instead.
+    if (!text.trim()) {
+      setSfxRecommendations([])
+      setSfxCandidates([])
+      setSfxProbabilities({})
+      setSfxAutopilot([])
+      return
+    }
     // With a prompt set, the effects column follows the prompt, not the room.
     if (!overrideText && dmPromptRef.current.trim()) return
     if (text === sfxLastText.current && Date.now() - sfxLastAt.current < 5_000) return
@@ -313,7 +444,11 @@ export default function MainLayout() {
     // so the heuristic falls back to history and offers a monster roar. The index
     // can answer it — the same one the search box uses — so both lists go to the
     // model, which is the only thing that can tell which of them fits the scene.
-    const hits = text.trim() ? await window.doty.librarySearch(text, 'sfx', count).catch(() => null) : null
+    // The embedder pays per token on every final line, so only the moment is
+    // embedded — but the hint sits at the head of a composed state, so keep both
+    // ends rather than the tail alone.
+    const query = embedQuery(text)
+    const hits = query.trim() ? await window.doty.librarySearch(query, 'sfx', count).catch(() => null) : null
     const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
     const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
     const candidates = mergeSfxCandidates(nearest, results, count)
@@ -367,22 +502,32 @@ export default function MainLayout() {
           console.log('[recommend] DM: no files, skipping')
           return
         }
-        // DM input takes priority — put it first and repeat it for emphasis.
-        // Transcript provides secondary context (truncated to recent only).
-        const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
-        const parts = [prompt, prompt] // repeat DM intent for weight
-        if (recentTranscript) parts.push(recentTranscript)
-        const combined = parts.join('\n')
+        // The DM's instruction heads the state; the room's last words follow it.
+        // It used to be sent twice to weight it, which only spent the window.
+        const budget = contextRef.current
+        const combined = composeState(prompt, transcriptBufferRef.current, {
+          hintChars: budget.hintChars,
+          transcriptChars: budget.rankerChars,
+        })
         console.log('[recommend] DM: combined query:', combined.length, 'chars, count:', recommendCountRef.current)
         const result = await recommendRef.current(combined, files, recommendCountRef.current)
         if (run < lastDmApplied.current) return
         lastDmApplied.current = run
         console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
         showRanking(result)
+        // The DM's answer does not describe a transcript state: when the hint is
+        // cleared, the room must be allowed to rank that text again.
+        lastRecTextRef.current = null
+        recInFlightRef.current = null
         setLastTranscriptSnippet(prompt.slice(-120))
         setSessionText(combined)
-        // Also trigger SFX recommendations with the same combined text
-        runSfxRecommendation(combined)
+        // The effects ranker has its own budget: the same hint, less of the room.
+        runSfxRecommendation(
+          composeState(prompt, transcriptBufferRef.current, {
+            hintChars: budget.hintChars,
+            transcriptChars: budget.sfxChars,
+          }),
+        )
       } finally {
         // Still busy if the DM has typed something newer since this answer.
         if (run === dmSeq.current && dmPromptRef.current.trim() === prompt.trim()) setDmBusy(false)
@@ -391,9 +536,25 @@ export default function MainLayout() {
     [runSfxRecommendation, showRanking],
   )
 
+  // A session load wipes both shelves; they have to be asked for again.
+  rerankAfterLoadRef.current = () => {
+    const hint = dmPromptRef.current.trim()
+    if (hint) {
+      void runDmRecommendation(hint)
+      return
+    }
+    void runRecommendation()
+    runSfxRecommendation()
+  }
+
   // When music folder becomes available, trigger default recommendations
   useEffect(() => {
     if (musicFolder) {
+      // The files changed; the last answer described another library, and any
+      // ranking already running belongs to the old one.
+      lastRecApplied.current = ++recSeq.current
+      lastRecTextRef.current = null
+      recInFlightRef.current = null
       runRecommendation()
       runSfxRecommendation()
     }
@@ -406,15 +567,16 @@ export default function MainLayout() {
       setTranscripts((prev) => [...prev, { text, elapsedMs, speaker }])
       setInterimText('') // Clear interim when final arrives
       // The ranker reads the words, not the labels: "Ana:" is for the DM's eyes.
-      transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-800)
+      transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-contextRef.current.windowChars)
+      cadenceRef.current = noteSpokenWords(cadenceRef.current, text)
       // Debounce STT-triggered recommendations, then apply the cadence gates:
       // three new words, and two seconds since the last answer. A request that is
       // only too early is retried when the interval allows, not dropped, or a
       // long uninterrupted sentence would never refresh.
-      if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       const maybeRecommend = () => {
-        const wordsSince = countWords(transcriptBufferRef.current) - lastRunRef.current.words
-        const msSince = Date.now() - lastRunRef.current.at
+        recommendDebounceRef.current = null
+        const wordsSince = cadenceRef.current.words
+        const msSince = Date.now() - cadenceRef.current.at
         if (!shouldRecommend(wordsSince, msSince)) {
           const wait = waitBeforeRecommending(msSince)
           if (wordsSince >= MIN_NEW_WORDS && wait > 0) {
@@ -424,7 +586,11 @@ export default function MainLayout() {
         }
         void runRecommendation()
       }
-      recommendDebounceRef.current = setTimeout(maybeRecommend, 1500)
+      // A line that re-armed the timer on every word would never rank a table
+      // that never pauses; the first pending timer is the ceiling.
+      if (!recommendDebounceRef.current) {
+        recommendDebounceRef.current = setTimeout(maybeRecommend, contextRef.current.debounceMs)
+      }
       // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
       // autopilot needs low latency for reactive SFX triggers (see #43)
       runSfxRecommendation()
@@ -485,8 +651,7 @@ export default function MainLayout() {
       window.doty.sessionGetLast().then(async (last) => {
         if (!last) return
         setActiveSession(last)
-        const cues = await window.doty.sessionLoad(last)
-        setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+        await loadSession(last)
       })
     })
 
@@ -515,10 +680,11 @@ export default function MainLayout() {
       unsubSessions()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      recommendDebounceRef.current = null
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }
-  }, [runRecommendation, runSfxRecommendation, stop])
+  }, [runRecommendation, runSfxRecommendation, stop, loadSession])
 
   function commitDmPrompt() {
     const text = dmPromptRef.current.trim()
@@ -526,7 +692,8 @@ export default function MainLayout() {
     console.log('[recommend] commit DM prompt:', JSON.stringify(text))
     setDmBusy(true)
     runDmRecommendation(text)
-    // One text, three panes (ADR-0005): the room hears what the lists hear.
+    // One text, three panes (ADR-0005): the lights read all of it, the models
+    // read the first hintChars of it.
     window.doty.lightsSetHint(activeSession, text).catch(() => {})
   }
 
@@ -803,15 +970,14 @@ export default function MainLayout() {
                 const s = await window.doty.sessionCreate(name)
                 setSessions((prev) => [s, ...prev])
                 setActiveSession(s.file)
-                setTranscripts([])
+                resetSession()
                 // Main restarts its own clock for the new file; the header must
                 // restart with it, or the take keeps counting from the old one.
                 if (recording) setSessionStartTime(Date.now())
               }}
               onSwitchSession={async (file) => {
                 setActiveSession(file)
-                const cues = await window.doty.sessionLoad(file)
-                setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+                await loadSession(file)
               }}
               onRenameSession={async (file, name) => {
                 await window.doty.sessionRename(file, name)
@@ -824,15 +990,14 @@ export default function MainLayout() {
                   const remaining = sessions.filter((s) => s.file !== file)
                   if (remaining.length > 0) {
                     setActiveSession(remaining[0].file)
-                    const cues = await window.doty.sessionLoad(remaining[0].file)
-                    setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
+                    await loadSession(remaining[0].file)
                   } else {
                     // Keep a recording destination: deleting the last session
                     // must not leave the mic writing into a void.
                     const s = await window.doty.sessionCreate()
                     setSessions([s])
                     setActiveSession(s.file)
-                    setTranscripts([])
+                    resetSession()
                   }
                 }
               }}
@@ -970,6 +1135,8 @@ export default function MainLayout() {
             setRecommendCount(count)
             window.doty.setRecommendationCount(count)
           }}
+          context={context}
+          onContextChange={applyContext}
         />
       )}
     </div>

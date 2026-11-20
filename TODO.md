@@ -2,6 +2,24 @@
 
 ## Pending
 
+- [ ] Sessions: a session is a directory (`transcript.vtt`, `mic.wav`, `remote.wav`)
+      for new sessions; flat `session-*.vtt` files keep working. Decided so notes,
+      per-speaker audio and a possible video file have a home; nothing is migrated
+      in bulk.
+- [ ] Sessions: DM notes as WebVTT `NOTE` blocks inside `transcript.vtt`, appended
+      from the transcript header. A live note enters the model context; a note in
+      a finished session is a record only.
+- [ ] Sessions: detail view with per-cue text edit and delete through a lossless
+      `rewriteSessionCues`, refusing a rewrite whose tail cue no longer matches
+      the file. The recording session can be edited except its last cue.
+- [ ] Sessions: markdown export through a save dialog. The builder already
+      exists in `MainLayout` but writes to the clipboard.
+- [ ] Sessions: `rewriteSessionCues` is lossy (drops `<v>` spans, untested) and
+      slices the header by the substring `NOTE`, so a session whose name contains
+      it would be truncated. Fix before anything calls it.
+- [ ] Sessions: re-transcription from the session WAV (issue #52). Its own
+      project: transcribe-cpp batch decode, progress, and it must not clobber
+      edited cues.
 - [ ] Lights: the prototype ships token pairing, Area choice, group control and
       mood-driven presets (`docs/adr/0004-home-assistant-on-the-lan.md`). Open:
       the three `d1-omni` hint questions (hue, motion, brightness) once a real

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { DEFAULT_CONTEXT } from '../src/lib/context'
 
 // The store derives its path from Electron's userData; point that at a temp dir
 // so a test never touches the DM's real config.
@@ -22,6 +23,15 @@ beforeAll(async () => {
 
 afterAll(() => {
   fs.rmSync(mock.dir, { recursive: true, force: true })
+})
+
+describe('model context', () => {
+  it('survives a later write and reads back whole', () => {
+    const context = { windowChars: 900, rankerChars: 400, sfxChars: 400, hintChars: 200, debounceMs: 2000 }
+    store.set('context', context)
+    store.set('recommendationCount', 4)
+    expect(store.get('context', DEFAULT_CONTEXT)).toEqual(context)
+  })
 })
 
 describe('autopilot master switch', () => {

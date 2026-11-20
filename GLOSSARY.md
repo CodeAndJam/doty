@@ -79,6 +79,11 @@ The DM's own words about the moment of play, typed above the rolling transcript 
 music, the effects and the lights alike. It nudges; the transcript still decides.
 _Avoid_: prompt, cue, note, scene description, static prompt
 
+**Model context**:
+Everything the decision models read about a session: a live window of recent words, seeded from the
+open session when it loads, plus the DM's Session Hint. It is never re-read per decision.
+_Avoid_: prompt, memory, transcript history
+
 **Playback Device**:
 A Home Assistant entity that plays audio. Not integrated yet; named now so that a smart speaker is
 never called a Speaker.

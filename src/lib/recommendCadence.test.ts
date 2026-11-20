@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { countWords, MIN_INTERVAL_MS, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from './recommendCadence'
+import {
+  countWords,
+  MIN_INTERVAL_MS,
+  MIN_NEW_WORDS,
+  noteRanked,
+  noteSpokenWords,
+  seedCadence,
+  shouldRecommend,
+  waitBeforeRecommending,
+} from './recommendCadence'
 
 describe('recommendation cadence', () => {
   it('ignores a single filler word however long it has been', () => {
@@ -23,5 +32,40 @@ describe('recommendation cadence', () => {
   it('counts words the way a table speaks', () => {
     expect(countWords('  entra o   dragão  ')).toBe(3)
     expect(countWords('')).toBe(0)
+  })
+
+  it('ranks again after a long session was seeded', () => {
+    // The buffer was seeded from a session and then trimmed to the window. A
+    // length difference across that trim goes negative and no line ever ranks;
+    // the counter only sees the words that were actually spoken since.
+    let cadence = seedCadence(0)
+    expect(shouldRecommend(cadence.words, MIN_INTERVAL_MS)).toBe(false)
+
+    cadence = noteSpokenWords(cadence, 'the lich wakes')
+    cadence = noteSpokenWords(cadence, '')
+    expect(cadence).toEqual({ words: 3, at: 0 })
+    expect(shouldRecommend(cadence.words, MIN_INTERVAL_MS)).toBe(true)
+  })
+
+  it('starts counting again once a ranking was applied', () => {
+    let cadence = noteSpokenWords(seedCadence(0), 'a b c d e')
+    cadence = noteRanked(cadence, 5_000, cadence.words)
+    expect(cadence).toEqual({ words: 0, at: 5_000 })
+    expect(shouldRecommend(cadence.words, 7_000)).toBe(false)
+  })
+
+  it('keeps the words spoken while a ranking was running', () => {
+    let cadence = noteSpokenWords(seedCadence(0), 'a b c')
+    const rankedWords = cadence.words
+    cadence = noteSpokenWords(cadence, 'd e f')
+    expect(cadence).toEqual({ words: 6, at: 0 })
+    cadence = noteRanked(cadence, 5_000, rankedWords)
+    expect(cadence).toEqual({ words: 3, at: 5_000 })
+  })
+
+  it('never goes negative when the counter was reset under a ranking', () => {
+    // A session switch reseeds the counter while a ranking is in flight.
+    const cadence = noteRanked(seedCadence(0), 1_000, 5)
+    expect(cadence.words).toBe(0)
   })
 })

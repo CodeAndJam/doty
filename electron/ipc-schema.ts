@@ -46,6 +46,15 @@ const DecisionRowSchema = Schema.Struct({
   source: Schema.Literals(['auto', 'manual', 'hint']),
 })
 
+/** What the models may read; every field optional because the UI sends a patch. */
+const ContextConfigSchema = Schema.Struct({
+  windowChars: Schema.optional(Schema.Number),
+  rankerChars: Schema.optional(Schema.Number),
+  sfxChars: Schema.optional(Schema.Number),
+  hintChars: Schema.optional(Schema.Number),
+  debounceMs: Schema.optional(Schema.Number),
+})
+
 /** A pick or a rejection. Mirrors `PreferenceRow`. */
 const PreferenceRowSchema = Schema.Struct({
   at: Schema.Number,
@@ -112,6 +121,7 @@ export const ARGS = {
   [INVOKE.setSfxFolder]: Schema.Tuple([Schema.String]),
   [INVOKE.setSfxRecommendationCount]: Schema.Tuple([Schema.Number]),
   [INVOKE.setAutopilotConfig]: Schema.Tuple([Schema.Record(Schema.String, Schema.Unknown)]),
+  [INVOKE.setContext]: Schema.Tuple([ContextConfigSchema]),
   [INVOKE.deleteModel]: Schema.Tuple([Schema.Literals(['stt', 'ranker', 'embedder']), Schema.optional(Schema.String)]),
   [INVOKE.debugSetEnabled]: Schema.Tuple([Schema.Boolean]),
 }
