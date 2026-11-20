@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/CodeAndJam/doty/compare/v5.3.0...v5.4.0) (2026-11-19)
+
+
+### Features
+
+* **footprint:** gate memory, CPU and decision latency ([#150](https://github.com/CodeAndJam/doty/issues/150)) ([5e5a9cd](https://github.com/CodeAndJam/doty/commit/5e5a9cdfe593b825cd5f61ab203c72e462f6c310))
+
 ## [5.3.0](https://github.com/CodeAndJam/doty/compare/v5.2.0...v5.3.0) (2026-11-18)
 
 
