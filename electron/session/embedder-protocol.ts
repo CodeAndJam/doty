@@ -43,6 +43,9 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
       // directory replaces the model below, one load at a time.
       await loading.promise.catch(() => {})
       if (model && modelDir === dir) return model
+      // A failed load woke both waiters: the first one to get here starts the
+      // retry, the rest join it instead of loading a second model.
+      if (loading) return modelFor(dir)
     }
     const current = (async () => {
       const previous = model

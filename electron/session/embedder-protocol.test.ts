@@ -71,6 +71,16 @@ describe('embedder protocol', () => {
     expect(load).toHaveBeenCalledTimes(1)
   })
 
+  it('releases a model once when two disposals race', async () => {
+    const embedder = model()
+    const handler = createEmbedderHandler(async () => embedder)
+    await handler.handle({ id: 1, kind: 'load', dir: '/models' })
+
+    await Promise.all([handler.handle({ id: 2, kind: 'dispose' }), handler.handle({ id: 3, kind: 'dispose' })])
+
+    expect(embedder.dispose).toHaveBeenCalledTimes(1)
+  })
+
   it('disposes the old model when the directory changes, and on dispose', async () => {
     const first = model()
     const second = model()

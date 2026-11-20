@@ -238,6 +238,8 @@ export async function decide(prompt: string, candidates: string[]): Promise<numb
   // A call with no candidates is the warmup: it still pays for the load, so the
   // first real recommendation never blocks on a 1.5 GB read.
   if (candidates.length === 0) {
+    // The warmup also pays for the load; it must not resurrect a disposed model.
+    if (disposing) return []
     await ensureWorker()
     return []
   }
@@ -249,6 +251,7 @@ export async function decide(prompt: string, candidates: string[]): Promise<numb
 /** Which sound effect, if any, fits this moment. Same model, stricter question. */
 export async function rankSfx(state: string, candidates: string[]): Promise<number[]> {
   if (candidates.length === 0) {
+    if (disposing) return []
     await ensureWorker()
     return []
   }
@@ -263,6 +266,7 @@ export async function evaluateSession(
   candidates: string[],
 ): Promise<{ tracks: number[]; moods: number[] }> {
   if (candidates.length === 0) {
+    if (disposing) return { tracks: [], moods: [] }
     await ensureWorker()
     return { tracks: [], moods: [] }
   }
@@ -281,19 +285,21 @@ export async function disposeRanker(): Promise<void> {
   const disposed = new Error('Ranker disposed')
   // Nothing may start a load from here on: the drain loop may still be between
   // jobs, and a job that lands during the teardown would fork a fresh worker for
-  // the model the caller is deleting.
+  // the model the caller is deleting. Only the call that owned the flag clears
+  // it, so a second concurrent dispose cannot reopen the window.
+  const owner = !disposing
   disposing = true
-  failQueued(disposed)
-  const w = worker
-  if (!w) {
-    disposing = false
-    return
-  }
-  worker = null
-  ready = false
-  loadPromise = null
-  failPending(disposed)
   try {
+    failQueued(disposed)
+    const w = worker
+    if (!w) {
+      failPending(disposed)
+      return
+    }
+    worker = null
+    ready = false
+    loadPromise = null
+    failPending(disposed)
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         // Still loading or mid-run. Terminating a worker in that state aborts the
@@ -313,6 +319,6 @@ export async function disposeRanker(): Promise<void> {
       w.postMessage({ type: 'close' })
     })
   } finally {
-    disposing = false
+    if (owner) disposing = false
   }
 }

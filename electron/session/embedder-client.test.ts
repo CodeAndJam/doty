@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 /**
  * The client's job is the process boundary, so the boundary is faked: a child
@@ -80,6 +80,12 @@ beforeAll(async () => {
   createEmbedder = (await import('./embedder-client')).createEmbedder
 })
 
+afterEach(() => {
+  // A test that times out skips its own `finally`; the next one must not inherit
+  // fake timers.
+  vi.useRealTimers()
+})
+
 describe('embedder client', () => {
   it('takes its capability from the worker that loaded the model', async () => {
     const child = nextChild()
@@ -108,6 +114,8 @@ describe('embedder client', () => {
     const audio = child.posted.find((message) => message.kind === 'audio')
     expect(audio?.dir).toBe('/models')
     const sent = audio?.pcm as Float32Array
+    // A boxed array would cross the port as 480k JS values instead of a buffer.
+    expect(sent).toBeInstanceOf(Float32Array)
     expect(sent).toHaveLength(2)
     expect(sent[0]).toBeCloseTo(0.1, 6)
     expect(sent[1]).toBeCloseTo(0.2, 6)

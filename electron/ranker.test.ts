@@ -15,6 +15,9 @@ const fake = vi.hoisted(() => {
     posted: Array<{ type: string; id?: number }> = []
     /** While true, a posted question is recorded but not answered. */
     hold = true
+    /** While false, `close` is recorded and the test answers it. */
+    autoClose = true
+    terminated = false
 
     constructor() {
       FakeWorker.latest = this
@@ -27,7 +30,12 @@ const fake = vi.hoisted(() => {
     }
 
     once(event: string, listener: Listener) {
-      this.on(event, listener)
+      // A real `once`: the listener must not survive its first call.
+      const wrapped = (value: unknown) => {
+        this.off(event, wrapped)
+        listener(value)
+      }
+      this.on(event, wrapped)
     }
 
     off(event: string, listener: Listener) {
@@ -40,7 +48,7 @@ const fake = vi.hoisted(() => {
     postMessage(message: { type: string; id?: number }) {
       this.posted.push(message)
       if (message.type === 'close') {
-        setTimeout(() => this.emit('message', { type: 'closed' }), 0)
+        if (this.autoClose) setTimeout(() => this.emit('message', { type: 'closed' }), 0)
         return
       }
       if (!this.hold) this.answer(message)
@@ -60,7 +68,9 @@ const fake = vi.hoisted(() => {
       for (const listener of this.listeners.get(event) ?? []) listener(value)
     }
 
-    terminate() {}
+    terminate() {
+      this.terminated = true
+    }
   }
 
   return { FakeWorker }
@@ -221,6 +231,49 @@ describe('ranker supervisor', () => {
     await expect(third).resolves.toEqual([0.5])
 
     await ranker.disposeRanker()
+  })
+
+  it('ignores an answer that arrives during teardown and still terminates', async () => {
+    const ranker = await load()
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const worker = fake.FakeWorker.latest!
+    const answerId = worker.posted[0].id
+    worker.autoClose = false
+
+    // Attach before disposing: `failPending` rejects it synchronously.
+    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
+    const closing = ranker.disposeRanker()
+    await settle()
+    // The in-flight forward pass answers after the close request. A `once`
+    // listener would swallow it and wait out the 3 s teardown.
+    worker.emit('message', { type: 'probabilities', id: answerId, probabilities: [0.5] })
+    await settle()
+    expect(worker.terminated).toBe(false)
+
+    worker.emit('message', { type: 'closed' })
+    await closing
+    expect(worker.terminated).toBe(true)
+    await firstFailed
+  })
+
+  it('refuses a caller that arrives during the teardown', async () => {
+    const ranker = await load()
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const worker = fake.FakeWorker.latest!
+    worker.autoClose = false
+
+    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
+    const closing = ranker.disposeRanker()
+    // Lands inside the close handshake: it must not fork a worker for a model
+    // that is being deleted.
+    await expect(ranker.decide('late', ['y'])).rejects.toThrow(/disposed/)
+
+    worker.emit('message', { type: 'closed' })
+    await closing
+    await firstFailed
+    expect(fake.FakeWorker.latest).toBe(worker)
   })
 
   it('does not merge a question whose options changed', async () => {

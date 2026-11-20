@@ -1272,6 +1272,8 @@ const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Embedder | null = null
 /** The first load takes a fork plus a 200 MB read; concurrent callers join it. */
 let embedderLoad: Promise<Embedder | null> | null = null
+/** Set while the model is being deleted: no load may start or be believed. */
+let deletingEmbedder = false
 
 async function startEmbedder(): Promise<Embedder | null> {
   // Loaded on demand, in a utility process: onnxruntime cannot be unloaded from
@@ -1299,11 +1301,17 @@ async function startEmbedder(): Promise<Embedder | null> {
 const embeddingDispose = (model: Embedder | null) => model?.dispose().catch(() => {}) ?? Promise.resolve()
 
 function loadEmbedderOnce(): Promise<Embedder | null> {
+  if (deletingEmbedder) return Promise.resolve(null)
   if (embedder) return Promise.resolve(embedder)
   if (!embedderAvailable(EMBEDDER_DIR)) return Promise.resolve(null)
-  embedderLoad ??= startEmbedder().finally(() => {
-    embedderLoad = null
-  })
+  if (!embedderLoad) {
+    const attempt = startEmbedder().finally(() => {
+      // Only the load that owns the memo may clear it: a delete settles the old
+      // one and a newer caller may already have started another.
+      if (embedderLoad === attempt) embedderLoad = null
+    })
+    embedderLoad = attempt
+  }
   return embedderLoad
 }
 
@@ -1885,14 +1893,20 @@ handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: 
     return { ok: true }
   }
   // A handshake in flight would otherwise resolve after the delete and leave a
-  // live process serving a directory that is gone.
-  const inFlight = embedderLoad
-  embedderLoad = null
-  const settling = await inFlight?.catch(() => null)
-  await embeddingDispose(settling ?? null)
-  await embeddingDispose(embedder)
-  embedder = null
-  fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  // live process serving a directory that is gone. The flag also refuses the
+  // search keystroke that would otherwise start a second one while we wait.
+  deletingEmbedder = true
+  try {
+    const inFlight = embedderLoad
+    embedderLoad = null
+    const settling = await inFlight?.catch(() => null)
+    await embeddingDispose(settling ?? null)
+    await embeddingDispose(embedder)
+    embedder = null
+    fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  } finally {
+    deletingEmbedder = false
+  }
   library.invalidate()
   send(EVENTS.embeddingProgress, library.status())
   return { ok: true }

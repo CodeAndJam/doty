@@ -93,7 +93,9 @@ export async function createEmbedder(dir: string, options: CreateEmbedderOptions
   }
 
   const documents = async (texts: string[]) => (await send('documents', { texts })) as Float32Array[]
-  const query = async (text: string) => (await send('query', { text })) as Float32Array
+  // A wedged worker must not hold a search keystroke for the batch deadline;
+  // a query is one short pass.
+  const query = async (text: string) => (await send('query', { text }, 5_000)) as Float32Array
   const audio = async (pcm: Float32Array) => (await send('audio', { pcm })) as Float32Array
 
   const embedder: Embedder = {
