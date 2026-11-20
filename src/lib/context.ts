@@ -42,6 +42,9 @@ export function normalizeContext(value: Partial<ContextConfig> | undefined): Con
     const [min, max] = CONTEXT_LIMITS[key]
     out[key] = Math.round(Math.min(max, Math.max(min, raw)))
   }
+  // A reader cannot read more than the window keeps, or the slider lies.
+  out.rankerChars = Math.min(out.rankerChars, out.windowChars)
+  out.sfxChars = Math.min(out.sfxChars, out.windowChars)
   return out
 }
 

@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type RankerType, type RecommendResult, useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
-import { CONTEXT_LIMITS, type ContextConfig, composeState, DEFAULT_CONTEXT } from '../lib/context'
+import { type ContextConfig, composeState, DEFAULT_CONTEXT } from '../lib/context'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
-import { addSpokenWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
+import {
+  MIN_NEW_WORDS,
+  noteRanked,
+  noteSpokenWords,
+  seedCadence,
+  shouldRecommend,
+  waitBeforeRecommending,
+} from '../lib/recommendCadence'
 import { confidentSfx, mergeSfxCandidates, rankAllSfx } from '../lib/sfxRank'
 import { speakerPrefix } from '../lib/speaker'
 import { stableOrder } from '../lib/stableOrder'
@@ -118,10 +125,8 @@ export default function MainLayout() {
     }
   }, [])
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  /** What the last recommendation was based on, for the two cadence gates. */
-  const lastRankAtRef = useRef(0)
-  /** Words spoken since that ranking: a counter, not a buffer length. */
-  const pendingWordsRef = useRef(0)
+  /** Words spoken since the last ranking and when that was, for the two gates. */
+  const cadenceRef = useRef(seedCadence(0))
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** The prompt the shelf is following; empty means the transcript owns it. */
@@ -165,12 +170,14 @@ export default function MainLayout() {
     sfxRecommendCountRef.current = sfxRecommendCount
   }, [sfxRecommendCount])
 
-  /** Store the DM's experiment surface: live effect first, persistence after. */
-  const applyContext = useCallback((next: ContextConfig) => {
+  /** Persist only what changed: a whole object built before the mount fetch
+   *  lands would overwrite the budgets the DM never touched. */
+  const applyContext = useCallback((patch: Partial<ContextConfig>) => {
+    const next = { ...contextRef.current, ...patch }
     contextDirtyRef.current = true
     setContext(next)
     contextRef.current = next
-    window.doty.setContext(next).catch((e) => {
+    window.doty.setContext(patch).catch((e) => {
       console.error('[settings] context not saved:', e)
     })
   }, [])
@@ -178,20 +185,23 @@ export default function MainLayout() {
   /**
    * One session's cues: what the pane shows and what the models read. Opening a
    * session is the only time its file seeds the window; nothing re-reads it per
-   * decision. Bounded by the widest legal window, because the mount fetch may
-   * not have delivered the DM's window yet and the next cue trims to it anyway.
+   * decision. Answers still in flight belong to the session that started them.
    */
   const applyCues = useCallback((cues: Array<{ text: string; speaker?: string }>) => {
+    lastRecApplied.current = ++recSeq.current
+    lastSfxApplied.current = ++sfxSeq.current
+    lastDmApplied.current = ++dmSeq.current
     setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
     transcriptBufferRef.current = cues
       .map((c) => c.text)
       .filter(Boolean)
       .join(' ')
-      .slice(-CONTEXT_LIMITS.windowChars[1])
-    // A new buffer is a new zero: the cadence gate counts words spoken since the
-    // last ranking, never a buffer length, which trimming makes negative.
-    pendingWordsRef.current = 0
-    lastRankAtRef.current = Date.now()
+      .slice(-contextRef.current.windowChars)
+    // A new buffer is a new zero: the gate counts words spoken since the last
+    // ranking, never a buffer length, which trimming makes negative.
+    cadenceRef.current = seedCadence(Date.now())
+    // The director keeps its own copy; without this it scores the previous room.
+    setSessionText(transcriptBufferRef.current.slice(-contextRef.current.rankerChars).trim())
   }, [])
 
   // Load recommendation count, context budget and the autopilot master switch on mount
@@ -325,8 +335,7 @@ export default function MainLayout() {
     showRanking(result)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(state)
-    lastRankAtRef.current = Date.now()
-    pendingWordsRef.current = 0
+    cadenceRef.current = noteRanked(Date.now())
   }, [showRanking])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -456,15 +465,15 @@ export default function MainLayout() {
       setInterimText('') // Clear interim when final arrives
       // The ranker reads the words, not the labels: "Ana:" is for the DM's eyes.
       transcriptBufferRef.current = `${transcriptBufferRef.current} ${text}`.slice(-contextRef.current.windowChars)
-      pendingWordsRef.current = addSpokenWords(pendingWordsRef.current, text)
+      cadenceRef.current = noteSpokenWords(cadenceRef.current, text)
       // Debounce STT-triggered recommendations, then apply the cadence gates:
       // three new words, and two seconds since the last answer. A request that is
       // only too early is retried when the interval allows, not dropped, or a
       // long uninterrupted sentence would never refresh.
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       const maybeRecommend = () => {
-        const wordsSince = pendingWordsRef.current
-        const msSince = Date.now() - lastRankAtRef.current
+        const wordsSince = cadenceRef.current.words
+        const msSince = Date.now() - cadenceRef.current.at
         if (!shouldRecommend(wordsSince, msSince)) {
           const wait = waitBeforeRecommending(msSince)
           if (wordsSince >= MIN_NEW_WORDS && wait > 0) {

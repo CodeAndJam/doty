@@ -55,7 +55,7 @@ interface Props {
   onRecommendCountChange: (count: number) => void
   /** What the models may read: the DM's experiment surface. */
   context: ContextConfig
-  onContextChange: (context: ContextConfig) => void
+  onContextChange: (patch: Partial<ContextConfig>) => void
   /** Which group to open on; the transcript failures open Transcription. */
   initialSection?: SectionId
 }
@@ -90,6 +90,7 @@ function ContextSlider({
   label,
   help,
   unit,
+  spokenUnit = unit,
   value,
   min,
   max,
@@ -99,6 +100,7 @@ function ContextSlider({
   label: string
   help: string
   unit: string
+  spokenUnit?: string
   value: number
   min: number
   max: number
@@ -109,10 +111,30 @@ function ContextSlider({
   // The slider moves locally and only the release writes: a drag would
   // otherwise rewrite config.json dozens of times on the main process.
   const [draft, setDraft] = useState(value)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const commitRef = useRef(onCommit)
+  commitRef.current = onCommit
+
   useEffect(() => setDraft(value), [value])
-  const commit = () => {
-    if (draft !== value) onCommit(draft)
-  }
+
+  const flush = useCallback(() => {
+    if (draftRef.current !== valueRef.current) commitRef.current(draftRef.current)
+  }, [])
+
+  // A release can land outside the input, and assistive technology changes the
+  // value without pointer or key events; flush on the document release and when
+  // the panel closes, so neither loses the number on screen.
+  useEffect(() => {
+    window.addEventListener('pointerup', flush)
+    return () => {
+      window.removeEventListener('pointerup', flush)
+      flush()
+    }
+  }, [flush])
+
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
@@ -124,16 +146,15 @@ function ContextSlider({
       <input
         type="range"
         aria-label={label}
-        aria-valuetext={`${draft} ${unit}`}
+        aria-valuetext={`${draft} ${spokenUnit}`}
         aria-describedby={helpId}
         min={min}
         max={max}
         step={step}
         value={draft}
         onChange={(e) => setDraft(Number(e.target.value))}
-        onPointerUp={commit}
-        onKeyUp={commit}
-        onBlur={commit}
+        onKeyUp={flush}
+        onBlur={flush}
         style={{ width: '100%', accentColor: '#d9a441' }}
       />
       <p
@@ -194,7 +215,7 @@ export default function Settings({
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [updateNotice, setUpdateNotice] = useState<string | null>(null)
   const [modelMessage, setModelMessage] = useState<string | null>(null)
-  const [contextNotice, setContextNotice] = useState('')
+  const [contextNotice, setContextNotice] = useState({ id: 0, text: '' })
   const [section, setSection] = useState<SectionId>(initialSection)
   const [debugState, setDebugState] = useState<DebugState | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -1471,7 +1492,7 @@ export default function Settings({
               </p>
             </div>
             {/* What the models read: the knobs that change a pick. */}
-            <fieldset className="mb-5" style={{ border: 0, padding: 0, margin: 0 }}>
+            <fieldset className="mb-5" style={{ border: 0, padding: 0, marginInline: 0 }}>
               <legend
                 style={{
                   fontFamily: "'Cinzel', serif",
@@ -1498,7 +1519,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.windowChars[0]}
                 max={CONTEXT_LIMITS.windowChars[1]}
                 step={100}
-                onCommit={(v) => onContextChange({ ...context, windowChars: v })}
+                onCommit={(v) => onContextChange({ windowChars: v })}
               />
               <ContextSlider
                 label="Music context"
@@ -1508,7 +1529,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.rankerChars[0]}
                 max={CONTEXT_LIMITS.rankerChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ ...context, rankerChars: v })}
+                onCommit={(v) => onContextChange({ rankerChars: v })}
               />
               <ContextSlider
                 label="Effects context"
@@ -1518,7 +1539,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.sfxChars[0]}
                 max={CONTEXT_LIMITS.sfxChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ ...context, sfxChars: v })}
+                onCommit={(v) => onContextChange({ sfxChars: v })}
               />
               <ContextSlider
                 label="Hint length"
@@ -1528,23 +1549,24 @@ export default function Settings({
                 min={CONTEXT_LIMITS.hintChars[0]}
                 max={CONTEXT_LIMITS.hintChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ ...context, hintChars: v })}
+                onCommit={(v) => onContextChange({ hintChars: v })}
               />
               <ContextSlider
                 label="Ranking delay"
-                help="Quiet after a line before ranking."
+                help="Quiet after a line before ranking. A ranking still waits two seconds after the last one."
                 unit="ms"
+                spokenUnit="milliseconds"
                 value={context.debounceMs}
                 min={CONTEXT_LIMITS.debounceMs[0]}
                 max={CONTEXT_LIMITS.debounceMs[1]}
                 step={250}
-                onCommit={(v) => onContextChange({ ...context, debounceMs: v })}
+                onCommit={(v) => onContextChange({ debounceMs: v })}
               />
               <button
                 type="button"
                 onClick={() => {
                   onContextChange(DEFAULT_CONTEXT)
-                  setContextNotice('Model context reset to defaults')
+                  setContextNotice((n) => ({ id: n.id + 1, text: 'Model context reset to defaults' }))
                 }}
                 style={{
                   fontSize: '14px',
@@ -1555,8 +1577,8 @@ export default function Settings({
               >
                 Reset to defaults
               </button>
-              <span role="status" aria-live="polite" className="sr-only">
-                {contextNotice}
+              <span key={contextNotice.id} role="status" aria-live="polite" className="sr-only">
+                {contextNotice.text}
               </span>
             </fieldset>
             {/* Divider before Discord */}

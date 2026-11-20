@@ -1491,7 +1491,9 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
 handle(INVOKE.getContext, () => normalizeContext(store.get('context', DEFAULT_CONTEXT)))
 
 handle(INVOKE.setContext, (_e, config: Partial<ContextConfig>) => {
-  const next = normalizeContext(config)
+  // Merge into what is stored: a patch that arrives before the renderer has read
+  // the config must not reset the budgets it did not mention.
+  const next = normalizeContext({ ...store.get('context', DEFAULT_CONTEXT), ...config })
   store.set('context', next)
   return next
 })

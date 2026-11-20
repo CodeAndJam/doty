@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  addSpokenWords,
   countWords,
   MIN_INTERVAL_MS,
   MIN_NEW_WORDS,
+  noteRanked,
+  noteSpokenWords,
+  seedCadence,
   shouldRecommend,
   waitBeforeRecommending,
 } from './recommendCadence'
@@ -32,16 +34,23 @@ describe('recommendation cadence', () => {
     expect(countWords('')).toBe(0)
   })
 
-  it('keeps counting words after a long session was seeded', () => {
-    // A loaded session seeds the buffer and the buffer is then trimmed to the
-    // window. Counting a length difference across that trim goes negative and
-    // no line ever ranks again; counting the spoken words does not.
-    let pending = 0
-    expect(shouldRecommend(pending, MIN_INTERVAL_MS)).toBe(false)
+  it('ranks again after a long session was seeded', () => {
+    // The buffer was seeded from a session and then trimmed to the window. A
+    // length difference across that trim goes negative and no line ever ranks;
+    // the counter only sees the words that were actually spoken since.
+    let cadence = seedCadence(0)
+    expect(shouldRecommend(cadence.words, MIN_INTERVAL_MS)).toBe(false)
 
-    pending = addSpokenWords(pending, 'the lich wakes')
-    pending = addSpokenWords(pending, '')
-    expect(pending).toBe(3)
-    expect(shouldRecommend(pending, MIN_INTERVAL_MS)).toBe(true)
+    cadence = noteSpokenWords(cadence, 'the lich wakes')
+    cadence = noteSpokenWords(cadence, '')
+    expect(cadence.words).toBe(3)
+    expect(shouldRecommend(cadence.words, MIN_INTERVAL_MS)).toBe(true)
+  })
+
+  it('starts counting again once a ranking was applied', () => {
+    let cadence = noteSpokenWords(seedCadence(0), 'a b c d e')
+    cadence = noteRanked(5_000)
+    expect(cadence).toEqual({ words: 0, at: 5_000 })
+    expect(shouldRecommend(cadence.words, 7_000)).toBe(false)
   })
 })

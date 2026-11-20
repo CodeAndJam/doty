@@ -31,6 +31,20 @@ export function countWords(text: string): number {
  * difference: the window is trimmed, so a seeded session makes the difference
  * negative and no line ever ranks again.
  */
-export function addSpokenWords(pending: number, line: string): number {
-  return pending + countWords(line)
+export interface Cadence {
+  words: number
+  /** When the last ranking was applied. */
+  at: number
+}
+
+export function seedCadence(now: number): Cadence {
+  return { words: 0, at: now }
+}
+
+export function noteSpokenWords(cadence: Cadence, line: string): Cadence {
+  return { words: cadence.words + countWords(line), at: cadence.at }
+}
+
+export function noteRanked(now: number): Cadence {
+  return { words: 0, at: now }
 }

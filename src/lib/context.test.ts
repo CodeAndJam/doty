@@ -36,6 +36,12 @@ describe('normalizeContext', () => {
     }
   })
 
+  it('keeps a reader below the window it reads from', () => {
+    const out = normalizeContext({ windowChars: 200, rankerChars: 4000, sfxChars: 4000 })
+    expect(out.rankerChars).toBe(200)
+    expect(out.sfxChars).toBe(200)
+  })
+
   it('rounds a fractional value', () => {
     expect(normalizeContext({ windowChars: 200.6 }).windowChars).toBe(201)
   })
