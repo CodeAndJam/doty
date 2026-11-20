@@ -255,7 +255,23 @@ export default function Settings({
     window.doty.getSttModel().then(setSttModel)
     window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
-    window.doty.getSttModelList().then(setSttModelList)
+    // The list is static, but an early/failed IPC used to leave the pane empty
+    // with no download path. Retry a few times before giving up.
+    const cancelled = false
+    let tries = 0
+    const loadModels = () => {
+      window.doty
+        .getSttModelList()
+        .then((list) => {
+          if (cancelled) return
+          setSttModelList(list)
+          if (list.length === 0 && ++tries < 4) setTimeout(loadModels, 500)
+        })
+        .catch(() => {
+          if (!cancelled && ++tries < 4) setTimeout(loadModels, 500)
+        })
+    }
+    loadModels()
     // Subscribe first, then fetch: an event that lands while the fetch is in
     // flight must not be overwritten by the older snapshot.
     let sawEvent = false
