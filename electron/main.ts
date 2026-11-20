@@ -1739,7 +1739,11 @@ handle(INVOKE.updateGetState, () => updateState)
 handle(INVOKE.updateInstall, async () => {
   const release = pendingRelease
   const targetApp = runningBundle()
-  if (updateState.status !== 'available' || !release) return { ok: false, error: 'No update is waiting' }
+  if ((updateState.status !== 'available' && updateState.status !== 'error') || !release) {
+    return { ok: false, error: 'No update is waiting' }
+  }
+  // A swap quits the app: never during a take.
+  if (recordingActive) return { ok: false, error: 'Finish the session before updating' }
   if (!targetApp) return { ok: false, error: 'Doty is not running from an installed app' }
 
   // A bundle in a read-only folder (still on the DMG, or another user's
@@ -1755,6 +1759,8 @@ handle(INVOKE.updateInstall, async () => {
   try {
     await installUpdate({
       dmgUrl: release.url,
+      version: release.version,
+      sha256: release.sha256,
       targetApp,
       workDir: join(app.getPath('temp'), 'doty-update'),
       onProgress: (percent) => setUpdateState({ status: 'downloading', version, percent }),

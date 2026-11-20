@@ -43,14 +43,14 @@ export default function UpdateBar() {
       }}
     >
       <span>{text}</span>
-      {state.status === 'available' && (
+      {(state.status === 'available' || state.status === 'error') && (
         <button
           type="button"
           onClick={() => window.doty.updateInstall().catch(() => {})}
           className="px-2 py-0.5 transition-opacity hover:opacity-80"
           style={{ border: '1px solid rgba(217,164,65,0.5)', color: '#e4d6b4' }}
         >
-          Update &amp; restart
+          {state.status === 'error' ? 'Try again' : 'Update & restart'}
         </button>
       )}
       {(state.status === 'available' || state.status === 'error') && (

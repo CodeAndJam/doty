@@ -7,8 +7,9 @@ describe('parseVersion', () => {
     expect(parseVersion('v5.4.1')).toEqual([5, 4, 1])
   })
 
-  it('ignores a prerelease suffix', () => {
-    expect(parseVersion('5.4.0-beta.1')).toEqual([5, 4, 0])
+  it('refuses a prerelease tag instead of dressing it as a stable release', () => {
+    expect(parseVersion('5.4.0-beta.1')).toBeNull()
+    expect(parseVersion('v5.5.0-rc1')).toBeNull()
   })
 
   it('refuses anything that is not semver', () => {
@@ -37,12 +38,17 @@ describe('isNewer', () => {
 describe('pickDmg', () => {
   const assets = [
     { name: 'Doty-5.4.0-x64.dmg', browser_download_url: 'https://x/x64.dmg', size: 200 * 1024 * 1024 },
-    { name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 234 * 1024 * 1024 },
+    {
+      name: 'Doty-5.4.0-arm64.dmg',
+      browser_download_url: 'https://x/arm64.dmg',
+      size: 234 * 1024 * 1024,
+      digest: 'sha256:abc123',
+    },
     { name: 'notes.txt', browser_download_url: 'https://x/notes.txt' },
   ]
 
   it('takes the DMG for this architecture', () => {
-    expect(pickDmg(assets, 'arm64')).toEqual({ url: 'https://x/arm64.dmg', sizeMB: 234 })
+    expect(pickDmg(assets, 'arm64')).toEqual({ url: 'https://x/arm64.dmg', sizeMB: 234, sha256: 'abc123' })
   })
 
   it('accepts a lone DMG, so a Rosetta process still finds the arm64 build', () => {
