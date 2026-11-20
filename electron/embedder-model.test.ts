@@ -37,9 +37,15 @@ describe('downloadEmbedder', () => {
     }
     let percent = 0
 
-    await downloadEmbedder(download, dir, (p) => {
-      percent = p
-    })
+    await downloadEmbedder(
+      download,
+      dir,
+      (p) => {
+        percent = p
+      },
+      undefined,
+      false,
+    )
 
     expect(urls).toHaveLength(EMBEDDER_FILES.length)
     expect(urls[0]).toContain('embeddinggemma-2-ONNX')
@@ -56,7 +62,7 @@ describe('downloadEmbedder', () => {
       fs.writeFileSync(dest, Buffer.alloc(2048))
     }
 
-    await downloadEmbedder(download, dir)
+    await downloadEmbedder(download, dir, undefined, undefined, false)
 
     expect(urls.some((url) => url.endsWith('/onnx/model_q4.onnx'))).toBe(false)
     expect(urls).toHaveLength(EMBEDDER_FILES.length - 1)
@@ -64,5 +70,13 @@ describe('downloadEmbedder', () => {
 
   it('fails when the downloader reports success without writing the files', async () => {
     await expect(downloadEmbedder(fakeDownload(false), tempDir())).rejects.toThrow(/incomplete/)
+  })
+
+  it('rejects a file whose bytes do not match its pinned checksum', async () => {
+    const dir = tempDir()
+    const download: DownloadFn = async (_url, dest) => {
+      fs.writeFileSync(dest, Buffer.alloc(2048))
+    }
+    await expect(downloadEmbedder(download, dir, undefined, undefined, true)).rejects.toThrow(/checksum/)
   })
 })

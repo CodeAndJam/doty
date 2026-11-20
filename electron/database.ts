@@ -48,8 +48,18 @@ export function getDb(): Database.Database {
   // re-analyse rows written by an older analysis.
   const columns = db.prepare('PRAGMA table_info(tracks)').all() as Array<{ name: string }>
   const has = (name: string) => columns.some((column) => column.name === name)
-  if (!has('loudness')) db.exec('ALTER TABLE tracks ADD COLUMN loudness REAL')
-  if (!has('analysis_version')) db.exec('ALTER TABLE tracks ADD COLUMN analysis_version INTEGER DEFAULT 0')
+  const late: Array<[string, string]> = [
+    ['loudness', 'REAL'],
+    ['analysis_version', 'INTEGER DEFAULT 0'],
+    ['bitrate', 'INTEGER'],
+    ['sample_rate', 'INTEGER'],
+    ['channels', 'INTEGER'],
+    ['codec', 'TEXT'],
+    ['mtime', 'REAL'],
+  ]
+  for (const [name, type] of late) {
+    if (!has(name)) db.exec(`ALTER TABLE tracks ADD COLUMN ${name} ${type}`)
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS track_tags (
@@ -102,17 +112,18 @@ export function getDb(): Database.Database {
  */
 export function pruneMissingTracks(folder: string, files: string[]): number {
   const db = getDb()
+  // An unmounted disk or a wrong folder yields an empty list. Deleting every row
+  // and its tags then is data loss, not a cleanup.
+  if (files.length === 0) return 0
   const keep = new Set(files.map((f) => f.replace(/\\/g, '/')))
   const rows = db.prepare('SELECT path FROM tracks').all() as Array<{ path: string }>
   const drop = rows.map((r) => r.path).filter((p) => !keep.has(p.replace(/\\/g, '/')))
   if (drop.length === 0) return 0
   const del = db.prepare('DELETE FROM tracks WHERE path = ?')
-  const delTags = db.prepare('DELETE FROM track_tags WHERE filename = ?')
+  // Tags stay: the file may return (a remount, a move back), and the DM's
+  // labelling is the one thing the scanner cannot rebuild.
   db.transaction(() => {
-    for (const path of drop) {
-      del.run(path)
-      delTags.run(path)
-    }
+    for (const path of drop) del.run(path)
   })()
   if (folder) console.log(`[library] pruned ${drop.length} tracks no longer under ${folder}`)
   return drop.length

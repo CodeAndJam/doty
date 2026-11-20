@@ -26,6 +26,7 @@ import {
   RANKER_URL,
   rankerLanguages,
   rankerPaths,
+  sha256File,
 } from './d1-model'
 import { MOODS } from './d1-omni'
 import {
@@ -584,6 +585,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   // Before the database closes: nothing may emit status after that point.
   quitting = true
+  // Restore the room before the light director loses the database.
+  void lighting.endSession().catch(() => {})
   finalizeWavRecording()
   freeRecognizer()
   disposeRanker()
@@ -1248,8 +1251,16 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
 async function ensureSideModels(): Promise<void> {
   for (const side of STT_SIDE_MODELS) {
     if (side.isReady()) continue
-    const result = await sttDownloads.start({ id: side.id, url: side.url }, join(MODELS_DIR, side.ggufFile))
-    if (!result.ok) console.warn(`[model] optional ${side.id} not installed:`, result)
+    const dest = join(MODELS_DIR, side.ggufFile)
+    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest)
+    if (!result.ok) {
+      console.warn(`[model] optional ${side.id} not installed:`, result)
+      continue
+    }
+    if (side.sha256 && sha256File(dest) !== side.sha256) {
+      fs.rmSync(dest, { force: true })
+      console.error(`[model] ${side.id} failed its checksum and was removed`)
+    }
   }
 }
 
@@ -1271,6 +1282,14 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
     join(MODELS_DIR, modelInfo.ggufFile),
   )
   if (!result.ok) return result
+
+  if (modelInfo.sha256) {
+    const dest = join(MODELS_DIR, modelInfo.ggufFile)
+    if (sha256File(dest) !== modelInfo.sha256) {
+      fs.rmSync(dest, { force: true })
+      return { ok: false, reason: 'download failed its checksum' }
+    }
+  }
 
   store.set('sttModel', modelInfo.id)
   await ensureSideModels()

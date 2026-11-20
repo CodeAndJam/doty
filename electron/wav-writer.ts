@@ -50,7 +50,11 @@ export class WavWriter {
     this.fd = fs.openSync(this.path, 'r+')
     this.bytes = existingBytes
     this.interval = setInterval(() => {
-      if (this.fd !== null) updateWavHeader(this.fd, this.bytes)
+      try {
+        if (this.fd !== null) updateWavHeader(this.fd, this.bytes)
+      } catch (e) {
+        console.error('[wav] header refresh failed:', e instanceof Error ? e.message : e)
+      }
     }, 30_000)
   }
 
@@ -61,8 +65,14 @@ export class WavWriter {
       int16.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(samples[i] * 32768))), i * 2)
     }
     // Write at an explicit offset: appendFileSync on an fd starts at position 0
-    // and would overwrite the 44-byte header.
-    fs.writeSync(this.fd, int16, 0, int16.length, 44 + this.bytes)
+    // and would overwrite the 44-byte header. A short write is retried, and only
+    // the bytes that landed count toward the header.
+    let offset = 0
+    while (offset < int16.length) {
+      const written = fs.writeSync(this.fd, int16, offset, int16.length - offset, 44 + this.bytes + offset)
+      if (written <= 0) throw new Error('wav: write returned 0')
+      offset += written
+    }
     this.bytes += int16.length
   }
 
@@ -72,6 +82,11 @@ export class WavWriter {
       this.interval = null
     }
     if (this.fd === null) return
+    try {
+      fs.fsyncSync(this.fd)
+    } catch {
+      /* best effort before the header */
+    }
     updateWavHeader(this.fd, this.bytes)
     fs.closeSync(this.fd)
     this.fd = null

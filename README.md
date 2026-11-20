@@ -345,7 +345,9 @@ chore(deps): bump sherpa-onnx-node to 1.13.0
 
 ## Privacy
 
-Doty runs entirely on your machine. No audio, transcripts, or music data ever leaves your computer. The only network requests are:
+Doty runs entirely on your machine. No audio, transcripts, or music data ever leaves your computer.
+
+Your sessions, tags and lane labels live in `~/.doty/` (`sessions/` and `doty.db`); the transcript folder in Settings may point elsewhere. Back up that folder and the profile directory before moving machines. The only network requests are:
 - One-time model downloads on first launch (from Hugging Face and GitHub)
 - Discord bot connection (only if you configure it)
 

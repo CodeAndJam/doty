@@ -27,6 +27,19 @@ describe('getLastCueStartMs', () => {
     expect(getLastCueStartMs(path.join(os.tmpdir(), 'does-not-exist.vtt'))).toBe(0)
     fs.unlinkSync(file)
   })
+
+  it('ignores a cue body that contains the arrow', () => {
+    const file = path.join(os.tmpdir(), `test-cue-body-${Date.now()}.vtt`)
+    fs.writeFileSync(file, 'WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nhe said --> and left\n\n')
+    expect(getLastCueStartMs(file)).toBe(5_000)
+    fs.unlinkSync(file)
+  })
+})
+
+describe('appendCue', () => {
+  it('does not take the app down when the transcript cannot be written', () => {
+    expect(() => appendCue(path.join(os.tmpdir(), 'no-such-dir', 'x.vtt'), 0, 'hello')).not.toThrow()
+  })
 })
 
 describe('loadSessionAsync', () => {

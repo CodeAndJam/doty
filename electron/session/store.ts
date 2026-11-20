@@ -116,21 +116,28 @@ function migrateVectorKey(db: Database.Database): void {
   const table = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'track_vectors'").get() as
     | { sql?: string }
     | undefined
-  if (!table?.sql || /primary key\s*\(\s*path\s*,\s*model\s*\)/i.test(table.sql)) return
-  db.exec(`
-    ALTER TABLE track_vectors RENAME TO track_vectors_old;
-    CREATE TABLE track_vectors (
-      path TEXT NOT NULL,
-      model TEXT NOT NULL,
-      dim INTEGER NOT NULL,
-      vector BLOB NOT NULL,
-      updated_at INTEGER NOT NULL,
-      PRIMARY KEY (path, model)
-    );
-    INSERT OR REPLACE INTO track_vectors (path, model, dim, vector, updated_at)
-      SELECT path, model, dim, vector, updated_at FROM track_vectors_old;
-    DROP TABLE track_vectors_old;
-  `)
+  if (!table?.sql || /primary key\s*\(\s*path\s*,\s*model\s*\)/i.test(table.sql)) {
+    // A previous run may have died between the rename and the drop.
+    db.exec('DROP TABLE IF EXISTS track_vectors_old')
+    return
+  }
+  db.transaction(() => {
+    db.exec(`
+      DROP TABLE IF EXISTS track_vectors_old;
+      ALTER TABLE track_vectors RENAME TO track_vectors_old;
+      CREATE TABLE track_vectors (
+        path TEXT NOT NULL,
+        model TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        vector BLOB NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (path, model)
+      );
+      INSERT OR REPLACE INTO track_vectors (path, model, dim, vector, updated_at)
+        SELECT path, model, dim, vector, updated_at FROM track_vectors_old;
+      DROP TABLE track_vectors_old;
+    `)
+  })()
 }
 
 export interface SessionStore {

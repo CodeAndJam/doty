@@ -26,6 +26,8 @@ export interface SttModelInfo {
   streaming: boolean
   /** Languages supported */
   languages: string[]
+  /** SHA-256 of the downloadable artifact; absent means unverified. */
+  sha256?: string
   /** Preferred default model for a fresh install */
   default?: boolean
   isReady: () => boolean
@@ -65,6 +67,7 @@ export const STT_MODELS: SttModelInfo[] = [
     size: '716 MB',
     ggufFile: 'nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
     url: 'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
+    sha256: 'b94545b313b3223fda7b2857a52681da813935c2127643d1e9ff0c23d988089c',
     streaming: true,
     languages: [
       'en-US',
@@ -131,6 +134,7 @@ export const STT_MODELS: SttModelInfo[] = [
     size: '740 MB',
     ggufFile: 'parakeet-ultra-Q8_0.gguf',
     url: 'https://huggingface.co/handy-computer/parakeet-ultra-gguf/resolve/main/parakeet-ultra-Q8_0.gguf',
+    sha256: '007a59761e9258779f189df396b50d12b83bb5b79e66df4b955c230d2f2a0a59',
     streaming: false,
     languages: ['en', 'pt', 'es', 'fr', 'de', 'it', 'nl', 'pl', 'ro', 'sv'],
     default: true,
@@ -163,6 +167,8 @@ export type SttSideModelRole = 'vad' | 'langid'
 
 export interface SttSideModelInfo {
   id: string
+  /** SHA-256 of the downloadable artifact; absent means unverified. */
+  sha256?: string
   /** The GGUF role the worker asks for; a mismatch throws UnsupportedRole. */
   role: SttSideModelRole
   label: string
@@ -179,6 +185,7 @@ export const STT_SIDE_MODELS: SttSideModelInfo[] = [
     label: 'Silero VAD v6.2',
     ggufFile: 'silero-vad-v6.2-F32.gguf',
     url: 'https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/resolve/main/silero-vad-v6.2-F32.gguf',
+    sha256: '0d871a800c420fdd5d1b17a3aea4296d1c39608f0ff4a9295eb76457eb1c88e6',
     size: '1.2 MB',
     isReady: () => isModelFileReady('silero-vad-v6.2-F32.gguf'),
   },
