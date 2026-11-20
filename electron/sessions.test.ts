@@ -43,6 +43,15 @@ describe('appendCue', () => {
 })
 
 describe('loadSessionAsync', () => {
+  it('keeps a cue body containing --> inside the same cue', async () => {
+    const file = path.join(os.tmpdir(), `test-arrow-body-${Date.now()}.vtt`)
+    fs.writeFileSync(file, 'WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nhe said --> and left\n\n')
+    const cues = await loadSessionAsync(file)
+    expect(cues).toHaveLength(1)
+    expect(cues[0].text).toContain('he said --> and left')
+    fs.unlinkSync(file)
+  })
+
   let tmpFile: string
 
   beforeEach(() => {

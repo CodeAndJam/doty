@@ -371,6 +371,43 @@ function registerAppProtocol() {
   })
 }
 
+/** One live process per profile: two writers share one WAV and one database. */
+function acquireProfileLock(): boolean {
+  const lock = join(DOTY_HOME, '.instance.lock')
+  try {
+    fs.mkdirSync(DOTY_HOME, { recursive: true })
+  } catch {
+    /* the store would fail later with a clearer message */
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.writeFileSync(lock, String(process.pid), { flag: 'wx' })
+      app.on('will-quit', () => fs.rmSync(lock, { force: true }))
+      return true
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return true
+      let owner = 0
+      try {
+        owner = Number.parseInt(fs.readFileSync(lock, 'utf8'), 10)
+      } catch {
+        /* unreadable: treat as stale */
+      }
+      let alive = false
+      if (owner > 0) {
+        try {
+          process.kill(owner, 0)
+          alive = true
+        } catch (err) {
+          alive = (err as NodeJS.ErrnoException).code === 'EPERM'
+        }
+      }
+      if (alive) return false
+      fs.rmSync(lock, { force: true })
+    }
+  }
+  return false
+}
+
 function createWindow() {
   // Playwright cannot run Electron headless — there is no headless Electron — so
   // the closest thing is a window that is created but never shown. Chromium
@@ -469,6 +506,14 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Two writers on one profile share a WAV and a database; that cannot be merged
+  // after the fact, so the second launch stops here.
+  if (!acquireProfileLock()) {
+    dialog.showErrorBox('Doty is already running', 'Close the other Doty window for this profile, then reopen.')
+    app.quit()
+    return
+  }
+
   // Debug mode is a persisted choice; apply it before anything else logs.
   const debugOn = store.get('debugMode', false) ?? false
   enableDebugLogging(debugOn)
@@ -576,8 +621,9 @@ app.whenReady().then(async () => {
   if (musicFolder || store.get('sfxFolder', '')) startBackgroundPasses()
 
   // One background download, once per machine. No prompt: the app is useless
-  // without it, and 1.5 GB of silence during a session would be worse.
-  if (!isRankerInstalled()) {
+  // without it, and 1.5 GB of silence during a session would be worse. E2E keeps
+  // the machine quiet: the tests assert behaviour, not the network.
+  if (!isRankerInstalled() && process.env.DOTY_E2E_NO_MODEL_DOWNLOAD !== '1') {
     downloadRanker().catch((e) => console.error('[ranker] background download failed:', e))
   }
 })
@@ -700,8 +746,16 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   // Keep metadata and tags with the track rather than losing them on a move.
   try {
     const db = getDb()
-    db.prepare('update tracks set path = ? where path = ?').run(to.replace(`${dir}/`, ''), trackPath)
-    db.prepare('update track_tags set filename = ? where filename = ?').run(to.replace(`${dir}/`, ''), trackPath)
+    const newRelative = to.replace(`${dir}/`, '')
+    db.prepare('update tracks set path = ? where path = ?').run(newRelative, trackPath)
+    db.prepare('update track_tags set filename = ? where filename = ?').run(newRelative, trackPath)
+    // Every other keyed row has to move with the file, or the moved cue loses its
+    // vector, its measured duration and its play history.
+    const oldKey = source === musicFolder ? trackPath : `sfx:${trackPath}`
+    const newKey = target === 'music' ? newRelative : `sfx:${newRelative}`
+    db.prepare('update track_vectors set path = ? where path = ?').run(newKey, oldKey)
+    db.prepare('update sfx_durations set path = ? where path = ?').run(to, from)
+    db.prepare('update play_history set item_id = ? where item_id = ?').run(newKey, oldKey)
   } catch (e) {
     console.error('[library] could not update the moved track:', e)
   }
@@ -1175,7 +1229,7 @@ function startBackgroundPasses(): void {
     void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
     // Search by meaning and the audio lane verdict both need the embedder. Fetch
     // it in the background, then run the pass again with it on disk.
-    if (!embedderReady()) {
+    if (!embedderReady() && process.env.DOTY_E2E_NO_MODEL_DOWNLOAD !== '1') {
       ensureEmbedder()
         .then(() => startBackgroundPasses())
         .catch(() => {})

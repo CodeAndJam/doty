@@ -72,10 +72,10 @@ export function loadSession(file: string): VttCue[] {
   const lines = content.split('\n')
   let i = 0
   // Skip header and NOTE block
-  while (i < lines.length && !lines[i].includes('-->')) i++
+  while (i < lines.length && !CUE_HEADER.test(lines[i])) i++
   while (i < lines.length) {
     const line = lines[i]
-    if (line.includes('-->')) {
+    if (CUE_HEADER.test(line)) {
       const [start, end] = line.split('-->').map((s) => s.trim())
       const textLines: string[] = []
       i++
@@ -237,14 +237,16 @@ export async function loadSessionAsync(file: string): Promise<VttCue[]> {
   }
 }
 
+const CUE_HEADER = /^\d+:\d+:\d+\.\d+\s+-->/
+
 function parseVttCues(content: string): VttCue[] {
   const cues: VttCue[] = []
   const lines = content.split('\n')
   let i = 0
-  while (i < lines.length && !lines[i].includes('-->')) i++
+  while (i < lines.length && !CUE_HEADER.test(lines[i])) i++
   while (i < lines.length) {
     const line = lines[i]
-    if (line.includes('-->')) {
+    if (CUE_HEADER.test(line)) {
       const [start, end] = line.split('-->').map((s) => s.trim())
       const textLines: string[] = []
       i++

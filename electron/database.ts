@@ -119,6 +119,12 @@ export function pruneMissingTracks(folder: string, files: string[]): number {
   const rows = db.prepare('SELECT path FROM tracks').all() as Array<{ path: string }>
   const drop = rows.map((r) => r.path).filter((p) => !keep.has(p.replace(/\\/g, '/')))
   if (drop.length === 0) return 0
+  // A folder that is only partly readable looks like "most files vanished".
+  // Treat that as a scan problem, not a library deletion.
+  if (rows.length > 10 && drop.length > rows.length / 2) {
+    console.warn(`[library] refusing to prune ${drop.length}/${rows.length} rows: the folder looks unreadable`)
+    return 0
+  }
   const del = db.prepare('DELETE FROM tracks WHERE path = ?')
   // Tags stay: the file may return (a remount, a move back), and the DM's
   // labelling is the one thing the scanner cannot rebuild.
