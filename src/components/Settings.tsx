@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
+import { CONTEXT_LIMITS, type ContextConfig, DEFAULT_CONTEXT } from '../lib/context'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress, UpdateState } from '../types'
 import DiscordPanel from './DiscordPanel'
@@ -52,6 +53,9 @@ interface Props {
   rankerStatus: 'loading' | 'ready' | 'error'
   recommendCount: number
   onRecommendCountChange: (count: number) => void
+  /** What the models may read: the DM's experiment surface. */
+  context: ContextConfig
+  onContextChange: (context: ContextConfig) => void
   /** Which group to open on; the transcript failures open Transcription. */
   initialSection?: SectionId
 }
@@ -81,6 +85,46 @@ function Label({ children }: { children: React.ReactNode }) {
 
 export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'updates' | 'advanced'
 
+/** One context budget: a slider with its value and what it buys. */
+function ContextSlider({
+  label,
+  help,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+}: {
+  label: string
+  help: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <span style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>{label}</span>
+        <span style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>{value}</span>
+      </div>
+      <input
+        type="range"
+        aria-label={label}
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{ width: '100%', accentColor: '#d9a441' }}
+      />
+      <p style={{ fontSize: '13px', color: '#9d8b66', marginTop: '2px', fontFamily: "'Crimson Text', serif" }}>
+        {help}
+      </p>
+    </div>
+  )
+}
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'audio', label: 'Audio' },
   { id: 'library', label: 'Library' },
@@ -100,6 +144,8 @@ export default function Settings({
   rankerStatus,
   recommendCount,
   onRecommendCountChange,
+  context,
+  onContextChange,
   initialSection = 'library',
 }: Props) {
   const [folder, setFolder] = useState('')
@@ -1402,6 +1448,72 @@ export default function Settings({
               <p style={{ fontSize: '14px', color: '#9d8b66', marginTop: '4px', fontFamily: "'Crimson Text', serif" }}>
                 Number of tracks to suggest per query
               </p>
+            </div>
+            {/* What the models read: the knobs that change a pick. */}
+            <div className="mb-5">
+              <Label>Model context</Label>
+              <p
+                style={{ fontSize: '14px', color: '#9d8b66', marginBottom: '8px', fontFamily: "'Crimson Text', serif" }}
+              >
+                How much of the room and of your own words the models read. Characters, not tokens.
+              </p>
+              <ContextSlider
+                label="Transcript window"
+                help="Characters kept from the live transcript."
+                value={context.windowChars}
+                min={CONTEXT_LIMITS.windowChars[0]}
+                max={CONTEXT_LIMITS.windowChars[1]}
+                step={100}
+                onChange={(v) => onContextChange({ ...context, windowChars: v })}
+              />
+              <ContextSlider
+                label="Music context"
+                help="Characters of that window sent to the music ranker."
+                value={context.rankerChars}
+                min={CONTEXT_LIMITS.rankerChars[0]}
+                max={CONTEXT_LIMITS.rankerChars[1]}
+                step={50}
+                onChange={(v) => onContextChange({ ...context, rankerChars: v })}
+              />
+              <ContextSlider
+                label="Effects context"
+                help="Characters sent to the effects ranker."
+                value={context.sfxChars}
+                min={CONTEXT_LIMITS.sfxChars[0]}
+                max={CONTEXT_LIMITS.sfxChars[1]}
+                step={50}
+                onChange={(v) => onContextChange({ ...context, sfxChars: v })}
+              />
+              <ContextSlider
+                label="Hint length"
+                help="How much of your typed hint reaches the models."
+                value={context.hintChars}
+                min={CONTEXT_LIMITS.hintChars[0]}
+                max={CONTEXT_LIMITS.hintChars[1]}
+                step={50}
+                onChange={(v) => onContextChange({ ...context, hintChars: v })}
+              />
+              <ContextSlider
+                label="Ranking delay"
+                help="Milliseconds of quiet after a line before ranking."
+                value={context.debounceMs}
+                min={CONTEXT_LIMITS.debounceMs[0]}
+                max={CONTEXT_LIMITS.debounceMs[1]}
+                step={250}
+                onChange={(v) => onContextChange({ ...context, debounceMs: v })}
+              />
+              <button
+                type="button"
+                onClick={() => onContextChange(DEFAULT_CONTEXT)}
+                style={{
+                  fontSize: '14px',
+                  color: '#a5813f',
+                  fontFamily: "'Crimson Text', serif",
+                  textDecoration: 'underline',
+                }}
+              >
+                Reset to defaults
+              </button>
             </div>
             {/* Divider before Discord */}
             <div

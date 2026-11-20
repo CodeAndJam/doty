@@ -14,6 +14,7 @@ import {
   safeStorage,
   shell,
 } from 'electron'
+import { type ContextConfig, DEFAULT_CONTEXT, normalizeContext } from '../src/lib/context'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
@@ -1484,6 +1485,15 @@ handle(INVOKE.getRecommendationCount, () => store.get('recommendationCount', 5))
 handle(INVOKE.setRecommendationCount, (_e, count: number) => {
   store.set('recommendationCount', Math.max(1, Math.min(20, Math.round(count))))
   return { ok: true }
+})
+
+// The models' context budget: main owns the bounds, the renderer only reads them.
+handle(INVOKE.getContext, () => normalizeContext(store.get('context', DEFAULT_CONTEXT)))
+
+handle(INVOKE.setContext, (_e, config: Partial<ContextConfig>) => {
+  const next = normalizeContext(config)
+  store.set('context', next)
+  return next
 })
 
 // ── IPC: Model downloads ──────────────────────────────────────────────────────

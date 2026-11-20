@@ -15,6 +15,16 @@ const FIELDS = {
   modelPath: Schema.String,
   transcriptFolder: Schema.String,
   recommendationCount: Schema.Number,
+  /** What the models may read of the room: the DM's experiment surface. */
+  context: Schema.optional(
+    Schema.Struct({
+      windowChars: Schema.optional(Schema.Number),
+      rankerChars: Schema.optional(Schema.Number),
+      sfxChars: Schema.optional(Schema.Number),
+      hintChars: Schema.optional(Schema.Number),
+      debounceMs: Schema.optional(Schema.Number),
+    }),
+  ),
   hotwordsFile: Schema.String,
   sfxFolder: Schema.String,
   sfxRecommendationCount: Schema.Number,

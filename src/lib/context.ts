@@ -1,0 +1,60 @@
+/**
+ * What the decision models are allowed to read. The DM tunes these to see what
+ * changes a pick; every value is a character or millisecond budget, never a
+ * scoring rule.
+ */
+export interface ContextConfig {
+  /** Chars kept in the live transcript buffer. */
+  windowChars: number
+  /** Chars of that buffer sent to the music ranker. */
+  rankerChars: number
+  /** Chars of that buffer sent to the effects ranker. */
+  sfxChars: number
+  /** Chars of the DM's Session Hint sent to the models. */
+  hintChars: number
+  /** Ms between a transcript line and the ranking it triggers. */
+  debounceMs: number
+}
+
+export const DEFAULT_CONTEXT: ContextConfig = {
+  windowChars: 800,
+  rankerChars: 500,
+  sfxChars: 500,
+  hintChars: 300,
+  debounceMs: 1500,
+}
+
+/** Below these a model sees nothing usable; above them the state costs tokens. */
+export const CONTEXT_LIMITS: Record<keyof ContextConfig, [number, number]> = {
+  windowChars: [200, 8000],
+  rankerChars: [100, 4000],
+  sfxChars: [100, 4000],
+  hintChars: [0, 2000],
+  debounceMs: [250, 10000],
+}
+
+/** Every field valid, whatever was stored or typed. Main writes only this. */
+export function normalizeContext(value: Partial<ContextConfig> | undefined): ContextConfig {
+  const out = { ...DEFAULT_CONTEXT }
+  for (const key of Object.keys(CONTEXT_LIMITS) as Array<keyof ContextConfig>) {
+    const raw = value?.[key]
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
+    const [min, max] = CONTEXT_LIMITS[key]
+    out[key] = Math.round(Math.min(max, Math.max(min, raw)))
+  }
+  return out
+}
+
+/**
+ * The hint first, then the recent words: the DM's instruction is the head of
+ * the state, and the transcript is what it is about.
+ */
+export function composeState(
+  hint: string,
+  transcript: string,
+  budget: { hintChars: number; transcriptChars: number },
+): string {
+  return [hint.slice(0, budget.hintChars).trim(), transcript.slice(-budget.transcriptChars).trim()]
+    .filter(Boolean)
+    .join('\n')
+}

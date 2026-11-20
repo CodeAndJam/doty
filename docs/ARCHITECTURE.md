@@ -100,7 +100,7 @@ flowchart TD
   FILTER[plausibleText<br/>script + invented-word guard]
   VTT[(session-*.vtt<br/>NOTE: name, created)]
   EVENT[event stt:transcript]
-  UI[Renderer transcript<br/>and rolling 800-char buffer]
+  UI[Renderer transcript<br/>and rolling context buffer]
 
   MIC --> WORKLET --> IPC1
   IPC1 --> WAV
@@ -142,8 +142,8 @@ Two authorities, by design, and only one of them runs at a time.
 
 ```mermaid
 flowchart TD
-  T[New final transcript] --> BUF[rolling buffer, last 800 chars]
-  BUF --> DEB[debounce 1.5 s]
+  T[New final transcript] --> BUF[rolling buffer<br/>800 chars by default]
+  BUF --> DEB[debounce 1.5 s by default]
   DEB --> RANK[rankTracks]
 
   RANK --> LANE{label is sfx?}
@@ -179,6 +179,10 @@ The split matters: the model path is planned by the **session pass** (main), so
 the rules cannot drift between processes. `useAutopilot` only takes over when the
 decision model is unavailable — two authorities at once would let one replace a
 track mid-phrase.
+
+The DM's **Session Hint** heads the state and the recent words follow it; each
+reader has its own character budget under Settings → Model context. The session
+file is never read: correcting a past cue changes no decision.
 
 Suggestions never stop. A manual pick is a label recorded in
 `session_preferences`; it does not silence the ranker, and it never causes a
