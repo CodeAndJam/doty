@@ -176,7 +176,9 @@ export async function disposeRanker(): Promise<void> {
   rejectPending(new Error('Ranker disposed'))
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
-      w.terminate()
+      // Still loading or mid-run. Terminating a worker in that state aborts the
+      // process inside onnxruntime; the process exits by SIGKILL after this, and
+      // the thread goes with it without running the finalizer.
       resolve()
     }, 3_000)
     w.once('message', (msg: WorkerMessage) => {
