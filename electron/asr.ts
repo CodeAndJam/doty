@@ -28,6 +28,49 @@ let restarting = false
 // Audio captured while the model is still loading: a cold Metal load is ~10s
 // and the first words of the session must not be lost.
 const pending = new AudioQueue(60) // ~30s of 500ms chunks
+/** A cold Metal load is ~10 s; a worker that has not said `ready` by then is not coming. */
+const READY_TIMEOUT_MS = 60_000
+
+/**
+ * One readiness signal for the worker. Both the first start and a model switch
+ * wait on it instead of polling `workerReady` on a timer, and a worker that
+ * dies or never loads settles it false once.
+ */
+let readiness: {
+  promise: Promise<boolean>
+  resolve: (ready: boolean) => void
+  timer: ReturnType<typeof setTimeout>
+} | null = null
+
+function armReadiness(): Promise<boolean> {
+  if (workerReady) return Promise.resolve(true)
+  if (readiness) return readiness.promise
+  let resolve!: (ready: boolean) => void
+  const promise = new Promise<boolean>((done) => {
+    resolve = done
+  })
+  const timer = setTimeout(() => settleReadiness(false), READY_TIMEOUT_MS)
+  readiness = { promise, resolve, timer }
+  return promise
+}
+
+function settleReadiness(ready: boolean): void {
+  const signal = readiness
+  if (!signal) return
+  readiness = null
+  clearTimeout(signal.timer)
+  signal.resolve(ready)
+}
+
+/** Start the stream once the worker is ready, or report that it never was. */
+function beginWhenReady(): void {
+  const token = stopToken
+  void armReadiness().then((ready) => {
+    if (token !== stopToken || !streaming) return
+    if (ready) beginWorkerStream()
+    else if (onAsrStatus) onAsrStatus('error')
+  })
+}
 
 function postChunk(samples: Float32Array): void {
   if (!worker) return
@@ -72,6 +115,7 @@ function ensureWorker(): Worker {
       case 'ready':
         workerReady = true
         restarting = false
+        settleReadiness(true)
         // Persist the effective language so Settings never claims a focus the model
         // rejected — but never over a language the DM chose. A mis-detected
         // language used to stick and outlived the session.
@@ -102,6 +146,7 @@ function ensureWorker(): Worker {
       case 'error':
         console.error('[asr] worker error:', msg.error)
         restarting = false
+        settleReadiness(false)
         if (streaming && !streamStarted) {
           // The load failed before the stream began: do not leave the UI recording
           streaming = false
@@ -120,6 +165,7 @@ function ensureWorker(): Worker {
       worker = null
       workerReady = false
       restarting = false
+      settleReadiness(false)
     }
     if (onAsrStatus) onAsrStatus('crashed')
   })
@@ -129,6 +175,7 @@ function ensureWorker(): Worker {
     worker = null
     workerReady = false
     restarting = false
+    settleReadiness(false)
   })
 
   return w
@@ -173,19 +220,7 @@ export function startStream(): void {
     return
   }
   // Model still loading: keep the audio and replay it once the worker is ready.
-  const startedAt = Date.now()
-  const waitAndStart = () => {
-    if (!streaming) return
-    if (workerReady) {
-      beginWorkerStream()
-    } else if (!worker || Date.now() - startedAt > 60_000) {
-      streaming = false
-      if (onAsrStatus) onAsrStatus('error')
-    } else {
-      setTimeout(waitAndStart, 50)
-    }
-  }
-  waitAndStart()
+  beginWhenReady()
 }
 
 /** Feed a PCM chunk to the active stream (Float32Array, 16kHz mono) */
@@ -269,19 +304,16 @@ export function restartRecognizer(): void {
     worker?.terminate()
     worker = null
     workerReady = false
-    restarting = true
     streamStarted = false
-    if (!initRecognizer()) restarting = false
-
-    if (wasStreaming) {
-      // The worker's `ready` handler calls beginWorkerStream() and drains `pending`.
-      // If the new model never loads, fail loudly instead of polling forever.
-      setTimeout(() => {
-        if (token !== stopToken || !streaming || workerReady) return
-        streaming = false
-        if (onAsrStatus) onAsrStatus('error')
-      }, 60_000)
+    settleReadiness(false)
+    // A stop during the 200 ms teardown must not reload a model the DM ended.
+    if (token !== stopToken) {
+      restarting = false
+      return
     }
+    restarting = true
+    if (!initRecognizer()) restarting = false
+    if (wasStreaming) beginWhenReady()
   }, 200)
 }
 
