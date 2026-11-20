@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.1](https://github.com/CodeAndJam/doty/compare/v5.6.0...v5.6.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **release:** verify the DMG before the release upload ([#158](https://github.com/CodeAndJam/doty/issues/158)) ([68d613d](https://github.com/CodeAndJam/doty/commit/68d613d1c5f77454bf6fc4f8ecd205d949af3648))
+
 ## [5.6.0](https://github.com/CodeAndJam/doty/compare/v5.5.0...v5.6.0) (2026-11-20)
 
 
