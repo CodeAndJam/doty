@@ -841,6 +841,12 @@ export default function Settings({
                 <button
                   type="button"
                   onClick={() => void deleteModel('embedder')}
+                  disabled={indexStatus.phase !== 'idle'}
+                  title={
+                    indexStatus.phase === 'idle'
+                      ? 'Delete the embedding model; search falls back to names'
+                      : 'Wait for the index pass to finish'
+                  }
                   aria-label="Delete the embedding model"
                   style={{
                     display: 'block',
@@ -851,7 +857,8 @@ export default function Settings({
                     background: 'none',
                     border: '1px solid rgba(200,146,42,0.25)',
                     padding: '2px 6px',
-                    cursor: 'pointer',
+                    cursor: indexStatus.phase === 'idle' ? 'pointer' : 'default',
+                    opacity: indexStatus.phase === 'idle' ? 1 : 0.4,
                   }}
                 >
                   delete embedding model
