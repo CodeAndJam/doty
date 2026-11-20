@@ -1,8 +1,16 @@
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { Deferred, Duration, Effect, Exit, Semaphore } from 'effect'
 import { app } from 'electron'
 
 export type RankerStatus = 'loading' | 'ready' | 'error'
+
+/** The three questions the one graph answers. */
+type Question = 'decide' | 'sfx' | 'evaluate'
+
+type Answer =
+  | { type: 'probabilities'; probabilities: number[] }
+  | { type: 'evaluated'; tracks: number[]; moods: number[] }
 
 type WorkerMessage = {
   type: string
@@ -13,32 +21,44 @@ type WorkerMessage = {
   error?: string
 }
 
-type Pending = {
-  resolve: (value: number[] | { tracks: number[]; moods: number[] }) => void
-  reject: (err: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}
-
 /** First load reads a 1.5 GB graph; the first pass after it also warms the kernels. */
 const LOAD_TIMEOUT_MS = 180_000
 const DECIDE_TIMEOUT_MS = 60_000
+
+const TIMEOUTS: Record<Question, string> = {
+  decide: 'Ranker decide timed out',
+  sfx: 'SFX ranking timed out',
+  evaluate: 'Ranker evaluate timed out',
+}
+
+/** One slot per in-flight request, settled by the worker's answer. */
+const pending = new Map<number, Deferred.Deferred<Answer, Error>>()
+let nextId = 1
 
 let worker: Worker | null = null
 let ready = false
 let loadPromise: Promise<void> | null = null
 let onStatus: (status: RankerStatus) => void = () => {}
-const pending = new Map<number, Pending>()
-let nextId = 1
+
+/**
+ * One forward pass at a time. Without it the 60 s deadline could start before
+ * the worker reached the question, and a caller would wait out a queue it was
+ * never told about. A caller's deadline now starts when its slot is acquired.
+ */
+let gate: Semaphore.Semaphore | null = null
+const permit = () => {
+  gate ??= Effect.runSync(Semaphore.make(1))
+  return gate
+}
 
 export function setOnRankerStatus(cb: (status: RankerStatus) => void): void {
   onStatus = cb
 }
 
-function rejectPending(err: Error): void {
-  for (const [id, p] of pending) {
-    clearTimeout(p.timer)
+function failPending(err: Error): void {
+  for (const [id, slot] of pending) {
     pending.delete(id)
-    p.reject(err)
+    Deferred.doneUnsafe(slot, Exit.fail(err))
   }
 }
 
@@ -49,20 +69,22 @@ function reset(err: Error): void {
   ready = false
   loadPromise = null
   doomed?.terminate()
-  rejectPending(err)
+  failPending(err)
 }
 
 /** Settle the request a message answers. Unknown ids are ignored: the caller timed out. */
 function settle(msg: WorkerMessage): void {
-  if (msg.type !== 'probabilities' && msg.type !== 'evaluated' && msg.type !== 'decide-error') return
   if (msg.id === undefined) return
-  const p = pending.get(msg.id)
-  if (!p) return
-  clearTimeout(p.timer)
+  const slot = pending.get(msg.id)
+  if (!slot) return
   pending.delete(msg.id)
-  if (msg.type === 'probabilities') p.resolve(msg.probabilities ?? [])
-  else if (msg.type === 'evaluated') p.resolve({ tracks: msg.tracks ?? [], moods: msg.moods ?? [] })
-  else p.reject(new Error(msg.error ?? 'Ranker failed'))
+  if (msg.type === 'probabilities') {
+    Deferred.doneUnsafe(slot, Exit.succeed({ type: 'probabilities', probabilities: msg.probabilities ?? [] }))
+  } else if (msg.type === 'evaluated') {
+    Deferred.doneUnsafe(slot, Exit.succeed({ type: 'evaluated', tracks: msg.tracks ?? [], moods: msg.moods ?? [] }))
+  } else {
+    Deferred.doneUnsafe(slot, Exit.fail(new Error(msg.error ?? 'Ranker failed')))
+  }
 }
 
 function ensureWorker(): Promise<void> {
@@ -116,34 +138,53 @@ function ensureWorker(): Promise<void> {
   return loadPromise
 }
 
+/**
+ * Ask one question, off the Electron main thread, behind the single-pass gate.
+ * The deadline covers the forward pass, not the time spent waiting for it.
+ */
+function ask<A>(question: Question, prompt: string, candidates: string[], read: (answer: Answer) => A) {
+  return Effect.gen(function* () {
+    yield* Effect.promise(() => ensureWorker())
+    const answer = yield* permit().withPermit(
+      Effect.gen(function* () {
+        const id = nextId++
+        const slot = yield* Deferred.make<Answer, Error>()
+        pending.set(id, slot)
+        worker?.postMessage({ type: question, id, prompt, candidates })
+        return yield* Deferred.await(slot).pipe(
+          // A dead worker fails every pending slot, so this is the only deadline.
+          Effect.timeout(Duration.millis(DECIDE_TIMEOUT_MS)),
+          Effect.mapError(() => new Error(TIMEOUTS[question])),
+          Effect.ensuring(Effect.sync(() => pending.delete(id))),
+        )
+      }),
+    )
+    return read(answer)
+  })
+}
+
 /** Ask the model which candidate fits the prompt, off the Electron main thread. */
 export async function decide(prompt: string, candidates: string[]): Promise<number[]> {
   // A call with no candidates is the warmup: it still pays for the load, so the
   // first real recommendation never blocks on a 1.5 GB read.
-  await ensureWorker()
-  if (candidates.length === 0) return []
-  const id = nextId++
-  return new Promise<number[]>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      if (pending.delete(id)) reject(new Error('Ranker decide timed out'))
-    }, DECIDE_TIMEOUT_MS)
-    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
-    worker?.postMessage({ type: 'decide', id, prompt, candidates })
-  })
+  if (candidates.length === 0) {
+    await ensureWorker()
+    return []
+  }
+  return Effect.runPromise(
+    ask('decide', prompt, candidates, (answer) => (answer.type === 'probabilities' ? answer.probabilities : [])),
+  )
 }
 
 /** Which sound effect, if any, fits this moment. Same model, stricter question. */
 export async function rankSfx(state: string, candidates: string[]): Promise<number[]> {
-  await ensureWorker()
-  if (candidates.length === 0) return []
-  const id = nextId++
-  return new Promise<number[]>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      if (pending.delete(id)) reject(new Error('SFX ranking timed out'))
-    }, DECIDE_TIMEOUT_MS)
-    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
-    worker?.postMessage({ type: 'sfx', id, prompt: state, candidates })
-  })
+  if (candidates.length === 0) {
+    await ensureWorker()
+    return []
+  }
+  return Effect.runPromise(
+    ask('sfx', state, candidates, (answer) => (answer.type === 'probabilities' ? answer.probabilities : [])),
+  )
 }
 
 /** Track probabilities and the scene's mood distribution, from one model load. */
@@ -151,16 +192,15 @@ export async function evaluateSession(
   state: string,
   candidates: string[],
 ): Promise<{ tracks: number[]; moods: number[] }> {
-  await ensureWorker()
-  if (candidates.length === 0) return { tracks: [], moods: [] }
-  const id = nextId++
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      if (pending.delete(id)) reject(new Error('Ranker evaluate timed out'))
-    }, DECIDE_TIMEOUT_MS)
-    pending.set(id, { resolve: resolve as Pending['resolve'], reject, timer })
-    worker?.postMessage({ type: 'evaluate', id, prompt: state, candidates })
-  })
+  if (candidates.length === 0) {
+    await ensureWorker()
+    return { tracks: [], moods: [] }
+  }
+  return Effect.runPromise(
+    ask('evaluate', state, candidates, (answer) =>
+      answer.type === 'evaluated' ? { tracks: answer.tracks, moods: answer.moods } : { tracks: [], moods: [] },
+    ),
+  )
 }
 
 /**
@@ -173,7 +213,7 @@ export async function disposeRanker(): Promise<void> {
   worker = null
   ready = false
   loadPromise = null
-  rejectPending(new Error('Ranker disposed'))
+  failPending(new Error('Ranker disposed'))
   await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       // Still loading or mid-run. Terminating a worker in that state aborts the
