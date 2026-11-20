@@ -25,7 +25,7 @@ const lights: HaLight[] = [
   },
 ]
 
-function rig() {
+function rig(applyOverride?: HaClient['apply']) {
   const applied: Array<{ ids: string[]; preset: Record<string, unknown> }> = []
   const off: string[][] = []
   const rows: DecisionRow[] = []
@@ -37,8 +37,9 @@ function rig() {
   const client: HaClient = {
     areas: async () => [{ areaId: 'office', name: 'Office' }],
     lights: async () => lights,
-    apply: async (ids, preset) => {
+    apply: async (ids, preset, transition) => {
       applied.push({ ids, preset: preset as Record<string, unknown> })
+      await applyOverride?.(ids, preset, transition)
     },
     turnOff: async (ids) => {
       off.push(ids)
@@ -101,6 +102,29 @@ describe('lighting service', () => {
 
     await lighting.setLight('light.desk', { on: true, effect: 'rainbow' })
     expect(applied[1]).toEqual({ ids: ['light.desk'], preset: { effect: 'rainbow' } })
+  })
+
+  it('lets one command finish before the next one writes', async () => {
+    const events: string[] = []
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { lighting } = rig(async (_ids, preset) => {
+      const level = (preset as { brightnessPct: number }).brightnessPct
+      events.push(`enter:${level}`)
+      if (level === 20) await held
+      events.push(`exit:${level}`)
+    })
+    await lighting.state(null)
+
+    const first = lighting.setBrightness(20)
+    await Promise.resolve()
+    const second = lighting.setBrightness(80)
+    release()
+    await Promise.all([first, second])
+
+    expect(events).toEqual(['enter:20', 'exit:20', 'enter:80', 'exit:80'])
   })
 
   it('breathes the room until told to stop', async () => {
