@@ -29,15 +29,6 @@ const fake = vi.hoisted(() => {
       this.listeners.set(event, [...(this.listeners.get(event) ?? []), listener])
     }
 
-    once(event: string, listener: Listener) {
-      // A real `once`: the listener must not survive its first call.
-      const wrapped = (value: unknown) => {
-        this.off(event, wrapped)
-        listener(value)
-      }
-      this.on(event, wrapped)
-    }
-
     off(event: string, listener: Listener) {
       this.listeners.set(
         event,
@@ -274,6 +265,66 @@ describe('ranker supervisor', () => {
     await closing
     await firstFailed
     expect(fake.FakeWorker.latest).toBe(worker)
+  })
+
+  it('waits for the teardown it joined, and refuses work meanwhile', async () => {
+    const ranker = await load()
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const worker = fake.FakeWorker.latest!
+    worker.autoClose = false
+
+    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
+    const owner = ranker.disposeRanker()
+    // A second dispose must wait for the first, not return early and reopen the
+    // window while the worker is still closing.
+    const bystander = ranker.disposeRanker()
+    await expect(ranker.decide('late', ['y'])).rejects.toThrow(/disposed/)
+    expect(fake.FakeWorker.latest).toBe(worker)
+
+    worker.emit('message', { type: 'closed' })
+    await Promise.all([owner, bystander])
+    await firstFailed
+  })
+
+  it('does not load a worker for a warmup during teardown', async () => {
+    const ranker = await load()
+    // Pay for the worker so the teardown has something to close.
+    await ranker.decide('', [])
+    const worker = fake.FakeWorker.latest!
+    worker.autoClose = false
+
+    const closing = ranker.disposeRanker()
+    await expect(ranker.decide('', [])).resolves.toEqual([])
+    expect(fake.FakeWorker.latest).toBe(worker)
+
+    worker.emit('message', { type: 'closed' })
+    await closing
+  })
+
+  it('ignores a stale ready from a worker it has replaced', async () => {
+    const ranker = await load()
+    await ranker.decide('', [])
+    const stale = fake.FakeWorker.latest!
+    stale.autoClose = false
+
+    const closing = ranker.disposeRanker()
+    // The real worker posts `ready` before `closed`, so this frame arrives after
+    // the dispose reset. Trusting it would leave `ready` true with no worker.
+    stale.emit('message', { type: 'ready' })
+    stale.emit('message', { type: 'closed' })
+    await closing
+
+    const next = ranker.decide('after', ['y'])
+    await waitFor(
+      () =>
+        fake.FakeWorker.latest !== stale && (fake.FakeWorker.latest?.posted.some((m) => m.type === 'decide') ?? false),
+    )
+    const fresh = fake.FakeWorker.latest!
+    fresh.hold = false
+    fresh.answer(fresh.posted[fresh.posted.length - 1])
+    await expect(next).resolves.toEqual([0.5])
+    await ranker.disposeRanker()
   })
 
   it('does not merge a question whose options changed', async () => {

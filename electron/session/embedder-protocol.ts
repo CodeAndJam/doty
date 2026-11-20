@@ -41,11 +41,15 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
     if (loading) {
       // A load is in flight: wait for it, then look again. A different
       // directory replaces the model below, one load at a time.
-      await loading.promise.catch(() => {})
+      const joined = loading.promise
+      try {
+        await joined
+      } catch (err) {
+        // The load we joined was for this directory: report its failure. The
+        // next *new* request retries; waking every waiter does not each retry.
+        if (modelDir === dir) throw err
+      }
       if (model && modelDir === dir) return model
-      // A failed load woke both waiters: the first one to get here starts the
-      // retry, the rest join it instead of loading a second model.
-      if (loading) return modelFor(dir)
     }
     const current = (async () => {
       const previous = model

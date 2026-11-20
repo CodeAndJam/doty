@@ -101,6 +101,7 @@ describe('embedder client', () => {
     const child = nextChild()
     const embedder = await createEmbedder('/models')
     await embedder.embedDocuments(['a', 'b'])
+    await embedder.embedQuery('calm')
     const pcm = new Float32Array([0.1, 0.2])
     await embedder.embedAudio?.(pcm)
 
@@ -110,6 +111,12 @@ describe('embedder client', () => {
       kind: 'documents',
       dir: '/models',
       texts: ['a', 'b'],
+    })
+    expect(child.posted).toContainEqual({
+      id: expect.any(Number),
+      kind: 'query',
+      dir: '/models',
+      text: 'calm',
     })
     const audio = child.posted.find((message) => message.kind === 'audio')
     expect(audio?.dir).toBe('/models')
@@ -152,6 +159,19 @@ describe('embedder client', () => {
     expect(onExit).toHaveBeenCalledTimes(1)
     expect(onExit).toHaveBeenCalledWith(embedder)
     await expect(embedder.embedQuery('again')).rejects.toThrow('exited')
+  })
+
+  it('gives a query a shorter deadline than a document batch', async () => {
+    const child = nextChild()
+    const embedder = await createEmbedder('/models')
+    child.auto = false
+
+    vi.useFakeTimers()
+    // Attach before advancing: the timer rejects during `advance`.
+    const failed = expect(embedder.embedQuery('calm')).rejects.toThrow('did not answer query')
+    await vi.advanceTimersByTimeAsync(15_100)
+    await failed
+    expect(child.killed).toBe(false)
   })
 
   it('kills a worker that never answers its dispose', async () => {

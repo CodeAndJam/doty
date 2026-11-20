@@ -1895,6 +1895,7 @@ handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: 
   // A handshake in flight would otherwise resolve after the delete and leave a
   // live process serving a directory that is gone. The flag also refuses the
   // search keystroke that would otherwise start a second one while we wait.
+  if (deletingEmbedder) return { ok: false, reason: 'already deleting the model' }
   deletingEmbedder = true
   try {
     const inFlight = embedderLoad

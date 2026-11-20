@@ -134,7 +134,10 @@ function ensureWorker(): Promise<void> {
     const isCurrent = () => worker === w
 
     w.on('message', (msg: WorkerMessage) => {
+      // A frame from a worker that has already been replaced must not mark the
+      // new one ready, or revive `ready` after a dispose reset it.
       if (msg.type === 'ready') {
+        if (!isCurrent()) return
         clearTimeout(timer)
         ready = true
         onStatus('ready')
@@ -142,6 +145,7 @@ function ensureWorker(): Promise<void> {
         return
       }
       if (msg.type === 'fatal') {
+        if (!isCurrent()) return
         fail(new Error(msg.error ?? 'Ranker failed to load'))
         return
       }
@@ -281,13 +285,21 @@ export async function evaluateSession(
  * Ask the worker to finish its current forward pass and leave. Terminating a
  * thread mid-Run aborts the whole process inside onnxruntime.
  */
-export async function disposeRanker(): Promise<void> {
+/** Shared by concurrent callers: the second must wait for the first to finish. */
+let teardown: Promise<void> | null = null
+
+export function disposeRanker(): Promise<void> {
+  teardown ??= runDispose().finally(() => {
+    teardown = null
+  })
+  return teardown
+}
+
+async function runDispose(): Promise<void> {
   const disposed = new Error('Ranker disposed')
   // Nothing may start a load from here on: the drain loop may still be between
   // jobs, and a job that lands during the teardown would fork a fresh worker for
-  // the model the caller is deleting. Only the call that owned the flag clears
-  // it, so a second concurrent dispose cannot reopen the window.
-  const owner = !disposing
+  // the model the caller is deleting.
   disposing = true
   try {
     failQueued(disposed)
@@ -319,6 +331,6 @@ export async function disposeRanker(): Promise<void> {
       w.postMessage({ type: 'close' })
     })
   } finally {
-    if (owner) disposing = false
+    disposing = false
   }
 }

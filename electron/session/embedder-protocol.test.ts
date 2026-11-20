@@ -81,6 +81,23 @@ describe('embedder protocol', () => {
     expect(embedder.dispose).toHaveBeenCalledTimes(1)
   })
 
+  it('reports one failed load to every waiter instead of retrying per waiter', async () => {
+    const load = vi.fn(async () => {
+      throw new Error('model unreadable')
+    })
+    const handler = createEmbedderHandler(load)
+
+    const replies = await Promise.all([
+      handler.handle({ id: 1, kind: 'query', dir: '/models', text: 'a' }),
+      handler.handle({ id: 2, kind: 'query', dir: '/models', text: 'b' }),
+      handler.handle({ id: 3, kind: 'query', dir: '/models', text: 'c' }),
+    ])
+
+    expect(replies.every((reply) => !reply.ok)).toBe(true)
+    // Three waiters must not mean three 300 MB attempts.
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
   it('disposes the old model when the directory changes, and on dispose', async () => {
     const first = model()
     const second = model()
