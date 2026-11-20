@@ -645,21 +645,13 @@ app.on('before-quit', (event) => {
     void (async () => {
       finalizeWavRecording()
       freeRecognizer()
-      // Let the ranker worker drain its current run; terminating a thread mid-Run
-      // aborts the process inside onnxruntime.
-      await disposeRanker().catch(() => {})
-      // The text/audio embedder also holds ORT sessions in this process.
-      const held = embedder
-      embedder = null
-      await held?.dispose().catch(() => {})
       stopScanner()
       closeDb()
       destroyDiscord()
-      // Every write is closed above. The ONNX finalizers abort this process
-      // (Napi::Error) when a worker is still loading or a session is released at
-      // teardown; SIGKILL is the only exit that skips them. All state is durable
-      // by this point.
-      process.kill(process.pid, 'SIGKILL')
+      // Every write is closed above. Touching an ONNX session here (terminate,
+      // release) aborts the process inside the native binding; SIGKILL skips the
+      // finalizers entirely. All state is durable by this point.
+      app.exit(0)
     })()
   }, 3_000)
 })
