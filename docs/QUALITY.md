@@ -10,6 +10,7 @@ gates that decide whether a change is allowed onto `main`.
 | Build | packaging breakage | every PR (Ubuntu) | `pnpm run build` |
 | App launch + STT ready < 5 s | startup and model-load performance | `e2e/` (macOS) | `pnpm test:e2e` |
 | **STT accuracy** | Portuguese transcription quality | nightly + on demand (macOS) | `pnpm stt:eval` |
+| **Footprint** | memory, CPU and decision latency on the target Mac | on demand, target Mac | `pnpm footprint` |
 
 > Coverage thresholds (95%) are configured in `vitest.config.ts` but are not
 > enforced: the CI command passes `--coverage` after a `--`, which vitest
@@ -127,6 +128,46 @@ the audio pipeline is the problem.
   mic lane relies on does not apply — an utterance is decoded whole.
 - No end-to-end latency gate for the renderer (interim text at 60 fps); the
   worker-side latency is gated, the paint path is not.
+
+## Footprint gate
+
+`pnpm footprint` launches the built app with an isolated profile, waits until
+every model is resident (ASR, ranker, embedder text and audio passes), and
+measures four stages: cold load, idle, decisions, semantic search. It writes
+`test-results/footprint.{json,md}`.
+
+- Memory is `phys_footprint` per process, summed over the app's tree — the
+  number Activity Monitor shows. On Apple Silicon that already includes the
+  models' Metal buffers.
+- CPU is `app.getAppMetrics()` per process, so the worker threads count.
+- GPU is machine-wide (`ioreg`); macOS has no per-process attribution without
+  root, so read the delta against the pre-launch baseline.
+- A 1-minute load average above half the cores marks the run noisy and skips the
+  gate: a busy Mac fakes both a regression and an improvement.
+
+Budgets live in `test-fixtures/footprint/baseline.json`, keyed by
+`<cpu>|<GiB>|<cores>`, so a Mac is compared with the last quiet run on the same
+hardware. Idle memory is the tight one (15% over budget): a second resident
+model is what a regression looks like. Decision p50 and p95 get 40% and 75%;
+CPU gets 6 points. A Mac with no entry is measured but not gated.
+
+```bash
+pnpm build
+pnpm footprint            # measure and gate against this Mac's entry
+pnpm footprint:baseline   # re-record; only on a quiet Mac
+```
+
+Run it on the target M1 — with OBS and a browser open when checking
+co-tenancy — not on GitHub's macOS runners: the app alone holds ~8 GB with every
+model resident, so a runner would swap and the numbers would be meaningless.
+Never re-record a baseline on a loaded machine; that teaches the gate to accept
+the slow numbers.
+
+The first M4 Pro run measured ~7.6 GB idle, ~33% CPU and 4.4 s per decision.
+The recommendation cadence is 2 s (`src/lib/recommendCadence.ts`), so latency
+saturates before memory does: a decision that takes longer than the interval is
+the first thing this gate is meant to catch. Treat the committed M4 Pro entry as
+provisional until it is re-recorded on the M1.
 
 ## GPU / thermal notes
 

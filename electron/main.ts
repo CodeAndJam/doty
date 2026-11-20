@@ -1,12 +1,12 @@
 import fs from 'node:fs'
-import { join, resolve, sep } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
 import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
-import type { LightPatch } from '../src/types'
+import type { LightPatch, UpdateState } from '../src/types'
 import {
   feedChunk,
   finalizeStream,
@@ -114,6 +114,7 @@ import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
+import { bundleFromExecutable, checkForUpdate, installUpdate, type Release } from './updater'
 import { WavWriter } from './wav-writer'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
@@ -226,6 +227,42 @@ let quitting = false
 const send = (channel: EventChannel, payload?: unknown) => {
   if (quitting || !mainWindow || mainWindow.isDestroyed()) return
   mainWindow.webContents.send(channel, payload)
+}
+
+// ── Updates ──────────────────────────────────────────────────────────────────
+// One check per launch, one DMG, and a swap script that runs after this process
+// exits. Unsigned builds cannot use electron-updater: Squirrel rejects a new
+// build whose ad-hoc signature (a per-build cdhash) differs from the running one.
+
+let updateState: UpdateState = { status: 'idle' }
+/** The release the bar is offering; the URL never leaves the main process. */
+let pendingRelease: Release | null = null
+
+const setUpdateState = (state: UpdateState) => {
+  updateState = state
+  send(EVENTS.updateState, state)
+}
+
+/** The .app this process runs from: the bundle an update replaces. */
+function runningBundle(): string | null {
+  return app.isPackaged ? bundleFromExecutable(app.getPath('exe')) : null
+}
+
+async function checkUpdates(): Promise<void> {
+  if (!runningBundle() || updateState.status !== 'idle') return
+  try {
+    const release = await checkForUpdate(app.getVersion(), process.arch, async (url) => {
+      const response = await net.fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
+      return response.json()
+    })
+    if (!release) return
+    pendingRelease = release
+    setUpdateState({ status: 'available', version: release.version, sizeMB: release.sizeMB })
+  } catch (error) {
+    // Offline, rate-limited, or no release yet: a check nobody asked for stays quiet.
+    console.error('[update] check failed:', error)
+  }
 }
 
 const sttDownloads = createModelDownloads({
@@ -531,6 +568,18 @@ app.whenReady().then(async () => {
   getDb()
   migrateFromJson()
 
+  // The previous build is still on disk only as the swap's fallback. Reaching
+  // this line proves the new one runs, so the fallback can go. Never let a
+  // failed cleanup take the startup down with it.
+  const installed = runningBundle()
+  if (installed) {
+    try {
+      fs.rmSync(`${installed}.old`, { recursive: true, force: true })
+    } catch {
+      /* the fallback stays where it is */
+    }
+  }
+
   registerAppProtocol()
   registerMusicProtocol()
   createWindow()
@@ -626,6 +675,10 @@ app.whenReady().then(async () => {
   if (!isRankerInstalled() && process.env.DOTY_E2E_NO_MODEL_DOWNLOAD !== '1') {
     downloadRanker().catch((e) => console.error('[ranker] background download failed:', e))
   }
+
+  // Late enough that a session starting up is never competing with it, and once
+  // only: a bar that appears mid-session is a distraction the DM did not ask for.
+  setTimeout(() => void checkUpdates(), 5_000)
 })
 
 let cleaningUp = false
@@ -1664,6 +1717,45 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
   if (typeof config.recentlyPlayedMinutes === 'number')
     store.set('autopilotRecentlyPlayedMinutes', config.recentlyPlayedMinutes)
   return { ok: true }
+})
+
+// ── IPC: Updates ──────────────────────────────────────────────────────────────
+
+handle(INVOKE.updateGetState, () => updateState)
+
+handle(INVOKE.updateInstall, async () => {
+  const release = pendingRelease
+  const targetApp = runningBundle()
+  if (updateState.status !== 'available' || !release) return { ok: false, error: 'No update is waiting' }
+  if (!targetApp) return { ok: false, error: 'Doty is not running from an installed app' }
+
+  // A bundle in a read-only folder (still on the DMG, or another user's
+  // Applications) would quit into a script that cannot write: say so instead.
+  try {
+    fs.accessSync(dirname(targetApp), fs.constants.W_OK)
+  } catch {
+    return { ok: false, error: `Doty cannot write to ${dirname(targetApp)} — drag the DMG in by hand` }
+  }
+
+  const { version } = release
+  setUpdateState({ status: 'downloading', version, percent: 0 })
+  try {
+    await installUpdate({
+      dmgUrl: release.url,
+      targetApp,
+      workDir: join(app.getPath('temp'), 'doty-update'),
+      onProgress: (percent) => setUpdateState({ status: 'downloading', version, percent }),
+      download: downloadFile,
+    })
+    // The script waits for this process to exit, then swaps the bundle.
+    setUpdateState({ status: 'installing', version })
+    app.quit()
+    return { ok: true }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    setUpdateState({ status: 'error', version, error: message })
+    return { ok: false, error: message }
+  }
 })
 
 // ── IPC: Debug ────────────────────────────────────────────────────────────────

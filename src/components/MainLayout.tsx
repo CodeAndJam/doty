@@ -13,6 +13,7 @@ import Settings from './Settings'
 import Soundboard from './Soundboard'
 import type { TranscriptSegment } from './Transcript'
 import Transcript from './Transcript'
+import UpdateBar from './UpdateBar'
 
 /** Long enough that typing a sentence never decides on half of it. */
 const DM_IDLE_MS = 900
@@ -942,6 +943,8 @@ export default function MainLayout() {
           </div>
         </div>
       </div>
+
+      <UpdateBar />
 
       {/* Settings modal */}
       {showSettings && (

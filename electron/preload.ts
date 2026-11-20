@@ -194,4 +194,9 @@ contextBridge.exposeInMainWorld('doty', {
   onDiscordState: (cb: (state: any) => void) => subscribe(EVENTS.discordState, cb),
   onCaptureState: (cb: (state: { mode: 'local' | 'all'; names: string[]; error: string | null }) => void) =>
     subscribe(EVENTS.captureState, cb),
+
+  // Updates
+  updateState: () => invoke(INVOKE.updateGetState),
+  updateInstall: () => invoke(INVOKE.updateInstall) as Promise<{ ok: boolean; error?: string }>,
+  onUpdateState: (cb: (state: import('../src/types').UpdateState) => void) => subscribe(EVENTS.updateState, cb),
 })

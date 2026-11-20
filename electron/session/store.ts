@@ -59,6 +59,14 @@ export interface SessionLightsRow {
   pinned: boolean
 }
 
+/** Where a session plays, and the DM's words about it. */
+export interface SessionLightsRow {
+  session: string
+  areaId: string
+  hint: string
+  pinned: boolean
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS session_scenes (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -93,9 +93,9 @@ Concretely, when changing anything in the recommendation or playback path:
   the KPIs. Thresholds and heuristics change only against real session data (see
   `test-fixtures/` and the eval items in `TODO.md`), never on intuition.
 - **Everything local.** No telemetry, no cloud calls; network use is model
-  downloads and the DM's own Home Assistant on their own network — LAN or
-  tailnet, never a public address
-  (`docs/adr/0004-home-assistant-on-the-lan.md`).
+  downloads, the release check (`docs/adr/0006-updates-without-a-developer-id.md`)
+  and the DM's own Home Assistant on their own network — LAN or tailnet, never a
+  public address (`docs/adr/0004-home-assistant-on-the-lan.md`).
 
 ## Contracts before you grep
 
@@ -135,6 +135,11 @@ Running the app yourself:
 - **Check the lights against a real Home Assistant** with
   `HA_LIVE=1 HA_URL=… HA_TOKEN=… npx vitest run electron/home-assistant-live.test.ts`.
   It picks the Area, writes one light and puts it back; `pnpm check` never runs it.
+- **Measure resources with `pnpm footprint`** before touching the model path.
+  It gates idle memory, CPU and decision latency against the last quiet run on
+  the same Mac (`test-fixtures/footprint/baseline.json`, keyed by hardware);
+  `pnpm footprint:baseline` re-records on a quiet Mac. A busy machine is
+  measured but not gated.
 - **`pnpm check` is the whole check** (lint, forbidden APIs, both typechecks,
   tests). `pnpm verify:build` proves the build can actually run.
 

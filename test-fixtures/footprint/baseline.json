@@ -1,0 +1,15 @@
+{
+ "note": "Per-machine budgets for `pnpm footprint`, keyed by `<cpu>|<GiB>|<cores>`. A Mac with no entry here is measured but not gated. Record a machine with `pnpm footprint:baseline` on a quiet Mac (load under half the cores); a busy run records a ceiling and hides the next regression. The M4 Pro entry is provisional: it was recorded on a loaded developer machine and should be re-recorded on the target M1 before anyone trusts the absolute numbers.",
+ "machines": {
+  "Apple M4 Pro|48|12": {
+   "recordedAt": "2026-11-19",
+   "coldMs": 31996,
+   "idleMB": 7581,
+   "idleCpu": 1.1,
+   "decideP50Ms": 4410,
+   "decideP95Ms": 5000,
+   "decideCpu": 33.5,
+   "searchP50Ms": 278
+  }
+ }
+}

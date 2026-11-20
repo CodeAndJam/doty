@@ -1,6 +1,6 @@
 {
   "name": "doty",
-  "version": "5.2.0",
+  "version": "5.4.0",
   "description": "Continuous STT + AI music recommender",
   "main": "out/main/index.js",
   "scripts": {
@@ -15,6 +15,8 @@
     "pack": "electron-builder --mac dmg",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "footprint": "DOTY_FOOTPRINT=1 playwright test e2e/footprint.spec.ts",
+    "footprint:baseline": "DOTY_FOOTPRINT=1 DOTY_FOOTPRINT_UPDATE=1 playwright test e2e/footprint.spec.ts",
     "test:coverage": "vitest run --coverage",
     "stt:eval": "STT_QUALITY=1 vitest run electron/stt-quality.test.ts",
     "lint": "biome check .",

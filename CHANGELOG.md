@@ -1,5 +1,24 @@
 # Changelog
 
+## [5.4.0](https://github.com/CodeAndJam/doty/compare/v5.3.0...v5.4.0) (2026-11-19)
+
+
+### Features
+
+* **footprint:** gate memory, CPU and decision latency ([#150](https://github.com/CodeAndJam/doty/issues/150)) ([5e5a9cd](https://github.com/CodeAndJam/doty/commit/5e5a9cdfe593b825cd5f61ab203c72e462f6c310))
+
+## [5.3.0](https://github.com/CodeAndJam/doty/compare/v5.2.0...v5.3.0) (2026-11-18)
+
+
+### Features
+
+* **session:** room lights from the scene, and one console for both shelves ([#149](https://github.com/CodeAndJam/doty/issues/149)) ([6e2dc91](https://github.com/CodeAndJam/doty/commit/6e2dc91db570b991f196a17b47a95ab838a4535f))
+
+
+### Bug Fixes
+
+* **recommend:** rank a named mood first, and stop unanalysed rows freezing the ranking ([#147](https://github.com/CodeAndJam/doty/issues/147)) ([c38f4d5](https://github.com/CodeAndJam/doty/commit/c38f4d5a7d4102e98594e60d2868da25eb1531e9))
+
 ## [5.2.0](https://github.com/CodeAndJam/doty/compare/v5.1.0...v5.2.0) (2026-11-18)
 
 
