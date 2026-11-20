@@ -62,32 +62,9 @@ export function useRanker() {
       setModelStatus(status as Status)
     })
 
-    // Warm the model during idle time so startup stays snappy. Recommendations
-    // use the heuristic path until it is ready.
-    const warm = () => requestWarmup(setModelStatus)
-
-    // The download lands long after launch; warm the graph then instead of
-    // waiting for the next recommendation to notice.
-    const unsubDownload = window.doty.onRankerDownloadProgress((p) => {
-      if (p.status !== 'done') return
-      _warmupRequested = false
-      warm()
-    })
-
-    let idleId: number | undefined
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    if (typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(warm, { timeout: 10_000 })
-    } else {
-      timeoutId = setTimeout(warm, 5_000)
-    }
-
-    return () => {
-      unsub()
-      unsubDownload()
-      if (idleId !== undefined) window.cancelIdleCallback(idleId)
-      if (timeoutId !== undefined) clearTimeout(timeoutId)
-    }
+    // The graph loads on the first recommendation (requestWarmup), not at idle.
+    // A session nobody ranks in never initialises ONNX at all.
+    return unsub
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {
