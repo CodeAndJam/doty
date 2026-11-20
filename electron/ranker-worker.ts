@@ -11,6 +11,7 @@ const { homePath } = workerData as { homePath: string }
 let model: D1Omni | null = null
 let loading: Promise<void> | null = null
 let closing = false
+let shuttingDown = false
 let inFlight = 0
 let loadSettled = false
 
@@ -27,8 +28,14 @@ function load(): Promise<void> {
  * aborts the process inside onnxruntime (Napi::Error), which no later cleanup
  * can repair.
  */
-function maybeShutdown(): void {
-  if (!closing || inFlight > 0 || !loadSettled) return
+async function maybeShutdown(): Promise<void> {
+  if (!closing || inFlight > 0 || !loadSettled || shuttingDown) return
+  shuttingDown = true
+  try {
+    await model?.dispose()
+  } catch {
+    /* already gone */
+  }
   parentPort!.postMessage({ type: 'closed' })
   parentPort!.close()
 }
@@ -37,12 +44,12 @@ load().then(
   () => {
     loadSettled = true
     parentPort!.postMessage({ type: 'ready' })
-    maybeShutdown()
+    void maybeShutdown()
   },
   (e) => {
     loadSettled = true
     parentPort!.postMessage({ type: 'fatal', error: e instanceof Error ? e.message : String(e) })
-    maybeShutdown()
+    void maybeShutdown()
   },
 )
 
@@ -51,7 +58,7 @@ type Incoming = { type: string; id?: number; prompt?: string; candidates?: strin
 parentPort!.on('message', async (msg: Incoming) => {
   if (msg.type === 'close') {
     closing = true
-    maybeShutdown()
+    void maybeShutdown()
     return
   }
   if (msg.id === undefined) return
@@ -76,6 +83,6 @@ parentPort!.on('message', async (msg: Incoming) => {
     parentPort!.postMessage({ type: 'decide-error', id: msg.id, error: e instanceof Error ? e.message : String(e) })
   } finally {
     inFlight--
-    maybeShutdown()
+    void maybeShutdown()
   }
 })

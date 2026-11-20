@@ -222,6 +222,11 @@ export class D1Omni {
     return probabilities[1] ?? 0
   }
 
+  /** Release the native session before the thread/process exits. */
+  async dispose(): Promise<void> {
+    await this.session.release()
+  }
+
   private async ask(
     state: string,
     instructions: string,

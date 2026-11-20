@@ -20,6 +20,7 @@ function fakeEmbedder(): Embedder {
     embedDocuments: async (texts) => texts.map((text) => table[text.toLowerCase()] ?? vector(0, 0)),
     embedQuery: async (text) => table[text.toLowerCase()] ?? vector(0, 0),
     embedAudio: null,
+    dispose: async () => {},
   }
 }
 

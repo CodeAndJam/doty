@@ -64,6 +64,8 @@ export interface Embedder {
   /** A track's sound, in the same space as the text vectors. Null without the encoder. */
   embedAudio: ((pcm: Float32Array) => Promise<Float32Array>) | null
   dim: number
+  /** Release the native sessions before the process exits. */
+  dispose(): Promise<void>
 }
 
 /**
@@ -190,5 +192,15 @@ export async function loadEmbedder(dir: string): Promise<Embedder> {
     embedDocuments: (texts) => Promise.all(texts.map((t) => embedOne(DOCUMENT_PREFIX, t))),
     embedQuery: (text) => embedOne(QUERY_PREFIX, text),
     embedAudio: tokens ? embedAudio : null,
+    async dispose() {
+      if (encoder) {
+        try {
+          await (await encoder).release()
+        } catch {
+          /* already gone */
+        }
+      }
+      await session.release()
+    },
   }
 }

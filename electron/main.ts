@@ -648,13 +648,18 @@ app.on('before-quit', (event) => {
       // Let the ranker worker drain its current run; terminating a thread mid-Run
       // aborts the process inside onnxruntime.
       await disposeRanker().catch(() => {})
+      // The text/audio embedder also holds ORT sessions in this process.
+      const held = embedder
+      embedder = null
+      await held?.dispose().catch(() => {})
       stopScanner()
       closeDb()
       destroyDiscord()
-      // Every write is closed above. Electron's normal exit runs the ONNX native
-      // finalizers, which abort this process (Napi::Error) after any inference;
-      // exiting here skips destructors that no longer have work to protect.
-      process.exit(0)
+      // Every write is closed above. The ONNX finalizers abort this process
+      // (Napi::Error) when a worker is still loading or a session is released at
+      // teardown; SIGKILL is the only exit that skips them. All state is durable
+      // by this point.
+      process.kill(process.pid, 'SIGKILL')
     })()
   }, 3_000)
 })
