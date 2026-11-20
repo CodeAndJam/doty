@@ -27,7 +27,9 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: {
-        exclude: ['chokidar', 'music-metadata'],
+        // Effect ships ESM-only and is used by five modules; bundling it keeps
+        // 58 MB of package out of the app and ESM off the runtime path.
+        exclude: ['chokidar', 'music-metadata', 'effect'],
       },
       rollupOptions: {
         input: {

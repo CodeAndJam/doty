@@ -93,7 +93,7 @@ import { downloadFile } from './download-file'
 import { downloadEmbedder } from './embedder-model'
 import { createHaClient } from './home-assistant'
 import { discoverHomeAssistants } from './home-assistant-discovery'
-import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
+import { decodeArgs, EVENTS, type EventChannel, INVOKE, type InvokeArgs, type InvokeChannel } from './ipc'
 import { createLibrary } from './library'
 import { createLighting } from './lighting'
 import { debugLogger, enableDebugLogging } from './logger'
@@ -229,9 +229,18 @@ function isAllowedMediaPath(filePath: string): boolean {
 
 let mainWindow: BrowserWindow | null = null
 
-// Typed wrappers: a channel that is not declared in ipc.ts does not compile.
-const handle = (channel: InvokeChannel, listener: Parameters<typeof ipcMain.handle>[1]) =>
-  ipcMain.handle(channel, listener)
+// Typed wrappers: a channel that is not declared in ipc.ts does not compile,
+// and its arguments are decoded from the schema that file declares.
+const handle = <C extends InvokeChannel>(
+  channel: C,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: InvokeArgs<C>) => unknown,
+) =>
+  ipcMain.handle(channel, (event, ...raw: unknown[]) =>
+    (listener as (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown)(
+      event,
+      ...decodeArgs(channel, raw),
+    ),
+  )
 
 /** Set once the app is tearing down: sending then is how a quit becomes a crash. */
 let quitting = false
@@ -1466,7 +1475,7 @@ async function ensureSideModels(): Promise<void> {
   }
 }
 
-handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
+handle(INVOKE.downloadModel, async (_e, modelId?: string) => {
   const modelInfo = modelId
     ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
     : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
@@ -1523,13 +1532,13 @@ handle(INVOKE.getSttModel, () => {
   return store.get('sttModel', DEFAULT_STT_MODEL) as string
 })
 
-handle(INVOKE.setSttModel, (_e, modelId: SttModelType) => {
+handle(INVOKE.setSttModel, (_e, modelId: string) => {
   const current = store.get('sttModel', '') as string
   if (current === modelId) return { ok: true }
   const modelInfo = STT_MODELS.find((m) => m.id === modelId)
   if (!modelInfo) return { ok: false, reason: 'unknown model' }
   if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
-  store.set('sttModel', modelId)
+  store.set('sttModel', modelInfo.id)
   // Keep the focused language only when the new model supports it.
   const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
   if (!supportsLanguage(modelInfo, language)) {
@@ -1537,7 +1546,7 @@ handle(INVOKE.setSttModel, (_e, modelId: SttModelType) => {
   }
   restartRecognizer()
   // Notify renderer about the switch
-  send(EVENTS.sttModelSwitched, { id: modelId, label: modelInfo.label })
+  send(EVENTS.sttModelSwitched, { id: modelInfo.id, label: modelInfo.label })
   return { ok: true }
 })
 

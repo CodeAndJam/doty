@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { EVENTS, INVOKE } from './ipc'
+import { ARGS, decodeArgs, EVENTS, INVOKE } from './ipc'
 
 const dir = join(process.cwd(), 'electron')
 const read = (file: string) => fs.readFileSync(join(dir, file), 'utf8')
@@ -30,5 +30,18 @@ describe('IPC channel registry', () => {
       ...rawCalls(read('preload.ts'), /ipcRenderer\.(?:invoke|on|once|removeListener)\(\s*['"`]/),
     ]
     expect(violations).toEqual([])
+  })
+
+  it('keeps every argument row on a declared channel', () => {
+    const declared = new Set<string>(Object.values(INVOKE))
+    for (const channel of Object.keys(ARGS)) expect(declared.has(channel)).toBe(true)
+  })
+
+  it('decodes a valid call and rejects a malformed one at the seam', () => {
+    expect(decodeArgs(INVOKE.moveTrack, ['track.mp3', 'music'])).toEqual(['track.mp3', 'music'])
+    expect(() => decodeArgs(INVOKE.moveTrack, ['track.mp3', 'shelf'])).toThrow()
+    expect(() => decodeArgs(INVOKE.setSttLanguage, [42])).toThrow()
+    // A channel with no arguments passes through untouched.
+    expect(decodeArgs(INVOKE.sttStart, [])).toEqual([])
   })
 })
