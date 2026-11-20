@@ -1803,7 +1803,15 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
 
 handle(INVOKE.updateGetState, () => updateState)
 handle(INVOKE.updateCheck, () => checkUpdates(true))
-handle(INVOKE.appVersion, () => app.getVersion())
+handle(INVOKE.appVersion, () => {
+  if (app.isPackaged) return app.getVersion()
+  // In a dev run Electron reports its own version; show the app's package version.
+  try {
+    return JSON.parse(fs.readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')).version as string
+  } catch {
+    return app.getVersion()
+  }
+})
 
 handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: string) => {
   const label =
