@@ -203,7 +203,7 @@ This is a first-launch problem only. Updates installed from the bar inside Doty 
 ### Prerequisites
 
 - macOS (arm64 or x64)
-- Node.js 24+ (see `.nvmrc`)
+- Node.js 26+ (see `.nvmrc`)
 - pnpm
 
 ### Setup
