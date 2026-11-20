@@ -33,6 +33,17 @@ describe('IPC channel registry', () => {
     expect(violations).toEqual([])
   })
 
+  it('keeps the shared registry free of the Effect runtime', () => {
+    // preload.ts loads this file; anything it value-imports lands in the preload
+    // bundle, and Effect is ESM-only.
+    expect(read('ipc.ts')).not.toMatch(/from 'effect'/)
+  })
+
+  it('registers every channel through the decoding wrapper', () => {
+    // One raw `ipcMain.handle` is the wrapper itself; a second would skip decode.
+    expect(rawCalls(read('main.ts'), /ipcMain\.handle\(/)).toHaveLength(1)
+  })
+
   it('keeps every argument row on a declared channel', () => {
     const declared = new Set<string>(Object.values(INVOKE))
     for (const channel of Object.keys(ARGS)) expect(declared.has(channel)).toBe(true)

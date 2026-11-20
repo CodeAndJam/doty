@@ -276,9 +276,11 @@ export function createLighting(deps: LightingDeps): Lighting {
   }
 
   /**
-   * Every DM write runs alone. Two IPC calls against one socket used to
+   * Every DM command runs alone. Two IPC calls against one socket used to
    * interleave stopPulse/apply/refresh, so a slow write published the state the
-   * previous one had produced.
+   * previous one had produced. The breath's own ticks stop at the first command
+   * and write directly, and the director's presets are not gated: a preset that
+   * is already in flight is not a DM command.
    */
   const gate = Effect.runSync(Semaphore.make(1))
 
@@ -288,9 +290,11 @@ export function createLighting(deps: LightingDeps): Lighting {
 
   /** One body for every DM change: quiet the breath, write, refresh, tell the panel. */
   function command(write: (ha: HaClient) => Promise<void>, log: [action: string, reason: string] | null) {
-    const ha = client
-    if (!ha) return Promise.resolve(publish())
     return serial(async () => {
+      // Read the client inside the gate: a command that waited behind a slow
+      // write may find the socket replaced, and the old one can only reject.
+      const ha = client
+      if (!ha) return publish()
       stopPulse()
       director?.noteManualChange()
       await write(ha)

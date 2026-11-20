@@ -10,8 +10,6 @@
  * dependency-free because both processes load it.
  */
 
-import { Schema } from 'effect'
-
 export const INVOKE = {
   // Microphone Permission
   micCheckPermission: 'mic:check-permission',

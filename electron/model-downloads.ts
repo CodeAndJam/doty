@@ -28,13 +28,14 @@ export interface ModelDownloads {
   /**
    * Fetch one artifact and finish it — verify, unpack, install — inside the
    * same critical section, so a second caller cannot start work on a file the
-   * first is still turning into a model. `finish` may delete the artifact and
-   * throw; that becomes the caller's `reason`, and the slot is still released.
+   * first is still turning into a model. `finish` receives the absolute path it
+   * is finishing, may delete it and throw; that becomes the caller's `reason`,
+   * and the slot is still released. Cancel stops the download, not the finish.
    */
   start(
     model: DownloadableModel,
     destPath: string,
-    finish?: (path: string) => void | Promise<void>,
+    finish?: (absolutePath: string) => void | Promise<void>,
   ): Promise<{ ok: boolean; reason?: string }>
   cancel(): void
   state(): DownloadState

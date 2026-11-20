@@ -91,6 +91,31 @@ describe('model downloads', () => {
     expect(events.at(-1)).toEqual({ type: 'done', modelId: 'nemotron' })
   })
 
+  it('hands finish the artifact path it just downloaded', async () => {
+    const download: Download = async () => {}
+    const finish = vi.fn<(path: string) => void>()
+    const { downloads } = harness(download)
+
+    await expect(downloads.start(MODEL, DEST, finish)).resolves.toEqual({ ok: true })
+    expect(finish).toHaveBeenCalledWith(DEST)
+  })
+
+  it('does not run finish when the download was cancelled', async () => {
+    const download: Download = (_url, _dest, _onProgress, options) =>
+      new Promise<void>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new Error('Download cancelled')))
+      })
+    const finish = vi.fn<(path: string) => void>()
+    const { downloads } = harness(download)
+
+    const started = downloads.start(MODEL, DEST, finish)
+    downloads.cancel()
+
+    await expect(started).resolves.toEqual({ ok: false, reason: 'cancelled' })
+    // Installing a partial file is the data loss the slot exists to prevent.
+    expect(finish).not.toHaveBeenCalled()
+  })
+
   it('reports a failed finish as the reason and releases the slot', async () => {
     const download: Download = async () => {}
     const { downloads, events } = harness(download)

@@ -127,6 +127,11 @@ export type InvokeArgs<C extends InvokeChannel> = C extends keyof typeof ARGS
  */
 export function decodeArgs<C extends InvokeChannel>(channel: C, raw: unknown[]): InvokeArgs<C> {
   const schema = (ARGS as unknown as Record<string, Schema.ConstraintDecoder<unknown>>)[channel]
-  if (!schema) return raw as InvokeArgs<C>
+  // Fail closed: a channel that sends arguments but declares no row is a
+  // contract bug, not a reason to hand the handler whatever the renderer sent.
+  if (!schema) {
+    if (raw.length > 0) throw new Error(`${channel} takes arguments but declares no schema`)
+    return [] as InvokeArgs<C>
+  }
   return Schema.decodeUnknownSync(schema)(raw) as InvokeArgs<C>
 }

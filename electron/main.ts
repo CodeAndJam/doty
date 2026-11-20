@@ -1464,8 +1464,11 @@ async function ensureSideModels(): Promise<void> {
 
 handle(INVOKE.downloadModel, async (_e, modelId?: string) => {
   const modelInfo = modelId
-    ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
+    ? STT_MODELS.find((m) => m.id === modelId)
     : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
+  // A renderer-chosen id it does not recognise must say so, not quietly install
+  // whichever model happens to be first in the registry.
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)

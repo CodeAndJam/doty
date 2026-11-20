@@ -27,8 +27,10 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: {
-        // Effect ships ESM-only and is used by five modules; bundling it keeps
-        // 58 MB of package out of the app and ESM off the runtime path.
+        // Effect ships ESM-only and is used by several modules; bundling it
+        // keeps the runtime off the preload path and out of `node_modules`
+        // resolution. The asar still carries the package unless `build.files`
+        // excludes it, which is a packaging decision, not this one.
         exclude: ['chokidar', 'music-metadata', 'effect'],
       },
       rollupOptions: {

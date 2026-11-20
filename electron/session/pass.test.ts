@@ -90,10 +90,36 @@ describe('session pass', () => {
     await Promise.resolve()
     const second = pass.run({ ...request, state: 'second' })
     const third = pass.run({ ...request, state: 'third' })
-    await Promise.all([first, second, third])
+    const [, secondResult, thirdResult] = await Promise.all([first, second, third])
 
     // The first pass was already running; the two that arrived meanwhile collapse.
     expect(states).toEqual([request.state, 'third'])
+    // The collapsed caller is answered with the plan computed for the newest one.
+    expect(secondResult.plan).toEqual(thirdResult.plan)
+  })
+
+  it('rejects every waiter in a failed batch, then runs again', async () => {
+    const { store } = recorder()
+    const pass = createSessionPass({
+      evaluate: async (state) => {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        if (state === 'second') throw new Error('model exploded')
+        return scores(0.95)
+      },
+      store,
+      now: () => 1_000,
+    })
+
+    const first = pass.run(request)
+    await Promise.resolve()
+    const second = pass.run({ ...request, state: 'second' })
+    const third = pass.run({ ...request, state: 'second' })
+    await first
+
+    await expect(second).rejects.toThrow('model exploded')
+    await expect(third).rejects.toThrow('model exploded')
+    // The coordinator releases its slot on failure: the next request still runs.
+    await expect(pass.run({ ...request, state: 'third' })).resolves.toBeTruthy()
   })
 
   it('holds everything when automatic music changes are off', async () => {

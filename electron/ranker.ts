@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { Deferred, Duration, Effect, Exit, Semaphore } from 'effect'
+import { Deferred, Duration, Effect, Exit, Option, Semaphore } from 'effect'
 import { app } from 'electron'
 
 export type RankerStatus = 'loading' | 'ready' | 'error'
@@ -23,7 +23,7 @@ type WorkerMessage = {
 
 /** First load reads a 1.5 GB graph; the first pass after it also warms the kernels. */
 const LOAD_TIMEOUT_MS = 180_000
-const DECIDE_TIMEOUT_MS = 60_000
+const QUESTION_TIMEOUT_MS = 60_000
 
 const TIMEOUTS: Record<Question, string> = {
   decide: 'Ranker decide timed out',
@@ -41,15 +41,11 @@ let loadPromise: Promise<void> | null = null
 let onStatus: (status: RankerStatus) => void = () => {}
 
 /**
- * One forward pass at a time. Without it the 60 s deadline could start before
- * the worker reached the question, and a caller would wait out a queue it was
- * never told about. A caller's deadline now starts when its slot is acquired.
+ * One forward pass at a time. Without it a caller's deadline could start before
+ * the worker reached the question, and it would wait out a queue it was never
+ * told about. A caller's deadline now starts when its slot is acquired.
  */
-let gate: Semaphore.Semaphore | null = null
-const permit = () => {
-  gate ??= Effect.runSync(Semaphore.make(1))
-  return gate
-}
+const gate = Effect.runSync(Semaphore.make(1))
 
 export function setOnRankerStatus(cb: (status: RankerStatus) => void): void {
   onStatus = cb
@@ -145,16 +141,26 @@ function ensureWorker(): Promise<void> {
 function ask<A>(question: Question, prompt: string, candidates: string[], read: (answer: Answer) => A) {
   return Effect.gen(function* () {
     yield* Effect.promise(() => ensureWorker())
-    const answer = yield* permit().withPermit(
+    const answer = yield* gate.withPermit(
       Effect.gen(function* () {
+        // The worker can die while this caller waits for the permit. Posting to
+        // nothing would leave the slot unanswered and hold the permit for the
+        // whole deadline, so fail now instead.
+        const active = worker
+        if (!active) return yield* Effect.fail(new Error('Ranker is not running'))
         const id = nextId++
         const slot = yield* Deferred.make<Answer, Error>()
         pending.set(id, slot)
-        worker?.postMessage({ type: question, id, prompt, candidates })
+        active.postMessage({ type: question, id, prompt, candidates })
         return yield* Deferred.await(slot).pipe(
-          // A dead worker fails every pending slot, so this is the only deadline.
-          Effect.timeout(Duration.millis(DECIDE_TIMEOUT_MS)),
-          Effect.mapError(() => new Error(TIMEOUTS[question])),
+          // A dead worker fails every pending slot; only a silent one needs this.
+          Effect.timeoutOption(Duration.millis(QUESTION_TIMEOUT_MS)),
+          Effect.flatMap(
+            Option.match({
+              onNone: () => Effect.fail(new Error(TIMEOUTS[question])),
+              onSome: Effect.succeed,
+            }),
+          ),
           Effect.ensuring(Effect.sync(() => pending.delete(id))),
         )
       }),

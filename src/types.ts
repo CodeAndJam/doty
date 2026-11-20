@@ -362,7 +362,7 @@ export interface DotyAPI {
     track: string | null
     probability: number
     mood: string | null
-    source: 'auto' | 'manual'
+    source: 'auto' | 'manual' | 'hint'
   }) => Promise<unknown>
   sessionPreference: (row: {
     at: number

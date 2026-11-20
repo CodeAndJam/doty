@@ -54,6 +54,12 @@ function armReadiness(): Promise<boolean> {
   return promise
 }
 
+/**
+ * Bumped whenever the worker is replaced. A waiter armed before the switch must
+ * not report the new worker's load as a failure.
+ */
+let readinessGeneration = 0
+
 function settleReadiness(ready: boolean): void {
   const signal = readiness
   if (!signal) return
@@ -65,10 +71,16 @@ function settleReadiness(ready: boolean): void {
 /** Start the stream once the worker is ready, or report that it never was. */
 function beginWhenReady(): void {
   const token = stopToken
+  const generation = readinessGeneration
   void armReadiness().then((ready) => {
-    if (token !== stopToken || !streaming) return
-    if (ready) beginWorkerStream()
-    else if (onAsrStatus) onAsrStatus('error')
+    if (token !== stopToken || generation !== readinessGeneration || !streaming) return
+    if (ready) {
+      beginWorkerStream()
+      return
+    }
+    // A worker that never loaded is not a session any more: stop taking audio.
+    streaming = false
+    if (onAsrStatus) onAsrStatus('error')
   })
 }
 
@@ -240,6 +252,7 @@ export function finalizeStream(): void {
   streaming = false
   streamStarted = false
   pending.clear()
+  settleReadiness(false)
   if (!worker || !started) return
   worker.postMessage({ type: 'finalize' })
 }
@@ -305,6 +318,7 @@ export function restartRecognizer(): void {
     worker = null
     workerReady = false
     streamStarted = false
+    readinessGeneration++
     settleReadiness(false)
     // A stop during the 200 ms teardown must not reload a model the DM ended.
     if (token !== stopToken) {
@@ -321,6 +335,7 @@ export function restartRecognizer(): void {
 export function freeRecognizer(): void {
   if (worker) {
     worker.postMessage({ type: 'dispose' })
+    settleReadiness(false)
     // Don't call terminate immediately — let Metal clean up
     setTimeout(() => {
       worker?.terminate()

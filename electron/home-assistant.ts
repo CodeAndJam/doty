@@ -10,7 +10,7 @@
  * commands. `lights.ts` decides what to write and when.
  */
 import { isIP } from 'node:net'
-import { Deferred, Duration, Effect, Exit } from 'effect'
+import { Deferred, Duration, Effect, Exit, Option } from 'effect'
 import WebSocket from 'ws'
 import type { LightState, Rgb } from './lights'
 
@@ -136,11 +136,23 @@ export async function createHaClient(options: {
     const answer = Effect.gen(function* () {
       const slot = yield* Deferred.make<unknown, Error>()
       pending.set(id, slot)
-      socket.send(JSON.stringify({ id, type, ...payload }))
+      try {
+        socket.send(JSON.stringify({ id, type, ...payload }))
+      } catch (err) {
+        // A socket closing under the send must not leave the slot behind.
+        pending.delete(id)
+        return yield* Effect.fail(err instanceof Error ? err : new Error(String(err)))
+      }
       return yield* Deferred.await(slot).pipe(
-        // A slow lamp is not an error; a socket that never answers is.
-        Effect.timeout(Duration.millis(timeoutMs)),
-        Effect.mapError(() => new Error(`Home Assistant did not answer ${type}`)),
+        // A slow lamp is not an error; a socket that never answers is. Only the
+        // timeout is rewritten: a refused write keeps its own reason.
+        Effect.timeoutOption(Duration.millis(timeoutMs)),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.fail(new Error(`Home Assistant did not answer ${type}`)),
+            onSome: Effect.succeed,
+          }),
+        ),
         Effect.ensuring(Effect.sync(() => pending.delete(id))),
       )
     })
@@ -170,6 +182,9 @@ export async function createHaClient(options: {
     const abortHandshake = (message: string) => {
       clearTimeout(timer)
       socket.off('message', onMessage)
+      // Nothing owns this socket when the handshake fails; close it here or
+      // every failed attempt leaves one open behind a "needs reconnect" panel.
+      socket.close()
       reject(new Error(message))
     }
     socket.once('error', () => abortHandshake('Home Assistant unreachable'))

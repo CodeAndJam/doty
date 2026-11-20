@@ -52,6 +52,13 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
     ])
     if (await skip.isVisible().catch(() => false)) await skip.click()
 
+    // The one IPC argument Electron's structured clone produces rather than
+    // renderer JS: a live PCM buffer must survive the schema at the seam, or
+    // every transcript chunk is rejected. The handler swallows its own errors.
+    await expect(page.evaluate(() => window.doty.sttTranscribeChunk(new ArrayBuffer(128)))).resolves.toEqual({
+      text: '',
+    })
+
     await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), music)
 
     // The analysis is what gives a file its seconds, and the seconds are what
