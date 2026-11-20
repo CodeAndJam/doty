@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.6.0](https://github.com/CodeAndJam/doty/compare/v5.5.0...v5.6.0) (2026-11-20)
+
+
+### Features
+
+* **app:** in-app updates, model deletion and steadier playback ([#155](https://github.com/CodeAndJam/doty/issues/155)) ([7a670f6](https://github.com/CodeAndJam/doty/commit/7a670f6249282899d48616257cabbcb14445b0f0))
+
 ## [5.5.0](https://github.com/CodeAndJam/doty/compare/v5.4.0...v5.5.0) (2026-11-20)
 
 
