@@ -88,7 +88,11 @@ export const INVOKE = {
   setAutopilotConfig: 'autopilot:set-config',
   // Updates
   updateGetState: 'update:get-state',
+  updateCheck: 'update:check',
+  appVersion: 'app:version',
   updateInstall: 'update:install',
+  // Models
+  deleteModel: 'model:delete',
   // Debug
   debugGetState: 'debug:get-state',
   debugSetEnabled: 'debug:set-enabled',

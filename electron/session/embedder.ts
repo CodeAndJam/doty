@@ -31,19 +31,14 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { Tokenizer } from '@huggingface/tokenizers'
-import type * as Ort from 'onnxruntime-node'
+import * as ort from 'onnxruntime-node'
 import { audioTokenCount, logMelSpectrogram } from './audio/mel'
+import { audioAvailable, EMBEDDING_MODEL, type Embedder, embedderAvailable, RETRIEVAL_KEY } from './embedder-files'
 import { normalise } from './embedding'
 
-export const EMBEDDING_MODEL = 'embeddinggemma-2-q4'
+export type { Embedder }
+export { audioAvailable, EMBEDDING_MODEL, embedderAvailable, RETRIEVAL_KEY }
 
-/**
- * Vectors are keyed by the model *and* the text recipe. When what a track's
- * description says changes, the old vectors are no longer comparable with new
- * queries, so the key changes and the library is re-embedded instead of silently
- * mixing two meanings in one space.
- */
-export const RETRIEVAL_KEY = `${EMBEDDING_MODEL}+facts2`
 const MAX_TOKENS = 8192
 
 /** Width the v2 graph expects for a media token. */
@@ -55,45 +50,6 @@ const MEDIA_DIM = 512
  */
 const QUERY_PREFIX = 'task: search result | query: '
 const DOCUMENT_PREFIX = 'title: none | text: '
-
-export interface Embedder {
-  /** Documents to be found later. */
-  embedDocuments(texts: string[]): Promise<Float32Array[]>
-  /** A search query: the transcript. */
-  embedQuery(text: string): Promise<Float32Array>
-  /** A track's sound, in the same space as the text vectors. Null without the encoder. */
-  embedAudio: ((pcm: Float32Array) => Promise<Float32Array>) | null
-  dim: number
-  /** Release the native sessions before the process exits. */
-  dispose(): Promise<void>
-}
-
-/**
- * Every file the session needs, checked by presence and plausibility rather than
- * by hash: the check runs at startup, and hashing 197 MB on a cold launch is a
- * pause the user would feel. Nothing is ever re-downloaded while these exist.
- */
-export function embedderAvailable(dir: string): boolean {
-  try {
-    // The audio encoder is optional: retrieval works without it.
-    return ['model_q4.onnx', 'model_q4.onnx_data', 'tokenizer.json', 'tokenizer_config.json'].every(
-      (name) => fs.statSync(join(dir, name)).size > 1024,
-    )
-  } catch {
-    return false
-  }
-}
-
-/** The audio encoder and the config that pins its token ids. */
-export function audioAvailable(dir: string): boolean {
-  try {
-    return ['audio_encoder_q4.onnx', 'audio_encoder_q4.onnx_data', 'config.json'].every(
-      (name) => fs.statSync(join(dir, name)).size > 1024,
-    )
-  } catch {
-    return false
-  }
-}
 
 /** The fused graph's media placeholder ids, as the processor uses them. */
 interface AudioTokens {
@@ -121,9 +77,6 @@ function readAudioTokens(dir: string): AudioTokens | null {
 }
 
 export async function loadEmbedder(dir: string): Promise<Embedder> {
-  // Loaded lazily: a launch with no folder must not initialise the ONNX native
-  // binding, whose finalizers abort the process at exit.
-  const ort = await import('onnxruntime-node')
   const tokenizer = new Tokenizer(
     JSON.parse(fs.readFileSync(join(dir, 'tokenizer.json'), 'utf8')),
     JSON.parse(fs.readFileSync(join(dir, 'tokenizer_config.json'), 'utf8')),
@@ -157,7 +110,7 @@ export async function loadEmbedder(dir: string): Promise<Embedder> {
   }
 
   const tokens = audioAvailable(dir) ? readAudioTokens(dir) : null
-  let encoder: Promise<Ort.InferenceSession> | null = null
+  let encoder: Promise<ort.InferenceSession> | null = null
 
   /**
    * Two passes: log-mel clip → audio encoder → media tokens → fused graph with

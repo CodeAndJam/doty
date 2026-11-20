@@ -1,5 +1,8 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bundleFromExecutable, checkForUpdate, isNewer, parseVersion, pickDmg } from './updater'
+import { bundleFromExecutable, checkForUpdate, isNewer, parseVersion, pickDmg, sha256File } from './updater'
 
 describe('parseVersion', () => {
   it('reads a plain and a v-prefixed release', () => {
@@ -7,8 +10,9 @@ describe('parseVersion', () => {
     expect(parseVersion('v5.4.1')).toEqual([5, 4, 1])
   })
 
-  it('ignores a prerelease suffix', () => {
-    expect(parseVersion('5.4.0-beta.1')).toEqual([5, 4, 0])
+  it('refuses a prerelease tag instead of dressing it as a stable release', () => {
+    expect(parseVersion('5.4.0-beta.1')).toBeNull()
+    expect(parseVersion('v5.5.0-rc1')).toBeNull()
   })
 
   it('refuses anything that is not semver', () => {
@@ -37,12 +41,17 @@ describe('isNewer', () => {
 describe('pickDmg', () => {
   const assets = [
     { name: 'Doty-5.4.0-x64.dmg', browser_download_url: 'https://x/x64.dmg', size: 200 * 1024 * 1024 },
-    { name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 234 * 1024 * 1024 },
+    {
+      name: 'Doty-5.4.0-arm64.dmg',
+      browser_download_url: 'https://x/arm64.dmg',
+      size: 234 * 1024 * 1024,
+      digest: 'sha256:abc123',
+    },
     { name: 'notes.txt', browser_download_url: 'https://x/notes.txt' },
   ]
 
   it('takes the DMG for this architecture', () => {
-    expect(pickDmg(assets, 'arm64')).toEqual({ url: 'https://x/arm64.dmg', sizeMB: 234 })
+    expect(pickDmg(assets, 'arm64')).toEqual({ url: 'https://x/arm64.dmg', sizeMB: 234, sha256: 'abc123' })
   })
 
   it('accepts a lone DMG, so a Rosetta process still finds the arm64 build', () => {
@@ -77,16 +86,31 @@ describe('bundleFromExecutable', () => {
 describe('checkForUpdate', () => {
   const release = {
     tag_name: 'v5.4.0',
-    assets: [{ name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 1024 }],
+    assets: [
+      {
+        name: 'Doty-5.4.0-arm64.dmg',
+        browser_download_url: 'https://x/arm64.dmg',
+        size: 1024,
+        digest: 'sha256:abc',
+      },
+    ],
   }
 
   it('offers a newer release with its DMG', async () => {
     const found = await checkForUpdate('5.3.0', 'arm64', async () => [release])
-    expect(found).toEqual({ version: '5.4.0', url: 'https://x/arm64.dmg', sizeMB: 0 })
+    expect(found).toEqual({ version: '5.4.0', url: 'https://x/arm64.dmg', sizeMB: 0, sha256: 'abc' })
   })
 
   it('offers nothing when this build is current', async () => {
     expect(await checkForUpdate('5.4.0', 'arm64', async () => [release])).toBeNull()
+  })
+
+  it('offers nothing for a release whose DMG has no digest', async () => {
+    const undigested = {
+      tag_name: 'v5.4.0',
+      assets: [{ name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 1024 }],
+    }
+    expect(await checkForUpdate('5.3.0', 'arm64', async () => [undigested])).toBeNull()
   })
 
   it('offers nothing for a release with no DMG attached', async () => {
@@ -100,6 +124,7 @@ describe('checkForUpdate', () => {
       version: '5.4.0',
       url: 'https://x/arm64.dmg',
       sizeMB: 0,
+      sha256: 'abc',
     })
   })
 
@@ -107,5 +132,14 @@ describe('checkForUpdate', () => {
     const draft = { ...release, draft: true }
     const prerelease = { ...release, tag_name: 'v5.5.0-rc.1', prerelease: true }
     expect(await checkForUpdate('5.3.0', 'arm64', async () => [draft, prerelease])).toBeNull()
+  })
+})
+
+describe('sha256File', () => {
+  it('hashes the bytes that were written, so a mismatch is detectable', async () => {
+    const file = join(os.tmpdir(), `doty-update-${Date.now()}.dmg`)
+    fs.writeFileSync(file, 'abc')
+    expect(await sha256File(file)).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+    fs.unlinkSync(file)
   })
 })

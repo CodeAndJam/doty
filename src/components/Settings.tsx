@@ -3,7 +3,7 @@ import { useCrossfade } from '../hooks/useCrossfade'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
-import type { DebugState, IndexProgress, ScanProgress } from '../types'
+import type { DebugState, IndexProgress, ScanProgress, UpdateState } from '../types'
 import DiscordPanel from './DiscordPanel'
 import HomeAssistantPanel from './HomeAssistantPanel'
 
@@ -79,13 +79,14 @@ function Label({ children }: { children: React.ReactNode }) {
   )
 }
 
-export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'advanced'
+export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'updates' | 'advanced'
 
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'audio', label: 'Audio' },
   { id: 'library', label: 'Library' },
   { id: 'transcription', label: 'Transcription' },
   { id: 'director', label: 'Director' },
+  { id: 'updates', label: 'Updates' },
   { id: 'advanced', label: 'Advanced' },
 ]
 
@@ -123,6 +124,10 @@ export default function Settings({
   const [sttModel, setSttModel] = useState('parakeet')
   const [sttLanguage, setSttLanguage] = useState('auto')
   const [indexStatus, setIndexStatus] = useState<IndexProgress | null>(null)
+  const [appVersion, setAppVersion] = useState('')
+  const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null)
+  const [modelMessage, setModelMessage] = useState<string | null>(null)
   const [section, setSection] = useState<SectionId>(initialSection)
   const [debugState, setDebugState] = useState<DebugState | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -250,6 +255,15 @@ export default function Settings({
       // rather than "failed" until the first progress event arrives.
       if (s.downloading) setRankerProgress((prev) => prev ?? 0)
     })
+    window.doty
+      .appVersion()
+      .then(setAppVersion)
+      .catch(() => {})
+    window.doty
+      .updateState()
+      .then(setUpdate)
+      .catch(() => {})
+    const unsubUpdate = window.doty.onUpdateState(setUpdate)
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
@@ -362,6 +376,7 @@ export default function Settings({
 
     return () => {
       unsubIndex()
+      unsubUpdate()
       unsubProgress()
       unsubComplete()
       unsubWhisper()
@@ -424,6 +439,47 @@ export default function Settings({
   function copyDiagnostics() {
     if (debugState?.diagnostics) navigator.clipboard.writeText(debugState.diagnostics)
   }
+
+  async function refreshModels() {
+    window.doty.getSttModelList().then(setSttModelList)
+    window.doty.getSttModel().then(setSttModel)
+    window.doty.getSttModelStatus().then(setSttModelStatus)
+    window.doty.modelStatus().then(({ ready }) => setSttReady(ready))
+    window.doty.rankerStatus().then((s) => {
+      setRankerInstalled(s.cached)
+      setRankerLanguageCovered(s.languageCovered)
+    })
+    window.doty.embeddingStatus().then(setIndexStatus)
+  }
+
+  async function deleteModel(kind: 'stt' | 'ranker' | 'embedder', id?: string) {
+    setModelMessage(null)
+    const result = await window.doty.deleteModel(kind, id).catch(() => ({ ok: false, reason: 'delete failed' }))
+    if (!result.ok && result.reason !== 'cancelled') setModelMessage(result.reason ?? 'Delete failed')
+    if (result.ok) await refreshModels()
+  }
+
+  async function checkNow() {
+    setUpdateNotice(null)
+    const result = await window.doty.updateCheck().catch((e) => ({
+      ok: false,
+      status: 'error' as const,
+      error: String(e),
+    }))
+    if (result.status === 'current') setUpdateNotice(`Doty ${appVersion || ''} is up to date`.trim())
+    else if (result.status === 'error') setUpdateNotice(result.error ?? 'Could not check for updates')
+  }
+
+  const updateText =
+    update.status === 'available'
+      ? `Doty ${update.version} is available (${update.sizeMB} MB)`
+      : update.status === 'downloading'
+        ? `Downloading Doty ${update.version} · ${update.percent}%`
+        : update.status === 'installing'
+          ? `Restarting into Doty ${update.version}…`
+          : update.status === 'error'
+            ? `Update failed — ${update.error}`
+            : 'Check GitHub for a newer release.'
 
   const scanPercent =
     scanProgress && scanProgress.total > 0 ? Math.round((scanProgress.done / scanProgress.total) * 100) : 0
@@ -781,6 +837,33 @@ export default function Settings({
               }}
             >
               {indexSummary(indexStatus)}
+              {indexStatus?.ready && (
+                <button
+                  type="button"
+                  onClick={() => void deleteModel('embedder')}
+                  disabled={indexStatus.phase !== 'idle'}
+                  title={
+                    indexStatus.phase === 'idle'
+                      ? 'Delete the embedding model; search falls back to names'
+                      : 'Wait for the index pass to finish'
+                  }
+                  aria-label="Delete the embedding model"
+                  style={{
+                    display: 'block',
+                    marginTop: '6px',
+                    fontSize: '11px',
+                    color: '#a5813f',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    background: 'none',
+                    border: '1px solid rgba(200,146,42,0.25)',
+                    padding: '2px 6px',
+                    cursor: indexStatus.phase === 'idle' ? 'pointer' : 'default',
+                    opacity: indexStatus.phase === 'idle' ? 1 : 0.4,
+                  }}
+                >
+                  delete embedding model
+                </button>
+              )}
             </p>
             {/* SFX folder */}
             <div className="mb-5">
@@ -1008,16 +1091,36 @@ export default function Settings({
                               {whisperProgress}%
                             </span>
                           ) : isDownloaded ? (
-                            <span
-                              style={{
-                                fontSize: '11px',
-                                color: '#6dbf95',
-                                fontFamily: "'IBM Plex Mono', monospace",
-                                flexShrink: 0,
-                              }}
-                            >
-                              ready
-                            </span>
+                            <>
+                              <span
+                                style={{
+                                  fontSize: '11px',
+                                  color: '#6dbf95',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                ready
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => void deleteModel('stt', m.id)}
+                                aria-label={`Delete ${m.label}`}
+                                title="Delete the downloaded model; it downloads again when needed"
+                                style={{
+                                  fontSize: '11px',
+                                  color: '#a5813f',
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                  background: 'none',
+                                  border: '1px solid rgba(200,146,42,0.25)',
+                                  padding: '2px 6px',
+                                  cursor: 'pointer',
+                                  flexShrink: 0,
+                                }}
+                              >
+                                delete
+                              </button>
+                            </>
                           ) : (
                             <button
                               type="button"
@@ -1061,6 +1164,19 @@ export default function Settings({
                     })}
                   </div>
                 </div>
+
+                {modelMessage && (
+                  <p
+                    style={{
+                      fontSize: '12px',
+                      color: '#e07a5f',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      marginTop: '8px',
+                    }}
+                  >
+                    {modelMessage}
+                  </p>
+                )}
 
                 {/* Focused language — avoids per-utterance language detection */}
                 <div
@@ -1230,6 +1346,25 @@ export default function Settings({
                       ? `Does not read ${LANGUAGE_LABELS[sttLanguage] ?? sttLanguage} — it will still rank, but may be weaker`
                       : 'Ranked by the decision model on your machine'}
                 </p>
+                {rankerInstalled && rankerProgress === null && (
+                  <button
+                    type="button"
+                    onClick={() => void deleteModel('ranker')}
+                    aria-label="Delete the decision model"
+                    style={{
+                      marginTop: '6px',
+                      fontSize: '11px',
+                      color: '#a5813f',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      background: 'none',
+                      border: '1px solid rgba(200,146,42,0.25)',
+                      padding: '2px 6px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    delete downloaded model
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1453,6 +1588,90 @@ export default function Settings({
             </div>
           </div>
 
+          <div
+            role="tabpanel"
+            id={`settings-panel-updates`}
+            aria-labelledby={`settings-tab-updates`}
+            hidden={section !== 'updates'}
+          >
+            <Label>Updates</Label>
+            <p style={{ fontSize: '15px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif", marginBottom: '8px' }}>
+              Doty {appVersion || '…'}
+            </p>
+            <p
+              style={{
+                fontSize: '13px',
+                color: '#9d8b66',
+                fontFamily: "'IBM Plex Mono', monospace",
+                marginBottom: '12px',
+              }}
+            >
+              {updateText}
+            </p>
+            {update.status === 'downloading' && (
+              <div className="mb-3" style={{ height: '3px', background: 'rgba(217,164,65,0.2)' }}>
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${update.percent}%`,
+                    background: 'linear-gradient(to right, #a5813f, #d9a441)',
+                  }}
+                />
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void checkNow()}
+                disabled={update.status === 'downloading' || update.status === 'installing'}
+                style={{
+                  fontSize: '12px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#d9a441',
+                  border: '1px solid rgba(200,146,42,0.4)',
+                  padding: '4px 10px',
+                  opacity: update.status === 'downloading' || update.status === 'installing' ? 0.4 : 1,
+                }}
+              >
+                Check for updates
+              </button>
+              {(update.status === 'available' || update.status === 'error') && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setUpdateNotice(null)
+                    const result = await window.doty.updateInstall().catch((e) => ({ ok: false, error: String(e) }))
+                    if (!result.ok) setUpdateNotice(result.error ?? 'Could not install the update')
+                  }}
+                  style={{
+                    fontSize: '12px',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    color: '#e4d6b4',
+                    border: '1px solid rgba(217,164,65,0.5)',
+                    padding: '4px 10px',
+                  }}
+                >
+                  {update.status === 'error' ? 'Try again' : 'Update & restart'}
+                </button>
+              )}
+            </div>
+            {updateNotice && (
+              <p
+                style={{
+                  fontSize: '12px',
+                  color: '#9d8b66',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  marginTop: '10px',
+                }}
+              >
+                {updateNotice}
+              </p>
+            )}
+            <p style={{ fontSize: '12px', color: '#9d8b66', fontFamily: "'Crimson Text', serif", marginTop: '14px' }}>
+              Updates download in the background and replace the app after it quits. They are only available from the
+              installed app, not a development build.
+            </p>
+          </div>
           <div
             role="tabpanel"
             id={`settings-panel-advanced`}

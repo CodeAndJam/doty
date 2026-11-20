@@ -23,21 +23,9 @@ export const MOOD_INSTRUCTIONS = 'Que tipo de cena está a acontecer agora?'
 /** Sound effects are asked separately: the bar for a sound is much higher. */
 export const SFX_INSTRUCTIONS = 'Que som, se algum, aconteceu agora na cena?'
 
-export const MOODS = [
-  'combat',
-  'chase',
-  'tense',
-  'horror',
-  'mystery',
-  'exploration',
-  'tavern',
-  'celebration',
-  'sad',
-  'epic',
-  'peaceful',
-  'voyage',
-  'stealth',
-] as const
+import { MOODS } from './session/moods'
+
+export { MOODS }
 
 export interface D1Manifest {
   family: string

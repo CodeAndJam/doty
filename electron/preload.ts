@@ -197,6 +197,9 @@ contextBridge.exposeInMainWorld('doty', {
 
   // Updates
   updateState: () => invoke(INVOKE.updateGetState),
+  updateCheck: () => invoke(INVOKE.updateCheck),
+  appVersion: () => invoke(INVOKE.appVersion),
+  deleteModel: (kind: 'stt' | 'ranker' | 'embedder', id?: string) => invoke(INVOKE.deleteModel, kind, id),
   updateInstall: () => invoke(INVOKE.updateInstall) as Promise<{ ok: boolean; error?: string }>,
   onUpdateState: (cb: (state: import('../src/types').UpdateState) => void) => subscribe(EVENTS.updateState, cb),
 })

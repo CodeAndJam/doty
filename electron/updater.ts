@@ -11,6 +11,7 @@
  */
 
 import { execFile, spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import { dirname, join } from 'node:path'
 
@@ -22,17 +23,22 @@ export interface Release {
   version: string
   url: string
   sizeMB: number
+  /** `sha256:…` from the GitHub asset digest; required before installing. */
+  sha256?: string
 }
 
 interface ReleaseAsset {
   name: string
   browser_download_url: string
   size?: number
+  digest?: string
 }
 
 /** `5.4.0`, `v5.4.0`, `5.4.0-beta.1` → `[5, 4, 0]`; anything else → null. */
 export function parseVersion(version: string): [number, number, number] | null {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(version.trim())
+  // Anchored: a `v5.5.0-rc1` tag is not a stable release and must not be offered
+  // as 5.5.0.
+  const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version.trim())
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
 }
 
@@ -50,10 +56,12 @@ export function isNewer(remote: string, current: string): boolean {
  * published, and a Rosetta process reports `x64`); two DMGs with no match means
  * the arch is unsupported, and guessing is how the wrong binary gets installed.
  */
-export function pickDmg(assets: ReleaseAsset[], arch: string): { url: string; sizeMB: number } | null {
+export function pickDmg(assets: ReleaseAsset[], arch: string): { url: string; sizeMB: number; sha256?: string } | null {
   const dmgs = assets.filter((asset) => asset.name.endsWith('.dmg'))
   const asset = dmgs.find((a) => a.name.includes(`-${arch}.dmg`)) ?? (dmgs.length === 1 ? dmgs[0] : null)
-  return asset ? { url: asset.browser_download_url, sizeMB: Math.round((asset.size ?? 0) / 1024 / 1024) } : null
+  if (!asset) return null
+  const digest = asset.digest?.startsWith('sha256:') ? asset.digest.slice('sha256:'.length) : undefined
+  return { url: asset.browser_download_url, sizeMB: Math.round((asset.size ?? 0) / 1024 / 1024), sha256: digest }
 }
 
 /** The .app a given executable lives in; null outside a bundle (`pnpm dev`). */
@@ -88,17 +96,23 @@ export async function checkForUpdate(
   const tag = String(newest.tag_name)
   if (!isNewer(tag, currentVersion)) return null
   const dmg = pickDmg(newest.assets ?? [], arch)
-  return dmg ? { version: parseVersion(tag)?.join('.') ?? tag, ...dmg } : null
+  // No digest, no offer: an install that can only fail is a dead end.
+  return dmg?.sha256 ? { version: parseVersion(tag)?.join('.') ?? tag, ...dmg } : null
 }
 
 export interface InstallOptions {
   dmgUrl: string
+  /** Version the image must contain, and the digest it must match. */
+  version: string
+  sha256?: string
   /** The .app being replaced. */
   targetApp: string
   /** Scratch space for the DMG, the mount point and the swap script. */
   workDir: string
   onProgress(percent: number): void
   download(url: string, dest: string, onProgress: (percent: number) => void): Promise<void>
+  /** Checked after the mount, before quitting is armed: a take may have begun. */
+  canSwap?: () => boolean
 }
 
 /**
@@ -118,6 +132,15 @@ export async function installUpdate(options: InstallOptions): Promise<void> {
   fs.rmSync(`${dmg}.part`, { force: true })
   await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
   await download(dmgUrl, dmg, onProgress)
+  if (!options.sha256) {
+    fs.rmSync(dmg, { force: true })
+    throw new Error('This release has no checksum; download it from GitHub by hand')
+  }
+  const digest = await sha256File(dmg)
+  if (digest !== options.sha256) {
+    fs.rmSync(dmg, { force: true })
+    throw new Error('The downloaded update failed its checksum')
+  }
   await run('hdiutil', ['attach', '-nobrowse', '-readonly', '-mountpoint', mountPoint, dmg])
 
   // Refuse to quit into a swap that would replace a working app with a broken
@@ -126,18 +149,57 @@ export async function installUpdate(options: InstallOptions): Promise<void> {
     const staged = fs.readdirSync(mountPoint).find((name) => name.endsWith('.app'))
     if (!staged) throw new Error('The downloaded image has no Doty.app in it')
     await run('codesign', ['--verify', '--deep', '--strict', join(mountPoint, staged)])
+    // The image must hold the release it claims: otherwise the bar re-offers the
+    // same version forever.
+    const plist = join(mountPoint, staged, 'Contents', 'Info.plist')
+    const stagedVersion = (
+      await runCapture('plutil', ['-extract', 'CFBundleShortVersionString', 'raw', '-o', '-', plist])
+    ).trim()
+    if (stagedVersion !== options.version) {
+      throw new Error(`The image contains ${stagedVersion}, not ${options.version}`)
+    }
   } catch (error) {
     // A rejected image is still mounted; leave nothing behind.
     await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
     throw error
   }
 
-  fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o755 })
-  const child = spawn('/bin/sh', [script, dmg, mountPoint, targetApp, String(process.pid)], {
-    detached: true,
-    stdio: 'ignore',
+  // The download can take minutes; the DM may have started recording since.
+  if (options.canSwap && !options.canSwap()) {
+    await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
+    throw new Error('A session started; finish it before updating')
+  }
+
+  try {
+    fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o755 })
+    const child = spawn('/bin/sh', [script, dmg, mountPoint, targetApp, String(process.pid)], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.unref()
+  } catch (error) {
+    await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
+    throw error
+  }
+}
+
+function runCapture(command: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, { timeout: 60_000 }, (error, stdout, stderr) => {
+      if (error) reject(new Error(`${command} failed: ${stderr.trim() || error.message}`))
+      else resolve(stdout)
+    })
   })
-  child.unref()
+}
+
+export function sha256File(path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash('sha256')
+    fs.createReadStream(path)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('end', () => resolve(hash.digest('hex')))
+      .on('error', reject)
+  })
 }
 
 function run(command: string, args: string[]): Promise<void> {
@@ -158,14 +220,17 @@ function run(command: string, args: string[]): Promise<void> {
  */
 const SWAP_SCRIPT = `#!/bin/sh
 dmg=$1; mount=$2; target=$3; pid=$4
+# Recover a swap interrupted by a crash or power loss before doing anything else.
+if [ ! -d "$target" ] && [ -d "$target.old" ]; then mv "$target.old" "$target"; fi
 while kill -0 "$pid" 2>/dev/null; do sleep 0.2; done
 restore() {
   if [ ! -d "$target" ] && [ -d "$target.old" ]; then mv "$target.old" "$target"; fi
 }
 trap restore EXIT INT TERM
 src=$(ls -d "$mount"/*.app 2>/dev/null | head -1)
-rm -rf "$target.new" "$target.old"
+rm -rf "$target.new"
 if [ -n "$src" ] && ditto "$src" "$target.new" && mv "$target" "$target.old" && mv "$target.new" "$target"; then
+  rm -rf "$target.old"
   hdiutil detach "$mount" -quiet
   rm -f "$dmg"
   open "$target"
@@ -174,5 +239,6 @@ fi
 rm -rf "$target.new"
 restore
 hdiutil detach "$mount" -quiet
-open "$dmg"
+# Never leave the DM with nothing running after a failed update.
+[ -d "$target" ] && open "$target" || open "$dmg"
 `

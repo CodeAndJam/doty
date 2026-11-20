@@ -2,7 +2,18 @@ import fs from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  type MenuItemConstructorOptions,
+  net,
+  protocol,
+  safeStorage,
+  shell,
+} from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
@@ -28,7 +39,6 @@ import {
   rankerPaths,
   sha256File,
 } from './d1-model'
-import { MOODS } from './d1-omni'
 import {
   clearLaneOverride,
   clearSfxDurations,
@@ -105,8 +115,10 @@ import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
-import { audioAvailable, embedderAvailable, loadEmbedder, RETRIEVAL_KEY } from './session/embedder'
+import type { Embedder } from './session/embedder-files'
+import { audioAvailable, embedderAvailable, RETRIEVAL_KEY } from './session/embedder-files'
 import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
+import { MOODS } from './session/moods'
 import { createSessionPass, type PassRequest } from './session/pass'
 import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
@@ -248,21 +260,76 @@ function runningBundle(): string | null {
   return app.isPackaged ? bundleFromExecutable(app.getPath('exe')) : null
 }
 
-async function checkUpdates(): Promise<void> {
-  if (!runningBundle() || updateState.status !== 'idle') return
+type CheckResult = { ok: boolean; status: 'current' | 'available' | 'error'; version?: string; error?: string }
+
+async function checkUpdates(manual = false): Promise<CheckResult> {
+  if (!runningBundle()) {
+    return manual
+      ? { ok: false, status: 'error', error: 'Updates are available from the installed app, not a dev build' }
+      : { ok: true, status: 'current' }
+  }
+  if (updateState.status === 'downloading' || updateState.status === 'installing') {
+    return { ok: false, status: 'error', error: 'An update is already in progress' }
+  }
+  if (updateState.status === 'available' && pendingRelease) {
+    return { ok: true, status: 'available', version: pendingRelease.version }
+  }
   try {
     const release = await checkForUpdate(app.getVersion(), process.arch, async (url) => {
       const response = await net.fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
       if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
       return response.json()
     })
-    if (!release) return
+    if (!release) return { ok: true, status: 'current' }
     pendingRelease = release
     setUpdateState({ status: 'available', version: release.version, sizeMB: release.sizeMB })
+    return { ok: true, status: 'available', version: release.version }
   } catch (error) {
-    // Offline, rate-limited, or no release yet: a check nobody asked for stays quiet.
-    console.error('[update] check failed:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    // A check nobody asked for stays quiet; a manual one says why.
+    console.error('[update] check failed:', message)
+    return { ok: false, status: 'error', error: message }
   }
+}
+
+/** The app menu's "Check for Updates…": silence is a bad answer. */
+async function checkUpdatesFromMenu(): Promise<void> {
+  const result = await checkUpdates(true)
+  if (result.status === 'current') {
+    await dialog.showMessageBox({ type: 'info', message: 'Doty is up to date', detail: `Version ${app.getVersion()}` })
+  } else if (result.status === 'error') {
+    await dialog.showMessageBox({ type: 'warning', message: 'Could not check for updates', detail: result.error })
+  }
+  // `available` shows in the update bar; no dialog competes with it.
+}
+
+function installMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { label: 'Check for Updates…', click: () => void checkUpdatesFromMenu() },
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 const sttDownloads = createModelDownloads({
@@ -583,6 +650,7 @@ app.whenReady().then(async () => {
   registerAppProtocol()
   registerMusicProtocol()
   createWindow()
+  installMenu()
 
   // Forward Discord state changes to renderer. Registered first: anything that
   // throws later in this callback used to skip it, which left the Discord panel
@@ -701,10 +769,19 @@ app.on('before-quit', (event) => {
       stopScanner()
       closeDb()
       destroyDiscord()
-      // Every write is closed above. Touching an ONNX session here (terminate,
-      // release) aborts the process inside the native binding; SIGKILL skips the
-      // finalizers entirely. All state is durable by this point.
-      app.exit(0)
+      // Every write is closed above. Releasing or exiting through Electron runs
+      // the ONNX finalizers, which abort when a session exists; SIGKILL skips
+      // them. The helpers are killed first, so none is left orphaned holding the
+      // profile (a plain SIGKILL leaves the GPU/renderer processes behind).
+      for (const metric of app.getAppMetrics()) {
+        if (metric.pid === process.pid) continue
+        try {
+          process.kill(metric.pid, 'SIGKILL')
+        } catch {
+          /* already gone */
+        }
+      }
+      process.kill(process.pid, 'SIGKILL')
     })()
   }, 3_000)
 })
@@ -1193,11 +1270,14 @@ handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 
 // ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
-let embedder: Awaited<ReturnType<typeof loadEmbedder>> | null = null
+let embedder: Embedder | null = null
 
-async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedder>> | null> {
+async function loadEmbedderOnce(): Promise<Embedder | null> {
   if (embedder) return embedder
   if (!embedderAvailable(EMBEDDER_DIR)) return null
+  // Loaded on demand: a session that never indexes must not initialise ONNX in
+  // the main process.
+  const { loadEmbedder } = await import('./session/embedder')
   embedder = await loadEmbedder(EMBEDDER_DIR)
   return embedder
 }
@@ -1722,11 +1802,74 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
 // ── IPC: Updates ──────────────────────────────────────────────────────────────
 
 handle(INVOKE.updateGetState, () => updateState)
+handle(INVOKE.updateCheck, () => checkUpdates(true))
+handle(INVOKE.appVersion, () => {
+  if (app.isPackaged) return app.getVersion()
+  // In a dev run Electron reports its own version; show the app's package version.
+  try {
+    return JSON.parse(fs.readFileSync(join(app.getAppPath(), 'package.json'), 'utf8')).version as string
+  } catch {
+    return app.getVersion()
+  }
+})
+
+handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: string) => {
+  const label =
+    kind === 'stt'
+      ? (STT_MODELS.find((m) => m.id === id)?.label ?? 'speech model')
+      : kind === 'ranker'
+        ? 'decision model'
+        : 'embedding model'
+  const answer = await dialog.showMessageBox(mainWindow!, {
+    type: 'warning',
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: `Delete the ${label}?`,
+    detail: 'It downloads again the next time it is needed. Sessions and tags are not touched.',
+  })
+  if (answer.response !== 0) return { ok: false, reason: 'cancelled' }
+
+  if (kind === 'stt') {
+    const model = STT_MODELS.find((m) => m.id === id)
+    if (!model) return { ok: false, reason: 'unknown model' }
+    fs.rmSync(join(MODELS_DIR, model.ggufFile), { force: true })
+    if (store.get('sttModel', '') === model.id) {
+      store.set('sttModel', '')
+      freeRecognizer()
+      send(EVENTS.modelStatus, { ready: false })
+    }
+    return { ok: true }
+  }
+  if (kind === 'ranker') {
+    await disposeRanker().catch(() => {})
+    for (const file of [
+      rankerPaths().graph,
+      rankerPaths().manifest,
+      rankerPaths().archive,
+      join(MODELS_DIR, 'd1-omni-src'),
+    ]) {
+      fs.rmSync(file, { recursive: true, force: true })
+    }
+    send(EVENTS.rankerStatus, 'error')
+    return { ok: true }
+  }
+  await embedder?.dispose().catch(() => {})
+  embedder = null
+  fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  library.invalidate()
+  send(EVENTS.embeddingProgress, library.status())
+  return { ok: true }
+})
 
 handle(INVOKE.updateInstall, async () => {
   const release = pendingRelease
   const targetApp = runningBundle()
-  if (updateState.status !== 'available' || !release) return { ok: false, error: 'No update is waiting' }
+  if ((updateState.status !== 'available' && updateState.status !== 'error') || !release) {
+    return { ok: false, error: 'No update is waiting' }
+  }
+  // A swap quits the app: never during a take.
+  if (recordingActive) return { ok: false, error: 'Finish the session before updating' }
   if (!targetApp) return { ok: false, error: 'Doty is not running from an installed app' }
 
   // A bundle in a read-only folder (still on the DMG, or another user's
@@ -1742,10 +1885,13 @@ handle(INVOKE.updateInstall, async () => {
   try {
     await installUpdate({
       dmgUrl: release.url,
+      version: release.version,
+      sha256: release.sha256,
       targetApp,
       workDir: join(app.getPath('temp'), 'doty-update'),
       onProgress: (percent) => setUpdateState({ status: 'downloading', version, percent }),
       download: downloadFile,
+      canSwap: () => !recordingActive,
     })
     // The script waits for this process to exit, then swaps the bundle.
     setUpdateState({ status: 'installing', version })
