@@ -642,16 +642,20 @@ app.on('before-quit', (event) => {
   // Restore the room before the light director loses the database.
   void lighting.endSession().catch(() => {})
   setTimeout(() => {
-    finalizeWavRecording()
-    freeRecognizer()
-    disposeRanker()
-    stopScanner()
-    closeDb()
-    destroyDiscord()
-    // Every write is closed above. Electron's normal exit runs the ONNX native
-    // finalizers, which abort this process (Napi::Error) after any inference;
-    // exiting here skips destructors that no longer have work to protect.
-    process.exit(0)
+    void (async () => {
+      finalizeWavRecording()
+      freeRecognizer()
+      // Let the ranker worker drain its current run; terminating a thread mid-Run
+      // aborts the process inside onnxruntime.
+      await disposeRanker().catch(() => {})
+      stopScanner()
+      closeDb()
+      destroyDiscord()
+      // Every write is closed above. Electron's normal exit runs the ONNX native
+      // finalizers, which abort this process (Napi::Error) after any inference;
+      // exiting here skips destructors that no longer have work to protect.
+      process.exit(0)
+    })()
   }, 3_000)
 })
 
