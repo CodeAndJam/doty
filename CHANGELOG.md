@@ -1,5 +1,13 @@
 # Changelog
 
+## [5.5.0](https://github.com/CodeAndJam/doty/compare/v5.4.0...v5.5.0) (2026-11-20)
+
+
+### Features
+
+* **session:** hands-off playback, steady decisions, and a hardened local service ([#152](https://github.com/CodeAndJam/doty/issues/152)) ([57504f0](https://github.com/CodeAndJam/doty/commit/57504f04f15f475b20a72de15018fdd3630a37ff))
+* **updater:** offer new releases in a bottom bar and swap in place ([#153](https://github.com/CodeAndJam/doty/issues/153)) ([fcff4a2](https://github.com/CodeAndJam/doty/commit/fcff4a22b34b881cbcf005d82ec40f23c37d8556))
+
 ## [5.4.0](https://github.com/CodeAndJam/doty/compare/v5.3.0...v5.4.0) (2026-11-19)
 
 
