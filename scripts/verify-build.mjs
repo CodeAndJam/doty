@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import { join } from 'node:path'
 
 const OUT = join(process.cwd(), 'out', 'main')
-const WORKERS = ['analyze-worker.js', 'transcribe-worker.js', 'ranker-worker.js']
+const WORKERS = ['analyze-worker.js', 'transcribe-worker.js', 'ranker-worker.js', 'embedder-worker.js']
 
 const problems = []
 

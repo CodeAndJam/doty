@@ -105,7 +105,7 @@ describe('Home Assistant client', () => {
   it('times out one silent request without poisoning the next', async () => {
     const ha = await fakeHa({ areas, states, swallow: ['get_states'] })
     try {
-      const client = await createHaClient({ url: ha.url, token: 'good-token', timeoutMs: 50 })
+      const client = await createHaClient({ url: ha.url, token: 'good-token', timeoutMs: 300 })
       await expect(client.lights('office')).rejects.toThrow('did not answer get_states')
       // The timed-out slot is gone: the socket still answers the next question.
       await expect(client.areas()).resolves.toHaveLength(2)

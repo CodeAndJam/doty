@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
-import { Deferred, Duration, Effect, Exit, Option, Semaphore } from 'effect'
+import { Deferred, Duration, Effect, Exit, Option } from 'effect'
 import { app } from 'electron'
 
 export type RankerStatus = 'loading' | 'ready' | 'error'
@@ -41,11 +41,28 @@ let loadPromise: Promise<void> | null = null
 let onStatus: (status: RankerStatus) => void = () => {}
 
 /**
- * One forward pass at a time. Without it a caller's deadline could start before
- * the worker reached the question, and it would wait out a queue it was never
- * told about. A caller's deadline now starts when its slot is acquired.
+ * Requests per question, newest last, one drain loop. A pass takes ~4.4 s and
+ * the recommendation cadence is ~2 s, so serialising alone still runs every
+ * queued pass and the backlog grows. A request that arrives while one of the
+ * same question is queued and offers the same option list replaces its prompt
+ * and joins its replies: the indices still line up, and the answer is for what
+ * the table is doing now rather than for a state the pass has outlived.
  */
-const gate = Effect.runSync(Semaphore.make(1))
+type Job = { prompt: string; candidates: string[]; replies: Array<Deferred.Deferred<Answer, Error>> }
+
+const queued = new Map<Question, Job[]>()
+let draining = false
+
+const sameCandidates = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i])
+
+function nextJob(): { question: Question; job: Job } | null {
+  for (const [question, jobs] of queued) {
+    const job = jobs.shift()
+    if (job && jobs.length === 0) queued.delete(question)
+    if (job) return { question, job }
+  }
+  return null
+}
 
 export function setOnRankerStatus(cb: (status: RankerStatus) => void): void {
   onStatus = cb
@@ -134,39 +151,65 @@ function ensureWorker(): Promise<void> {
   return loadPromise
 }
 
-/**
- * Ask one question, off the Electron main thread, behind the single-pass gate.
- * The deadline covers the forward pass, not the time spent waiting for it.
- */
+/** Queue one question, joining the newest batch of the same shape. */
 function ask<A>(question: Question, prompt: string, candidates: string[], read: (answer: Answer) => A) {
   return Effect.gen(function* () {
-    yield* Effect.promise(() => ensureWorker())
-    const answer = yield* gate.withPermit(
-      Effect.gen(function* () {
-        // The worker can die while this caller waits for the permit. Posting to
-        // nothing would leave the slot unanswered and hold the permit for the
-        // whole deadline, so fail now instead.
-        const active = worker
-        if (!active) return yield* Effect.fail(new Error('Ranker is not running'))
-        const id = nextId++
-        const slot = yield* Deferred.make<Answer, Error>()
-        pending.set(id, slot)
-        active.postMessage({ type: question, id, prompt, candidates })
-        return yield* Deferred.await(slot).pipe(
-          // A dead worker fails every pending slot; only a silent one needs this.
-          Effect.timeoutOption(Duration.millis(QUESTION_TIMEOUT_MS)),
-          Effect.flatMap(
-            Option.match({
-              onNone: () => Effect.fail(new Error(TIMEOUTS[question])),
-              onSome: Effect.succeed,
-            }),
-          ),
-          Effect.ensuring(Effect.sync(() => pending.delete(id))),
-        )
-      }),
-    )
-    return read(answer)
+    const reply = yield* Deferred.make<Answer, Error>()
+    const jobs = queued.get(question) ?? []
+    const last = jobs[jobs.length - 1]
+    if (last && sameCandidates(last.candidates, candidates)) {
+      last.prompt = prompt
+      last.replies.push(reply)
+    } else {
+      jobs.push({ prompt, candidates, replies: [reply] })
+      queued.set(question, jobs)
+    }
+    if (!draining) void drain()
+    return read(yield* Deferred.await(reply))
   })
+}
+
+/**
+ * The single pass. The deadline covers the forward pass, not the wait behind
+ * another one; a worker that died while this job waited fails every reply now
+ * instead of holding the queue for the deadline.
+ */
+function runJob(question: Question, job: Job) {
+  return Effect.gen(function* () {
+    yield* Effect.promise(() => ensureWorker())
+    const active = worker
+    if (!active) return yield* Effect.fail(new Error('Ranker is not running'))
+    const id = nextId++
+    const slot = yield* Deferred.make<Answer, Error>()
+    pending.set(id, slot)
+    active.postMessage({ type: question, id, prompt: job.prompt, candidates: job.candidates })
+    return yield* Deferred.await(slot).pipe(
+      // A dead worker fails every pending slot; only a silent one needs this.
+      Effect.timeoutOption(Duration.millis(QUESTION_TIMEOUT_MS)),
+      Effect.flatMap(
+        Option.match({
+          onNone: () => Effect.fail(new Error(TIMEOUTS[question])),
+          onSome: Effect.succeed,
+        }),
+      ),
+      Effect.ensuring(Effect.sync(() => pending.delete(id))),
+    )
+  })
+}
+
+async function drain(): Promise<void> {
+  draining = true
+  try {
+    for (;;) {
+      const next = nextJob()
+      if (!next) return
+      const exit = await Effect.runPromise(Effect.exit(runJob(next.question, next.job)))
+      // One answer settles the whole batch.
+      for (const reply of next.job.replies) Deferred.doneUnsafe(reply, exit)
+    }
+  } finally {
+    draining = false
+  }
 }
 
 /** Ask the model which candidate fits the prompt, off the Electron main thread. */

@@ -17,11 +17,11 @@
       per-build cdhash, which is why Squirrel cannot update it. Still open: one
       release end to end on a machine where Doty lives in `/Applications`, the
       only way to watch the swap and the new build's first launch.
-- [ ] Stability: quitting after the embedder/index has run still prints a native
-      `Napi::Error` abort from onnxruntime's finalizers. The exit kills the helpers
-      and then the process, so no data is lost and no helper survives; the line
-      remains because the native library has no safe unload. Move the embedder to a
-      utilityProcess before the next model change.
+- [x] Stability: the embedder runs in a `utilityProcess`
+      (`electron/session/embedder-worker.ts`, forked by `embedder-client.ts`) and
+      is killed on quit, so onnxruntime's finalisers no longer abort the main
+      process. The worker is a build entry, not a module: `verify-build` fails if
+      its path resolves under `chunks/`.
 - [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
       soundboard until they are configured, the way the lights pane already
       hides itself. Needs its own before/after; it moves muscle memory.

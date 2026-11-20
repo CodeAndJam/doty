@@ -116,6 +116,7 @@ import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
+import { createEmbedder } from './session/embedder-client'
 import type { Embedder } from './session/embedder-files'
 import { audioAvailable, embedderAvailable, RETRIEVAL_KEY } from './session/embedder-files'
 import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
@@ -1273,10 +1274,23 @@ let embedder: Embedder | null = null
 async function loadEmbedderOnce(): Promise<Embedder | null> {
   if (embedder) return embedder
   if (!embedderAvailable(EMBEDDER_DIR)) return null
-  // Loaded on demand: a session that never indexes must not initialise ONNX in
-  // the main process.
-  const { loadEmbedder } = await import('./session/embedder')
-  embedder = await loadEmbedder(EMBEDDER_DIR)
+  // Loaded on demand, in a utility process: onnxruntime cannot be unloaded from
+  // the main process without a native abort on quit, and a session that never
+  // indexes should not pay for it at all. Imported statically so the worker path
+  // is built from `out/main`, not from a chunk.
+  try {
+    embedder = await createEmbedder(EMBEDDER_DIR, {
+      audio: audioAvailable(EMBEDDER_DIR),
+      onExit: () => {
+        embedder = null
+      },
+    })
+  } catch (e) {
+    // A process that will not start degrades search to names and tags; it never
+    // blocks the library.
+    console.warn('[library] the embedder process did not start:', e instanceof Error ? e.message : e)
+    return null
+  }
   return embedder
 }
 

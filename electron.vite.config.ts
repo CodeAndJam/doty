@@ -39,6 +39,7 @@ export default defineConfig({
           'analyze-worker': resolve(__dirname, 'electron/analyze-worker.ts'),
           'transcribe-worker': resolve(__dirname, 'electron/transcribe-worker.ts'),
           'ranker-worker': resolve(__dirname, 'electron/ranker-worker.ts'),
+          'embedder-worker': resolve(__dirname, 'electron/session/embedder-worker.ts'),
         },
       },
     },

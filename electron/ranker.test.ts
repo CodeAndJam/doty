@@ -69,7 +69,19 @@ const fake = vi.hoisted(() => {
 vi.mock('node:worker_threads', () => ({ Worker: fake.FakeWorker }))
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }))
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
+/** Wait for a condition instead of sleeping: the suite runs files in parallel. */
+async function waitFor(check: () => boolean, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (!check()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting for the fake worker')
+    await new Promise((resolve) => setTimeout(resolve, 2))
+  }
+}
+
+/** A short pause for negative assertions: the permit must prevent the post. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+const decidePosts = () => fake.FakeWorker.latest?.posted.filter((message) => message.type === 'decide') ?? []
 
 async function load() {
   fake.FakeWorker.latest = null
@@ -82,37 +94,92 @@ describe('ranker supervisor', () => {
     const ranker = await load()
 
     const first = ranker.decide('first', ['x'])
-    await tick()
+    await waitFor(() => decidePosts().length === 1)
     const second = ranker.decide('second', ['x'])
-    await tick()
+    await settle()
 
     const worker = fake.FakeWorker.latest!
-    expect(worker.posted.filter((message) => message.type === 'decide')).toHaveLength(1)
+    expect(decidePosts()).toHaveLength(1)
 
     worker.hold = false
     worker.answer(worker.posted[0])
     await expect(first).resolves.toEqual([0.5])
-    await tick()
+    await waitFor(() => decidePosts().length === 2)
 
-    expect(worker.posted.filter((message) => message.type === 'decide')).toHaveLength(2)
     worker.answer(worker.posted[1])
     await expect(second).resolves.toEqual([0.5])
 
     await ranker.disposeRanker()
   })
 
-  it('fails a caller that waited for the slot when the worker dies under it', async () => {
+  it('coalesces a queued question from the same option list', async () => {
     const ranker = await load()
 
     const first = ranker.decide('first', ['x'])
-    await tick()
+    await waitFor(() => decidePosts().length === 1)
     const second = ranker.decide('second', ['x'])
-    await tick()
+    const third = ranker.decide('third', ['x'])
+    await settle()
+    // Same options: the two queued callers share one batch.
+    expect(decidePosts()).toHaveLength(1)
+
+    const worker = fake.FakeWorker.latest!
+    worker.hold = false
+    worker.answer(worker.posted[0])
+    await expect(first).resolves.toEqual([0.5])
+    await waitFor(() => decidePosts().length === 2)
+    worker.answer(worker.posted[1])
+
+    // One pass for the two of them, and the newest prompt is the one asked.
+    await expect(second).resolves.toEqual([0.5])
+    await expect(third).resolves.toEqual([0.5])
+    expect(decidePosts()).toHaveLength(2)
+    expect((worker.posted[1] as { prompt?: string }).prompt).toBe('third')
+
+    await ranker.disposeRanker()
+  })
+
+  it('does not merge a question whose options changed', async () => {
+    const ranker = await load()
+
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const second = ranker.decide('second', ['y'])
+    const third = ranker.decide('third', ['z'])
+    await settle()
+    expect(decidePosts()).toHaveLength(1)
+
+    const worker = fake.FakeWorker.latest!
+    worker.hold = false
+    worker.answer(worker.posted[0])
+    await expect(first).resolves.toEqual([0.5])
+    await waitFor(() => decidePosts().length === 2)
+    worker.answer(worker.posted[1])
+    await waitFor(() => decidePosts().length === 3)
+    worker.answer(worker.posted[2])
+
+    await expect(second).resolves.toEqual([0.5])
+    await expect(third).resolves.toEqual([0.5])
+    expect(decidePosts()).toHaveLength(3)
+
+    await ranker.disposeRanker()
+  })
+
+  it('fails the in-flight caller when the worker dies, and recovers for the next', async () => {
+    const ranker = await load()
+
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    const second = ranker.decide('second', ['x'])
+    await settle()
 
     fake.FakeWorker.latest!.emit('exit', 1)
 
     await expect(first).rejects.toThrow(/exited/)
-    // Not the 60 s deadline: the slot was acquired after the worker was gone.
-    await expect(second).rejects.toThrow(/not running/)
+    // The queued caller is not lost: the next pass starts a fresh worker.
+    await waitFor(() => fake.FakeWorker.latest!.posted.length >= 1)
+    fake.FakeWorker.latest!.hold = false
+    fake.FakeWorker.latest!.answer(fake.FakeWorker.latest!.posted[0])
+    await expect(second).resolves.toEqual([0.5])
   })
 })
