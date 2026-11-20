@@ -153,11 +153,11 @@ describe('ranker supervisor', () => {
     const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
     const queuedFailed = expect(queued).rejects.toThrow(/disposed/)
     await ranker.disposeRanker()
+    // Check identity first: awaiting the rejection first would let a re-fork
+    // pass this test by timing out instead.
+    expect(fake.FakeWorker.latest).toBe(dead)
     await firstFailed
     await queuedFailed
-    // A job that was waiting must not fork a fresh worker for a model the DM is
-    // deleting.
-    expect(fake.FakeWorker.latest).toBe(dead)
   })
 
   it('does not merge a reordered option list', async () => {
@@ -166,6 +166,9 @@ describe('ranker supervisor', () => {
     const first = ranker.decide('first', ['x', 'y'])
     await waitFor(() => decidePosts().length === 1)
     const second = ranker.decide('second', ['y', 'x'])
+    // Same files, different order: a sorted-key merge would fold this into
+    // `second`, and the probabilities would map to the wrong tracks.
+    const third = ranker.decide('third', ['x', 'y'])
     await settle()
     expect(decidePosts()).toHaveLength(1)
 
@@ -175,8 +178,47 @@ describe('ranker supervisor', () => {
     await expect(first).resolves.toEqual([0.5])
     await waitFor(() => decidePosts().length === 2)
     worker.answer(worker.posted[1])
+    await waitFor(() => decidePosts().length === 3)
+    worker.answer(worker.posted[2])
     await expect(second).resolves.toEqual([0.5])
-    expect(decidePosts()).toHaveLength(2)
+    await expect(third).resolves.toEqual([0.5])
+    expect(decidePosts()).toHaveLength(3)
+
+    await ranker.disposeRanker()
+  })
+
+  it('serves another question kind before the next queued decide', async () => {
+    const ranker = await load()
+
+    const first = ranker.decide('first', ['x'])
+    await waitFor(() => decidePosts().length === 1)
+    // A backlog of two decides, then one effects question. The first decide job
+    // is taken; the second must go behind `sfx`, not in front of it.
+    const second = ranker.decide('second', ['y'])
+    const third = ranker.decide('third', ['w'])
+    const sfx = ranker.rankSfx('a roar', ['z'])
+    await settle()
+
+    const worker = fake.FakeWorker.latest!
+    worker.hold = false
+    worker.answer(worker.posted[0])
+    await expect(first).resolves.toEqual([0.5])
+
+    // `second` was queued first; the rotation only reorders what is left.
+    await waitFor(() => worker.posted.length === 2)
+    expect((worker.posted[1] as { prompt?: string }).prompt).toBe('second')
+    worker.answer(worker.posted[1])
+    await expect(second).resolves.toEqual([0.5])
+
+    // Round-robin: the decide backlog must not starve the effects question.
+    await waitFor(() => worker.posted.length === 3)
+    expect((worker.posted[2] as { type: string }).type).toBe('sfx')
+    worker.answer(worker.posted[2])
+    await expect(sfx).resolves.toEqual([0.5])
+
+    await waitFor(() => worker.posted.length === 4)
+    worker.answer(worker.posted[3])
+    await expect(third).resolves.toEqual([0.5])
 
     await ranker.disposeRanker()
   })

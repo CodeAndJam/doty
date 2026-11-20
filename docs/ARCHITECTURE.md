@@ -11,7 +11,8 @@ Reading order: [process map](#process-map) → [audio to transcript](#audio-to-t
 
 ## Process map
 
-Four processes, one database, and models that are files on disk.
+Three processes — renderer, main, and the embedder's utility process — plus
+worker threads, one database, and models that are files on disk.
 
 The embedder is the exception to "a worker lives in a thread": onnxruntime
 cannot unload inside Electron's main process, so the encoder is forked as a

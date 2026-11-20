@@ -318,7 +318,15 @@ export function createLibrary(deps: LibraryDeps): Library {
       if (vector) vectors.set(item.key, vector)
     }
     const byKey = new Map(pool.map((item) => [item.key, item]))
-    const ranked = topK(await embedder.embedQuery(query), vectors, k).map((key) => byKey.get(key)!)
+    let queryVector: Float32Array
+    try {
+      queryVector = await embedder.embedQuery(query)
+    } catch {
+      // The process can die between the handle check and the query; a name search
+      // still answers, and an empty shelf would be a lie.
+      return { items: textSearch(pool, query, k), mode: 'text' }
+    }
+    const ranked = topK(queryVector, vectors, k).map((key) => byKey.get(key)!)
 
     // A name match is a fact, not an opinion: keep exact hits ahead of the
     // ordering rather than asking the model to rediscover them.

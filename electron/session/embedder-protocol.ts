@@ -25,41 +25,53 @@ export interface EmbedderCapability {
 
 export interface EmbedderHandler {
   handle(request: EmbedderRequest): Promise<EmbedderReply>
-  capability(): EmbedderCapability | null
 }
 
 export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>): EmbedderHandler {
+  // Cache inputs: `model` + `modelDir`. It ends on a different directory, on
+  // `dispose`, or when the load that produced it fails (the model is nulled
+  // before loading, so a failed load cannot leave a disposed handle behind).
   let model: Embedder | null = null
-  /** Cache key: the model is valid only for the directory it was loaded from. */
   let modelDir: string | null = null
   /** Two first requests used to load two 300M models; they join this instead. */
-  let loading: Promise<Embedder> | null = null
+  let loading: { promise: Promise<Embedder> } | null = null
 
   async function modelFor(dir: string): Promise<Embedder> {
     if (model && modelDir === dir) return model
-    if (loading && modelDir === dir) return loading
-    modelDir = dir
-    loading = (async () => {
-      await model?.dispose().catch(() => {})
-      model = await load(dir)
+    if (loading) {
+      // A load is in flight: wait for it, then look again. A different
+      // directory replaces the model below, one load at a time.
+      await loading.promise.catch(() => {})
+      if (model && modelDir === dir) return model
+    }
+    const current = (async () => {
+      const previous = model
+      model = null
+      modelDir = dir
+      await previous?.dispose().catch(() => {})
+      const next = await load(dir)
+      model = next
       console.log('[embedder] model loaded in the utility process')
-      return model
+      return next
     })()
+    loading = { promise: current }
     try {
-      return await loading
+      return await current
     } finally {
-      loading = null
+      // Only the load that is still current may clear the memo.
+      if (loading?.promise === current) loading = null
     }
   }
 
   return {
-    capability: () => (model ? { dim: model.dim, audio: model.embedAudio !== null } : null),
-
     async handle(request) {
       if (request.kind === 'dispose') {
-        await model?.dispose().catch(() => {})
+        // Capture and clear before awaiting: two disposals must not release the
+        // same native session twice.
+        const doomed = model
         model = null
         modelDir = null
+        await doomed?.dispose().catch(() => {})
         return { id: request.id, ok: true }
       }
 

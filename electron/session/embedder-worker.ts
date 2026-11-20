@@ -17,5 +17,10 @@ const handler = createEmbedderHandler(loadEmbedder)
 const port = process.parentPort
 
 port.on('message', (event) => {
-  void handler.handle(event.data as EmbedderRequest).then((reply) => port.postMessage(reply))
+  void handler
+    .handle(event.data as EmbedderRequest)
+    .then((reply) => port.postMessage(reply))
+    .catch(() => {
+      // The port is closing: there is nobody left to answer.
+    })
 })

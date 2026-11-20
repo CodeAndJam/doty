@@ -91,10 +91,34 @@ describe('embedder client', () => {
     await embedder.dispose()
   })
 
+  it('sends the model directory and the payload the protocol declares', async () => {
+    const child = nextChild()
+    const embedder = await createEmbedder('/models')
+    await embedder.embedDocuments(['a', 'b'])
+    const pcm = new Float32Array([0.1, 0.2])
+    await embedder.embedAudio?.(pcm)
+
+    expect(child.posted).toContainEqual({ id: expect.any(Number), kind: 'load', dir: '/models' })
+    expect(child.posted).toContainEqual({
+      id: expect.any(Number),
+      kind: 'documents',
+      dir: '/models',
+      texts: ['a', 'b'],
+    })
+    const audio = child.posted.find((message) => message.kind === 'audio')
+    expect(audio?.dir).toBe('/models')
+    const sent = audio?.pcm as Float32Array
+    expect(sent).toHaveLength(2)
+    expect(sent[0]).toBeCloseTo(0.1, 6)
+    expect(sent[1]).toBeCloseTo(0.2, 6)
+    await embedder.dispose()
+  })
+
   it('kills a child whose handshake fails instead of leaking it', async () => {
     const child = nextChild()
     child.auto = false
-    const forked = createEmbedder('/models')
+    const onExit = vi.fn()
+    const forked = createEmbedder('/models', { onExit })
     queueMicrotask(() => {
       const load = child.posted.find((message) => message.kind === 'load')!
       child.emit('message', { id: load.id, ok: false, error: 'tokenizer.json is unreadable' })
@@ -102,6 +126,8 @@ describe('embedder client', () => {
 
     await expect(forked).rejects.toThrow('tokenizer.json is unreadable')
     expect(child.killed).toBe(true)
+    // No handle existed, so there is nothing to drop in main.
+    expect(onExit).not.toHaveBeenCalled()
   })
 
   it('rejects in-flight work and drops the handle when the process exits', async () => {
@@ -115,8 +141,24 @@ describe('embedder client', () => {
     child.emit('exit', 1)
 
     await expect(pending).rejects.toThrow('exited')
+    expect(onExit).toHaveBeenCalledTimes(1)
     expect(onExit).toHaveBeenCalledWith(embedder)
     await expect(embedder.embedQuery('again')).rejects.toThrow('exited')
+  })
+
+  it('kills a worker that never answers its dispose', async () => {
+    vi.useFakeTimers()
+    try {
+      const child = nextChild()
+      const embedder = await createEmbedder('/models')
+      child.auto = false
+      const disposed = embedder.dispose()
+      await vi.advanceTimersByTimeAsync(3_100)
+      await expect(disposed).resolves.toBeUndefined()
+      expect(child.killed).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('disposes the model before killing the process', async () => {

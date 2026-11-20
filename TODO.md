@@ -135,6 +135,14 @@
       same track in the same scene demote it even when the model is confident;
       tie-breaks use the DM's choices. Previously a skip recorded a *preference*
       for the track that replaced it, teaching the opposite of the signal.
+- [ ] Ranker: coalescing merges a queued request only when the option list is
+      byte-identical, so a prefilter list that changes every tick still grows the
+      queue: a pass takes ~4.4 s against a ~2 s cadence, which is ~12 minutes of
+      lag after 10 minutes of continuous speech (`src/lib/heuristicRecommend.ts`
+      reorders on mood keywords). The bound is one queued job per question, with
+      the superseded replies failed — `rankTracks` already falls back to
+      `byHeuristic` on a ranker error, but `session:sfx-rank`'s caller does not,
+      so that decision comes first. Memory is not the limit (~4 KB per job).
 - [ ] Ranking recall: 84.6% of the DM's picks are among the twenty offered (was
       92% before the energy fix). Candidate sets are keyword-first; semantic
       retrieval is indexed but not merged into the prefilter. This is the next

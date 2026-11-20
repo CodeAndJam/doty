@@ -28,6 +28,8 @@ export async function createEmbedder(dir: string, options: CreateEmbedderOptions
   >()
   let nextId = 1
   let closed = false
+  /** Set while the model is being disposed: new work would reload it. */
+  let closing = false
   let self: Embedder | null = null
 
   const failAll = (message: string) => {
@@ -61,13 +63,21 @@ export async function createEmbedder(dir: string, options: CreateEmbedderOptions
     timeoutMs = REQUEST_TIMEOUT_MS,
   ): Promise<unknown> {
     if (closed) return Promise.reject(new Error('the embedder process has exited'))
+    if (closing && kind !== 'dispose') return Promise.reject(new Error('the embedder is being disposed'))
     const id = nextId++
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         if (pending.delete(id)) reject(new Error(`the embedder did not answer ${kind}`))
       }, timeoutMs)
       pending.set(id, { resolve, reject, timer })
-      child.postMessage({ id, kind, dir, ...payload })
+      try {
+        child.postMessage({ id, kind, dir, ...payload })
+      } catch (err) {
+        // A port that is already closing must not leak the slot and its timer.
+        pending.delete(id)
+        clearTimeout(timer)
+        reject(err instanceof Error ? err : new Error(String(err)))
+      }
     })
   }
 
@@ -95,6 +105,9 @@ export async function createEmbedder(dir: string, options: CreateEmbedderOptions
     embedAudio: capability.audio ? audio : null,
     async dispose() {
       if (closed) return
+      // Refuse new work first: the worker drops its model as soon as it sees
+      // this, and a request arriving behind it would load 300 MB to be killed.
+      closing = true
       try {
         await send('dispose', {}, DISPOSE_TIMEOUT_MS)
       } catch {

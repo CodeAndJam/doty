@@ -1296,6 +1296,8 @@ async function startEmbedder(): Promise<Embedder | null> {
   }
 }
 
+const embeddingDispose = (model: Embedder | null) => model?.dispose().catch(() => {}) ?? Promise.resolve()
+
 function loadEmbedderOnce(): Promise<Embedder | null> {
   if (embedder) return Promise.resolve(embedder)
   if (!embedderAvailable(EMBEDDER_DIR)) return Promise.resolve(null)
@@ -1882,7 +1884,13 @@ handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: 
     send(EVENTS.rankerStatus, 'error')
     return { ok: true }
   }
-  await embedder?.dispose().catch(() => {})
+  // A handshake in flight would otherwise resolve after the delete and leave a
+  // live process serving a directory that is gone.
+  const inFlight = embedderLoad
+  embedderLoad = null
+  const settling = await inFlight?.catch(() => null)
+  await embeddingDispose(settling ?? null)
+  await embeddingDispose(embedder)
   embedder = null
   fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
   library.invalidate()

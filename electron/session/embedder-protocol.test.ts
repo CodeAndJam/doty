@@ -16,8 +16,11 @@ function model(overrides: Partial<Embedder> = {}): Embedder {
 describe('embedder protocol', () => {
   it('reports the capability the model actually has', async () => {
     const withAudio = createEmbedderHandler(async () => model())
-    await withAudio.handle({ id: 1, kind: 'load', dir: '/models' })
-    expect(withAudio.capability()).toEqual({ dim: 768, audio: true })
+    await expect(withAudio.handle({ id: 1, kind: 'load', dir: '/models' })).resolves.toEqual({
+      id: 1,
+      ok: true,
+      value: { dim: 768, audio: true },
+    })
 
     const textOnly = createEmbedderHandler(async () => model({ embedAudio: null }))
     const reply = await textOnly.handle({ id: 1, kind: 'load', dir: '/models' })
@@ -27,14 +30,15 @@ describe('embedder protocol', () => {
   it('dispatches each request kind', async () => {
     const embedder = model()
     const handler = createEmbedderHandler(async () => embedder)
+    const pcm = new Float32Array(8)
 
     await handler.handle({ id: 1, kind: 'documents', dir: '/models', texts: ['a', 'b'] })
     await handler.handle({ id: 2, kind: 'query', dir: '/models', text: 'calm' })
-    await handler.handle({ id: 3, kind: 'audio', dir: '/models', pcm: new Float32Array(8) })
+    await handler.handle({ id: 3, kind: 'audio', dir: '/models', pcm })
 
     expect(embedder.embedDocuments).toHaveBeenCalledWith(['a', 'b'])
     expect(embedder.embedQuery).toHaveBeenCalledWith('calm')
-    expect(embedder.embedAudio).toHaveBeenCalledTimes(1)
+    expect(embedder.embedAudio).toHaveBeenCalledWith(pcm)
   })
 
   it('answers a failure as a reply, never as a hang', async () => {
@@ -79,6 +83,9 @@ describe('embedder protocol', () => {
 
     await handler.handle({ id: 3, kind: 'dispose' })
     expect(second.dispose).toHaveBeenCalledTimes(1)
-    expect(handler.capability()).toBeNull()
+    // The cache ended: the next load asks for the model again.
+    await handler.handle({ id: 4, kind: 'load', dir: '/two' })
+    expect(load).toHaveBeenLastCalledWith('/two')
+    expect(load).toHaveBeenCalledTimes(3)
   })
 })

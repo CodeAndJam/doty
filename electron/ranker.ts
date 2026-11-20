@@ -52,6 +52,8 @@ type Job = { prompt: string; candidates: string[]; replies: Array<Deferred.Defer
 
 const queued = new Map<Question, Job[]>()
 let draining = false
+/** Set while the worker is being torn down: a job must not fork a new one. */
+let disposing = false
 
 const sameCandidates = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i])
 
@@ -185,6 +187,7 @@ function ask<A>(question: Question, prompt: string, candidates: string[], read: 
  */
 function runJob(question: Question, job: Job) {
   return Effect.gen(function* () {
+    if (disposing) return yield* Effect.fail(new Error('Ranker disposed'))
     yield* Effect.promise(() => ensureWorker())
     const active = worker
     if (!active) return yield* Effect.fail(new Error('Ranker is not running'))
@@ -276,28 +279,40 @@ export async function evaluateSession(
  */
 export async function disposeRanker(): Promise<void> {
   const disposed = new Error('Ranker disposed')
-  // Queued callers are settled before the worker check: otherwise a job that was
-  // waiting would fork a fresh worker for a model that is being deleted.
+  // Nothing may start a load from here on: the drain loop may still be between
+  // jobs, and a job that lands during the teardown would fork a fresh worker for
+  // the model the caller is deleting.
+  disposing = true
   failQueued(disposed)
   const w = worker
-  if (!w) return
+  if (!w) {
+    disposing = false
+    return
+  }
   worker = null
   ready = false
   loadPromise = null
   failPending(disposed)
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(() => {
-      // Still loading or mid-run. Terminating a worker in that state aborts the
-      // process inside onnxruntime; the process exits by SIGKILL after this, and
-      // the thread goes with it without running the finalizer.
-      resolve()
-    }, 3_000)
-    w.once('message', (msg: WorkerMessage) => {
-      if (msg.type !== 'closed') return
-      clearTimeout(timer)
-      w.terminate()
-      resolve()
+  try {
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        // Still loading or mid-run. Terminating a worker in that state aborts the
+        // process inside onnxruntime; the process exits by SIGKILL after this, and
+        // the thread goes with it without running the finalizer.
+        resolve()
+      }, 3_000)
+      // An answer already in flight must not be mistaken for the `closed` frame.
+      const onMessage = (msg: WorkerMessage) => {
+        if (msg.type !== 'closed') return
+        clearTimeout(timer)
+        w.off('message', onMessage)
+        w.terminate()
+        resolve()
+      }
+      w.on('message', onMessage)
+      w.postMessage({ type: 'close' })
     })
-    w.postMessage({ type: 'close' })
-  })
+  } finally {
+    disposing = false
+  }
 }
