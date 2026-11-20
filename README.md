@@ -70,7 +70,7 @@ version never re-downloads them.
 | model | size | job | licence |
 | --- | --- | --- | --- |
 | d1-omni-600M (ONNX, fp32) | 1.41 GB | ranks the 20 candidate tracks for the moment of play | LFM Open License v1.0 — commercial use by an organisation with ≥US$10M revenue needs a separate agreement |
-| EmbeddingGemma-300M (ONNX, q4) | 197 MB | finds candidates by meaning, so a calm scene can reach a calm track | Gemma Terms of Use |
+| EmbeddingGemma-2-300M (ONNX, q4) | 380 MB | finds candidates by meaning, and the audio encoder separates cues from effects | Apache 2.0 |
 
 Each is downloaded once and skipped forever after; a missing model degrades to
 keyword matching and the soundboard says so. A 1.85 GB "offline" DMG is possible
@@ -88,14 +88,14 @@ After that first install Doty updates itself: it asks GitHub once per launch, an
 ### Requirements
 
 - macOS (Apple Silicon)
-- About 2 GB disk space for the default AI models (larger ASR models need more)
+- About 3 GB disk space for the default AI models (larger ASR models need more)
 
 ### First launch
 
 1. Open Doty. It downloads the speech model in the background (~740 MB) to `~/.doty/models/`. You can skip onboarding and keep using the app while it downloads.
 2. Open Settings (gear icon or `Cmd+,`) and set your **Music folder** — point it at your local music library (mp3, flac, wav, m4a, ogg, aac supported).
 3. Doty will scan and analyse your tracks. This takes a few minutes on first run depending on library size.
-4. The recommendation reranker downloads automatically on first use and is cached to `~/.doty/hf-cache/`.
+4. The decision model (~1.4 GB) and the embedding model (~380 MB) download in the background on first use and are cached to `~/.doty/models/`.
 
 ## User guide
 
@@ -257,7 +257,8 @@ pnpm run rebuild
 | Model | Size | Location | Purpose |
 |---|---|---|---|
 | Nemotron 3.5 / Parakeet Ultra (GGUF) | ~740 MB | `~/.doty/models/` | Speech-to-text |
-| mmarco-mMiniLMv2-L12-H384-v1 (ONNX) | downloaded on first use | `~/.doty/hf-cache/` | Track recommendation reranking |
+| d1-omni-600M (ONNX, fp32) | ~1.4 GB | `~/.doty/models/` | Track decision model |
+| EmbeddingGemma-2-300M (ONNX, q4) | ~380 MB | `~/.doty/models/` | Semantic search and lane verdicts |
 
 These are downloaded on first use and never committed to the repository.
 
@@ -307,7 +308,7 @@ src/                React renderer
 | STT | transcribe-cpp (Nemotron / Parakeet Ultra / Parakeet Unified / Voxtral GGUF) |
 | Live chunking | energy endpointing + 10 s windows for batch models |
 | Punctuation | model-native |
-| Recommendations | @huggingface/transformers (mmarco-mMiniLMv2) |
+| Recommendations | d1-omni-600M via onnxruntime-node (worker thread) |
 | Audio analysis | essentia.js + ffmpeg-static |
 | Database | better-sqlite3 |
 | Discord | discord.js + @discordjs/voice + prism-media |
@@ -348,7 +349,9 @@ chore(deps): bump sherpa-onnx-node to 1.13.0
 
 ## Privacy
 
-Doty runs entirely on your machine. No audio, transcripts, or music data ever leaves your computer. The only network requests are:
+Doty runs entirely on your machine. No audio, transcripts, or music data ever leaves your computer.
+
+Your sessions, tags and lane labels live in `~/.doty/` (`sessions/` and `doty.db`); the transcript folder in Settings may point elsewhere. Back up that folder and the profile directory before moving machines. The only network requests are:
 - One-time model downloads on first launch (from Hugging Face and GitHub)
 - Discord bot connection (only if you configure it)
 

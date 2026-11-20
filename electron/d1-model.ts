@@ -92,6 +92,12 @@ export function sha256File(path: string): string {
  * holds only relative paths, so it cannot write outside `dir`.
  */
 export function extractRankerArchive(archive: string, dir = MODELS_DIR): void {
+  // The checksum covers the transfer, not a bad publish: refuse an archive that
+  // would write outside the models directory.
+  const entries = execFileSync('tar', ['-tzf', archive], { encoding: 'utf8' }).split('\n').filter(Boolean)
+  if (entries.some((entry) => entry.startsWith('/') || entry.split('/').includes('..'))) {
+    throw new Error('ranker archive contains an unsafe path')
+  }
   execFileSync('tar', ['-xzf', archive, '-C', dir], { stdio: 'ignore' })
 }
 

@@ -108,12 +108,42 @@ describe('music-protocol', () => {
       expect(resp.headers.get('Content-Range')).toBe('bytes 0-999/1000')
     })
 
+    it('clamps a Range end past the file instead of failing the read', () => {
+      // Near-tail seek: Chromium treats a 416 as a fatal demuxer error.
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=990-1200' },
+        { musicFolder: tmpDir },
+      )
+      expect(resp.status).toBe(206)
+      expect(resp.headers.get('Content-Length')).toBe('10')
+      expect(resp.headers.get('Content-Range')).toBe('bytes 990-999/1000')
+    })
+
+    it('serves the last byte when a Range starts at or past the file', () => {
+      const resp = handleMusicRequest(
+        { url: `music://play/${testFile}`, rangeHeader: 'bytes=1000-' },
+        { musicFolder: tmpDir },
+      )
+      expect(resp.status).toBe(206)
+      expect(resp.headers.get('Content-Length')).toBe('1')
+      expect(resp.headers.get('Content-Range')).toBe('bytes 999-999/1000')
+    })
+
     it('returns 403 for a path outside the configured folders', () => {
       const resp = handleMusicRequest(
         { url: 'music://play/../../etc/passwd', rangeHeader: null },
         { musicFolder: tmpDir },
       )
       expect(resp.status).toBe(403)
+    })
+
+    it('refuses a symlink that points outside the library', () => {
+      const outside = path.join(os.tmpdir(), `doty-outside-${process.pid}.mp3`)
+      fs.writeFileSync(outside, testContent)
+      fs.symlinkSync(outside, path.join(tmpDir, 'link.mp3'))
+      const resp = handleMusicRequest({ url: 'music://play/link.mp3', rangeHeader: null }, { musicFolder: tmpDir })
+      expect(resp.status).toBe(403)
+      fs.rmSync(outside, { force: true })
     })
 
     it('serves absolute SFX paths only from the SFX folder', () => {

@@ -81,11 +81,21 @@ export function useAudioPlayer({
   const rafRef = useRef<number>(0)
   const seekingRef = useRef(false)
   const seekRestreamRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** A full-file blob replaces the streamed source after a read failure. */
+  const blobUrlRef = useRef<string | null>(null)
+  const recoveringRef = useRef(false)
 
   // Compose smaller hooks
   const { volume, muted, effectiveVolume, setVolume, toggleMute } = useVolume()
   const { loopMode, setLoopMode, cycleLoopMode } = useLoop()
   const { crossfadeMs, setCrossfadeMs } = useCrossfade()
+
+  useEffect(
+    () => () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+    },
+    [],
+  )
 
   // Apply volume changes to current audio element
   useEffect(() => {
@@ -94,12 +104,9 @@ export function useAudioPlayer({
     }
   }, [effectiveVolume])
 
-  // Apply loop changes to current audio element
-  useEffect(() => {
-    if (audioRef.current) {
-      audioRef.current.loop = loopMode === 'single'
-    }
-  }, [loopMode])
+  // Loop is decided when a track ends, not by the audio element: a queued next
+  // cue must be allowed to start even when the mode is "repeat this one".
+  // `audio.loop` would swallow `ended` and make every queue inert.
 
   // Update audio output device when speaker selection changes
   useEffect(() => {
@@ -124,7 +131,7 @@ export function useAudioPlayer({
           setIsAudioPlaying(false)
           window.doty.discordPauseStream().catch(() => {})
         } else {
-          audioRef.current.play()
+          audioRef.current.play().catch(() => {})
           setIsAudioPlaying(true)
           window.doty.discordResumeStream().catch(() => {})
         }
@@ -192,10 +199,10 @@ export function useAudioPlayer({
           const fadeDur = pauseFadeMs(crossfadeMs)
           if (fadeDur > 0) {
             audioRef.current.volume = 0
-            audioRef.current.play()
+            audioRef.current.play().catch(() => {})
             fadeVolume(audioRef.current, 0, effectiveVolume, fadeDur)
           } else {
-            audioRef.current.play()
+            audioRef.current.play().catch(() => {})
           }
           setIsAudioPlaying(true)
           window.doty.discordResumeStream().catch(() => {})
@@ -204,11 +211,15 @@ export function useAudioPlayer({
       }
 
       const prev = audioRef.current
+      recoveringRef.current = false
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current)
+        blobUrlRef.current = null
+      }
 
       // Create new audio element and fade in
       const audio = new Audio(`music://play/${encodeURIComponent(filename)}`)
       audio.volume = 0 // start silent for fade-in
-      audio.loop = loopMode === 'single'
 
       if (speakerDeviceId) {
         ;(audio as any).setSinkId(speakerDeviceId).catch((e: unknown) => {
@@ -227,11 +238,54 @@ export function useAudioPlayer({
         }
       }
       audio.onerror = () => {
-        setPlaying(null)
-        setIsAudioPlaying(false)
-        setProgress(0)
-        setCurrentTime(0)
-        setDuration(0)
+        const message = audio.error?.message ?? audio.error?.code ?? 'unknown'
+        console.error(`[player] media error on ${filename}:`, message)
+        // A range read can fail once and be retried by the demuxer; the element
+        // keeps playing. Give it a moment, then play the same file from a blob:
+        // Chromium's MP3 demuxer fails mid-file reads from the custom scheme on
+        // long files, while a blob seeks locally.
+        setTimeout(() => {
+          if (audioRef.current !== audio) return
+          if (!audio.paused && audio.readyState >= 2) return
+          void recoverFromReadError()
+        }, 800)
+      }
+
+      async function recoverFromReadError() {
+        if (audioRef.current !== audio) return
+        if (!audio.paused && audio.readyState >= 2) return
+        if (recoveringRef.current) {
+          setPlaying(null)
+          setIsAudioPlaying(false)
+          setProgress(0)
+          setCurrentTime(0)
+          setDuration(0)
+          return
+        }
+        recoveringRef.current = true
+        const target = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+        try {
+          const response = await fetch(`music://play/${encodeURIComponent(filename)}`)
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          const blob = await response.blob()
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
+          blobUrlRef.current = URL.createObjectURL(blob)
+          audio.src = blobUrlRef.current
+          audio.onloadedmetadata = () => {
+            audio.currentTime = Math.min(target, audio.duration || target)
+            setDuration(audio.duration)
+            audio.play().catch(() => {})
+            setIsAudioPlaying(true)
+          }
+          audio.load()
+        } catch (e) {
+          console.error('[player] could not recover the track:', e)
+          setPlaying(null)
+          setIsAudioPlaying(false)
+          setProgress(0)
+          setCurrentTime(0)
+          setDuration(0)
+        }
       }
       // Capture duration as soon as metadata is available
       audio.onloadedmetadata = () => {
@@ -247,7 +301,7 @@ export function useAudioPlayer({
       if (prev && !prev.paused) {
         const prevVol = prev.volume
         cancelAnimationFrame(rafRef.current)
-        audio.play()
+        audio.play().catch(() => {})
         audioRef.current = audio
         setPlaying(filename)
         setIsAudioPlaying(true)
@@ -266,7 +320,7 @@ export function useAudioPlayer({
           prev.pause()
           cancelAnimationFrame(rafRef.current)
         }
-        audio.play()
+        audio.play().catch(() => {})
         audioRef.current = audio
         setPlaying(filename)
         setIsAudioPlaying(true)
@@ -298,6 +352,11 @@ export function useAudioPlayer({
     if (audioRef.current) {
       audioRef.current.pause()
       cancelAnimationFrame(rafRef.current)
+    }
+    recoveringRef.current = false
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current)
+      blobUrlRef.current = null
     }
     window.doty.discordStopStream().catch(() => {})
     setPlaying(null)

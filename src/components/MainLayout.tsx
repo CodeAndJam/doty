@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRanker } from '../hooks/useRanker'
+import { type RankerType, type RecommendResult, useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import { countWords, MIN_NEW_WORDS, shouldRecommend, waitBeforeRecommending } from '../lib/recommendCadence'
 import { confidentSfx, mergeSfxCandidates, rankAllSfx } from '../lib/sfxRank'
 import { speakerPrefix } from '../lib/speaker'
+import { stableOrder } from '../lib/stableOrder'
 import type { IndexProgress } from '../types'
 import { EyeIcon, EyeOffIcon, GearIcon } from './Icons'
 import LightPanel from './LightPanel'
@@ -13,6 +14,9 @@ import Soundboard from './Soundboard'
 import type { TranscriptSegment } from './Transcript'
 import Transcript from './Transcript'
 import UpdateBar from './UpdateBar'
+
+/** Long enough that typing a sentence never decides on half of it. */
+const DM_IDLE_MS = 900
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
 const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
@@ -24,7 +28,6 @@ export default function MainLayout() {
   const [interimText, setInterimText] = useState('')
   const [recommendations, setRecommendations] = useState<string[]>([])
   const [lastConfidence, setLastConfidence] = useState(0)
-  const [lastChoiceConfidence, setLastChoiceConfidence] = useState(0)
   const [probabilities, setProbabilities] = useState<Record<string, number>>({})
   const [candidates, setCandidates] = useState<string[]>([])
   const [lastTranscriptSnippet, setLastTranscriptSnippet] = useState('')
@@ -53,9 +56,13 @@ export default function MainLayout() {
   )
   const [dmPrompt, setDmPrompt] = useState('')
   const [rankerCached, setRankerCached] = useState<boolean | null>(null)
+  const [rankerDownloading, setRankerDownloading] = useState(false)
   const [recommendCount, setRecommendCount] = useState(5)
   const [showTranscript, setShowTranscript] = useState(true)
   const transcriptBufferRef = useRef('')
+  /** The last SFX query and when it ran: the same text is not re-ranked on a loop. */
+  const sfxLastText = useRef('')
+  const sfxLastAt = useRef(0)
   const [sessions, setSessions] = useState<Array<{ file: string; name: string; created: string }>>([])
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [sessionStartTime, setSessionStartTime] = useState<number | null>(null)
@@ -109,15 +116,35 @@ export default function MainLayout() {
   const lastRunRef = useRef({ at: 0, words: 0 })
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** The prompt the shelf is following; empty means the transcript owns it. */
+  const dmPromptRef = useRef('')
+  /** What the DM is looking at now: the pick only changes for a real margin. */
+  const displayedTopRef = useRef<string | null>(null)
+  /** Monotonic tokens: an older answer may not paint over a newer one. */
+  const dmSeq = useRef(0)
+  const recSeq = useRef(0)
+  const lastDmApplied = useRef(0)
+  const lastRecApplied = useRef(0)
+  const sfxSeq = useRef(0)
+  const lastSfxApplied = useRef(0)
+  const appliedRankerRef = useRef<RankerType>(null)
+  const [dmBusy, setDmBusy] = useState(false)
+  /** The ranker behind the list on screen: not the model's latest, transient answer. */
+  const [appliedRanker, setAppliedRanker] = useState<RankerType>(null)
   const recommendCountRef = useRef(recommendCount)
   const [sfxRecommendCount, setSfxRecommendCount] = useState(5)
   const sfxRecommendCountRef = useRef(sfxRecommendCount)
   const { start, stop, micPermission } = useRecorder(micDeviceId)
-  const { recommend, modelStatus, lastRanker } = useRanker()
+  const { recommend, modelStatus } = useRanker()
   const recommendRef = useRef(recommend)
   // Stable handle for the IPC effect below (a plain function is rebuilt every render)
   const toggleRecordingRef = useRef<() => void>(() => {})
   toggleRecordingRef.current = toggleRecording
+
+  // A different folder or session is a different scene: no held pick crosses it.
+  useEffect(() => {
+    displayedTopRef.current = null
+  }, [musicFolder, activeSession])
 
   // Keep refs in sync with latest values
   useEffect(() => {
@@ -192,8 +219,12 @@ export default function MainLayout() {
 
   // Check if the ranker model is already on disk on mount
   useEffect(() => {
-    window.doty.rankerStatus().then(({ cached }) => setRankerCached(cached))
+    window.doty.rankerStatus().then(({ cached, downloading }) => {
+      setRankerCached(cached)
+      setRankerDownloading(downloading)
+    })
     const unsubRankerDownload = window.doty.onRankerDownloadProgress((p) => {
+      setRankerDownloading(p.status === 'downloading')
       if (p.status === 'done') setRankerCached(true)
     })
     return unsubRankerDownload
@@ -206,7 +237,28 @@ export default function MainLayout() {
 
   const showRankerMissing = rankerCached === false && modelStatus !== 'ready'
 
+  /** One place decides what the shelf shows, so every path gets the same stability. */
+  const showRanking = useCallback((result: RecommendResult) => {
+    // The first model answer replaces the keyword list whole; hysteresis is for
+    // later model answers, not for keeping a keyword guess over a real score.
+    if (result.ranker === 'model' && appliedRankerRef.current !== 'model') displayedTopRef.current = null
+    const ordered = stableOrder(result.files, result.probabilities, displayedTopRef.current)
+    const top = ordered[0] ?? null
+    displayedTopRef.current = top
+    appliedRankerRef.current = result.ranker
+    setRecommendations(ordered)
+    // The headline confidence must describe the card that is actually first.
+    setLastConfidence(top ? (result.probabilities[top] ?? result.confidence) : result.confidence)
+    setProbabilities(result.probabilities)
+    setCandidates(result.candidates)
+    setAppliedRanker(result.ranker)
+  }, [])
+
   const runRecommendation = useCallback(async () => {
+    // A typed prompt owns the shelf. Doing the work and throwing it away only
+    // queues behind the DM's answer in the same worker.
+    if (dmPromptRef.current.trim()) return
+    const run = ++recSeq.current
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
     if (files.length === 0) {
@@ -222,18 +274,29 @@ export default function MainLayout() {
       recentTranscript.slice(0, 80),
     )
     const result = await recommendRef.current(state, files, recommendCountRef.current)
+    // The DM prompt owns the shelf while it is set. An answer that started
+    // earlier may still land later; it only loses to a newer answer of the same
+    // kind, so the list can refine but never revert.
+    if (dmPromptRef.current.trim() || run < lastRecApplied.current) return
+    lastRecApplied.current = run
     console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
-    setRecommendations(result.files)
-    setLastConfidence(result.confidence)
-    setLastChoiceConfidence(result.choiceConfidence)
-    setProbabilities(result.probabilities)
-    setCandidates(result.candidates)
+    showRanking(result)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(state)
     lastRunRef.current = { at: Date.now(), words: countWords(transcriptBufferRef.current) }
-  }, [])
+  }, [showRanking])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
+    // Every recommendation re-sends the same DM text. Re-ranking it within a few
+    // seconds returns the same answer and adds work to the worker queue that the
+    // director's music pass is waiting in.
+    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
+    // With a prompt set, the effects column follows the prompt, not the room.
+    if (!overrideText && dmPromptRef.current.trim()) return
+    if (text === sfxLastText.current && Date.now() - sfxLastAt.current < 5_000) return
+    const run = ++sfxSeq.current
+    sfxLastText.current = text
+    sfxLastAt.current = Date.now()
     const sfxList = await window.doty.getSfxList()
     console.log('[sfx-recommend] sfxList:', sfxList.length, 'items')
     if (sfxList.length === 0) {
@@ -242,7 +305,6 @@ export default function MainLayout() {
     }
     const tagsMap = await window.doty.getTagsMap()
     const playFrequencies = await window.doty.getPlayFrequencies('sfx')
-    const text = overrideText ?? transcriptBufferRef.current.slice(-500).trim()
     console.log('[sfx-recommend] text:', JSON.stringify(text.slice(0, 80)), 'count:', sfxRecommendCountRef.current)
     const count = sfxRecommendCountRef.current
     const results = heuristicSfxRecommend(text, sfxList, count, tagsMap, playFrequencies)
@@ -256,6 +318,10 @@ export default function MainLayout() {
     const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
     const candidates = mergeSfxCandidates(nearest, results, count)
     console.log('[sfx-recommend] candidates:', candidates.length, { nearest, heuristic: results })
+    // An older run may not paint over a newer one, and only the run that painted
+    // the shortlist may apply its own model ranking.
+    if (run < lastSfxApplied.current) return
+    lastSfxApplied.current = run
     setSfxRecommendations(candidates)
     setSfxCandidates(candidates)
     setSfxProbabilities({})
@@ -273,9 +339,10 @@ export default function MainLayout() {
       return [sfx?.label ?? id, tags].filter(Boolean).join(' — ')
     })
     if (descriptions.length === 0) return
-    window.doty
+    await window.doty
       .sfxRank(text, descriptions)
       .then((probabilities) => {
+        if (run !== lastSfxApplied.current) return
         // The column shows the model's ranking — nothing fires from it, so a
         // second-best suggestion costs the DM one glance. Autopilot is the part
         // that must be sure: it plays a sound nobody asked for.
@@ -291,32 +358,37 @@ export default function MainLayout() {
   const runDmRecommendation = useCallback(
     async (prompt: string) => {
       console.log('[recommend] runDmRecommendation called, prompt:', JSON.stringify(prompt))
-      const files = await window.doty.listMusic()
-      console.log('[recommend] DM: files:', files.length)
-      if (files.length === 0) {
-        console.log('[recommend] DM: no files, skipping')
-        return
+      const run = ++dmSeq.current
+      setDmBusy(true)
+      try {
+        const files = await window.doty.listMusic()
+        console.log('[recommend] DM: files:', files.length)
+        if (files.length === 0) {
+          console.log('[recommend] DM: no files, skipping')
+          return
+        }
+        // DM input takes priority — put it first and repeat it for emphasis.
+        // Transcript provides secondary context (truncated to recent only).
+        const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
+        const parts = [prompt, prompt] // repeat DM intent for weight
+        if (recentTranscript) parts.push(recentTranscript)
+        const combined = parts.join('\n')
+        console.log('[recommend] DM: combined query:', combined.length, 'chars, count:', recommendCountRef.current)
+        const result = await recommendRef.current(combined, files, recommendCountRef.current)
+        if (run < lastDmApplied.current) return
+        lastDmApplied.current = run
+        console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
+        showRanking(result)
+        setLastTranscriptSnippet(prompt.slice(-120))
+        setSessionText(combined)
+        // Also trigger SFX recommendations with the same combined text
+        runSfxRecommendation(combined)
+      } finally {
+        // Still busy if the DM has typed something newer since this answer.
+        if (run === dmSeq.current && dmPromptRef.current.trim() === prompt.trim()) setDmBusy(false)
       }
-      // DM input takes priority — put it first and repeat it for emphasis.
-      // Transcript provides secondary context (truncated to recent only).
-      const recentTranscript = transcriptBufferRef.current.slice(-300).trim()
-      const parts = [prompt, prompt] // repeat DM intent for weight
-      if (recentTranscript) parts.push(recentTranscript)
-      const combined = parts.join('\n')
-      console.log('[recommend] DM: combined query:', combined.length, 'chars, count:', recommendCountRef.current)
-      const result = await recommendRef.current(combined, files, recommendCountRef.current)
-      console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
-      setRecommendations(result.files)
-      setLastConfidence(result.confidence)
-      setLastChoiceConfidence(result.choiceConfidence)
-      setProbabilities(result.probabilities)
-      setCandidates(result.candidates)
-      setLastTranscriptSnippet(prompt.slice(-120))
-      setSessionText(combined)
-      // Also trigger SFX recommendations with the same combined text
-      runSfxRecommendation(combined)
     },
-    [runSfxRecommendation],
+    [runSfxRecommendation, showRanking],
   )
 
   // When music folder becomes available, trigger default recommendations
@@ -448,8 +520,19 @@ export default function MainLayout() {
     }
   }, [runRecommendation, runSfxRecommendation, stop])
 
+  function commitDmPrompt() {
+    const text = dmPromptRef.current.trim()
+    if (!text) return
+    console.log('[recommend] commit DM prompt:', JSON.stringify(text))
+    setDmBusy(true)
+    runDmRecommendation(text)
+    // One text, three panes (ADR-0005): the room hears what the lists hear.
+    window.doty.lightsSetHint(activeSession, text).catch(() => {})
+  }
+
   function handleDmChange(text: string) {
     setDmPrompt(text)
+    dmPromptRef.current = text
     console.log(
       '[recommend] handleDmChange:',
       JSON.stringify(text),
@@ -458,21 +541,27 @@ export default function MainLayout() {
     )
     if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
     if (text.trim()) {
-      console.log('[recommend] scheduling DM recommendation in 500ms')
-      dmDebounceRef.current = setTimeout(() => {
-        console.log('[recommend] debounce fired, calling runDmRecommendation')
-        runDmRecommendation(text.trim())
-        // One text, three panes (ADR-0005): the room hears what the lists hear.
-        window.doty.lightsSetHint(activeSession, text.trim()).catch(() => {})
-      }, 500)
+      console.log(`[recommend] scheduling DM recommendation in ${DM_IDLE_MS}ms`)
+      setDmBusy(true)
+      dmDebounceRef.current = setTimeout(commitDmPrompt, DM_IDLE_MS)
     } else {
-      // When prompt is cleared, re-trigger default recommendations (history-based)
+      // Clearing the prompt hands the shelf back to the transcript and drops any
+      // decision still in flight for the old text.
+      lastDmApplied.current = ++dmSeq.current
+      displayedTopRef.current = null
+      setDmBusy(false)
       dmDebounceRef.current = setTimeout(() => {
         runRecommendation()
         runSfxRecommendation()
         window.doty.lightsSetHint(activeSession, '').catch(() => {})
       }, 300)
     }
+  }
+
+  function commitDmPromptNow() {
+    if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
+    dmDebounceRef.current = null
+    commitDmPrompt()
   }
 
   async function toggleRecording() {
@@ -609,9 +698,19 @@ export default function MainLayout() {
                 fontSize: '11px',
                 fontFamily: "'IBM Plex Mono', monospace",
               }}
-              title="The ranker model is not installed. Recommendations use heuristics until it is."
+              title={
+                rankerDownloading
+                  ? 'The decision model is downloading. Recommendations use keywords until it lands.'
+                  : modelStatus === 'error'
+                    ? 'The decision model failed to load. Recommendations use keywords until it is installed in Settings.'
+                    : 'The decision model is not installed. Recommendations use heuristics until it is.'
+              }
             >
-              Ranker warming up
+              {rankerDownloading
+                ? 'Ranker downloading · keywords'
+                : modelStatus === 'error'
+                  ? 'Ranker unavailable · keywords'
+                  : 'Ranker warming up'}
             </span>
           )}
           {/* The master switch. Off until the DM asks for it: suggestions are
@@ -660,9 +759,9 @@ export default function MainLayout() {
           </button>
         </div>
 
-        {/* Title */}
+        {/* Title — the narrow header has no room for it between the controls */}
         <h1
-          className="text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2"
+          className={`${showRankerMissing || sttDownload || sttDownloadError ? 'hidden xl:block' : 'hidden lg:block'} text-base tracking-[0.3em] uppercase absolute left-1/2 -translate-x-1/2`}
           style={{ fontFamily: "'Cinzel', serif", color: '#d9a441', textShadow: '0 0 20px rgba(200,146,42,0.5)' }}
         >
           Doty
@@ -781,6 +880,12 @@ export default function MainLayout() {
               data-testid="dm-input"
               value={dmPrompt}
               onChange={(e) => handleDmChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  commitDmPromptNow()
+                }
+              }}
               placeholder="Describe the mood or scene…"
               aria-label="Describe the mood or scene"
               className="flex-1 bg-transparent outline-none w-full"
@@ -794,6 +899,20 @@ export default function MainLayout() {
                 padding: '10px 14px',
               }}
             />
+            {dmBusy && (
+              <span
+                data-testid="dm-busy"
+                aria-live="polite"
+                className="shrink-0 whitespace-nowrap"
+                style={{
+                  fontSize: '11px',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  color: '#a5813f',
+                }}
+              >
+                reading the room…
+              </span>
+            )}
           </div>
 
           <LightPanel session={activeSession} />
@@ -807,16 +926,17 @@ export default function MainLayout() {
               sfxProbabilities={sfxProbabilities}
               sfxAutopilot={sfxAutopilot}
               lastConfidence={lastConfidence}
-              lastChoiceConfidence={lastChoiceConfidence}
               probabilities={probabilities}
               candidates={candidates}
               sessionText={sessionText}
               indexStatus={indexStatus}
-              lastRanker={lastRanker}
+              lastRanker={appliedRanker}
               lastTranscriptSnippet={lastTranscriptSnippet}
               musicFolder={musicFolder}
               speakerDeviceId={speakerDeviceId}
               settingsOpen={showSettings}
+              sessionStartTime={sessionStartTime}
+              rankerDownloading={rankerDownloading}
               autopilotEnabled={autopilotEnabled}
               onNoFolder={() => setShowSettings(true)}
             />

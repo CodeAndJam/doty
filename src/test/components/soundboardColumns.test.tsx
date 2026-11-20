@@ -14,6 +14,7 @@ function stubDoty() {
       getAllTags: vi.fn().mockResolvedValue([]),
       getSfxList: vi.fn().mockResolvedValue([]),
       onSfxChanged: vi.fn(() => () => {}),
+      onScanProgress: vi.fn(() => () => {}),
       onScanComplete: vi.fn((cb: () => void) => {
         handlers.scan = cb
         return () => {}
@@ -21,7 +22,13 @@ function stubDoty() {
       getAutopilotConfig: vi.fn().mockResolvedValue({ enabled: false, musicEnabled: false, sfxEnabled: false }),
       setAutopilotConfig: vi.fn(),
       recordPlay: vi.fn().mockResolvedValue(undefined),
-      sessionReport: vi.fn().mockResolvedValue({ autoActions: 0, manualPicks: 0, overrideRate: 0 }),
+      sessionReport: vi.fn().mockResolvedValue({
+        autoActions: 0,
+        manualPicks: 0,
+        overrideRate: 0,
+        autoChangeRetention: null,
+        timeToFirstManualPickMs: null,
+      }),
     },
   })
 }
@@ -33,7 +40,6 @@ function renderBoard() {
       sfxRecommendations={[]}
       sfxAutopilot={[]}
       lastConfidence={0}
-      lastChoiceConfidence={0}
       probabilities={{}}
       candidates={['battle-theme.mp3']}
       sessionText=""
@@ -43,6 +49,8 @@ function renderBoard() {
       lastTranscriptSnippet=""
       musicFolder="/music"
       settingsOpen={false}
+      sessionStartTime={null}
+      rankerDownloading={false}
       autopilotEnabled={false}
       onNoFolder={() => {}}
     />,

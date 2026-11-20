@@ -36,9 +36,9 @@ Each number has exactly one way to produce it, so a claim can be checked.
 | 2 | **top-3** — the pick was on the first screen | `pnpm ranker:eval` | **31.8%** | ≥70% |
 | 3 | **recall** — the pick was among the twenty offered | `pnpm ranker:eval` | **84.6%** (4 misses / 26) | ≥95% |
 | 4 | **sensible boundary** — a new cue queued for a clear reason, or the cue repeated | `pnpm ranker:headless` | 3 change / 47 repeat (50 snapshots) | no unexplained change |
-| 5 | **auto-change retention** — auto picks not skipped within 30 s | session log (instrumented, not yet measured) | unknown | ≥80% |
+| 5 | **auto-change retention** — auto picks not skipped within 30 s | session report chip | unknown | ≥80% |
 | 6 | **override rate** — manual picks ÷ decisions | session report chip | unknown | <0.3 |
-| 7 | **time to first manual pick** | session log | unknown | >10 min |
+| 7 | **time to first manual pick** | session report chip | unknown | >10 min |
 | 8 | **STT WER in the room** | `docs/QUALITY.md` fixture | synthetic only; VAD emits 0.00 s on music/noise/silence | <15%, no lyric text in silence |
 | 9 | **SFX precision** — auto-fired effects the DM keeps | session log | unknown | ≥95% |
 

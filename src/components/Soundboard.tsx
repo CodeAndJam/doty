@@ -6,10 +6,13 @@ import { useQueue } from '../hooks/useQueue'
 import type { RankerType } from '../hooks/useRanker'
 import { useSfxPlayer } from '../hooks/useSfxPlayer'
 import { HIGHLIGHT_CONFIDENCE } from '../lib/autopilot'
+import { formatTime } from '../lib/formatTime'
 import { indexChipText } from '../lib/indexStatus'
+import { skipTarget } from '../lib/queueSkip'
 import { describeTrack } from '../lib/rankTracks'
+import { trackEndPlan } from '../lib/trackEnd'
 import { trackKindOf } from '../lib/trackKind'
-import type { DecisionLogEntry, IndexProgress, SfxMeta, TrackMeta } from '../types'
+import type { DecisionLogEntry, IndexProgress, SessionReport, SfxMeta, TrackMeta } from '../types'
 import BrowsePanel from './BrowsePanel'
 import DecisionLog from './DecisionLog'
 import {
@@ -40,7 +43,7 @@ const SFX_PINS_KEY = 'doty:pinnedSfx'
  * One rule for both shelves: as many cards per line as the pane's width allows.
  * The two columns are the same width, so they always show the same shape.
  */
-const CARD_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }
+const CARD_GRID: React.CSSProperties = { gridTemplateColumns: 'repeat(auto-fill, minmax(min(300px, 100%), 1fr))' }
 
 function loadPins(): string[] {
   try {
@@ -158,8 +161,6 @@ interface Props {
   /** The `sfxRecommendations` the model was sure enough about for autopilot to fire. */
   sfxAutopilot: string[]
   lastConfidence: number
-  /** TypeSafe choice confidence: how settled the pick is across the candidates. */
-  lastChoiceConfidence: number
   /** Per-file probability, aligned with the suggestions. */
   probabilities: Record<string, number>
   /** Every candidate the model ranked, best first. */
@@ -176,6 +177,10 @@ interface Props {
   speakerDeviceId?: string
   settingsOpen: boolean
   /** The header's master switch: with it off nothing changes on its own. */
+  /** When the current (or last) recording started; the session report counts from here. */
+  sessionStartTime: number | null
+  /** The decision model is still arriving: say so instead of "no model". */
+  rankerDownloading: boolean
   autopilotEnabled: boolean
   onNoFolder: () => void
 }
@@ -187,7 +192,6 @@ export default function Soundboard({
   sfxProbabilities = {},
   sfxAutopilot,
   lastConfidence,
-  lastChoiceConfidence,
   probabilities,
   candidates,
   sessionText,
@@ -198,6 +202,8 @@ export default function Soundboard({
   musicFolder,
   speakerDeviceId,
   settingsOpen,
+  sessionStartTime,
+  rankerDownloading,
   autopilotEnabled,
   onNoFolder,
 }: Props) {
@@ -210,6 +216,16 @@ export default function Soundboard({
   const [tagsMap, setTagsMap] = useState<Record<string, string[]>>({})
   const [allTags, setAllTags] = useState<string[]>([])
   const queue = useQueue()
+
+  // The queue is an overlay like the browse panes; Escape must close it too.
+  useEffect(() => {
+    if (!showQueue) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowQueue(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showQueue])
 
   // ── SFX state ────────────────────────────────────────────────────────
   const [allSfx, setAllSfx] = useState<SfxMeta[]>([])
@@ -230,10 +246,27 @@ export default function Soundboard({
   useEffect(() => {
     sceneRef.current = scene
   }, [scene])
-  const [report, setReport] = useState<{ autoActions: number; manualPicks: number; overrideRate: number } | null>(null)
+  const [report, setReport] = useState<SessionReport | null>(null)
   const sessionStartedAt = useRef(Date.now())
+  // The header owns the real clock: mount time is only a fallback before the
+  // first recording, and the anchor stays after stop so the report keeps its meaning.
+  useEffect(() => {
+    if (sessionStartTime) sessionStartedAt.current = sessionStartTime
+  }, [sessionStartTime])
   /** Guards against queueing the same pick on every pass while a track is ending. */
-  const lastQueued = useRef<{ track: string; at: number } | null>(null)
+  /**
+   * An automatic pick waiting at the boundary. The decision row is written when
+   * the track actually starts, not when it is queued: retention counts skips
+   * within 30 s of playback, and a queue can sit for a whole track first.
+   */
+  const lastQueued = useRef<{
+    track: string
+    queuedAt: number
+    action: string
+    reason: string
+    probability: number
+    scene: string | null
+  } | null>(null)
   const decisionLogRef = useRef<DecisionLogEntry[]>([])
   const [decisionLog, setDecisionLog] = useState<DecisionLogEntry[]>([])
   const lastAutoLogEntryRef = useRef<object | null>(null)
@@ -251,6 +284,17 @@ export default function Soundboard({
     decisionLogRef.current = [entry, ...decisionLogRef.current].slice(0, 50)
     setDecisionLog([...decisionLogRef.current])
   }, [recommendations, lastConfidence, lastRanker, lastTranscriptSnippet])
+
+  const refreshReport = useCallback(() => {
+    window.doty
+      .sessionReport(sessionStartedAt.current)
+      .then(setReport)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    refreshReport()
+  }, [refreshReport])
 
   // ── Audio player ─────────────────────────────────────────────────────
   const trackEndRef = useRef<() => void>(() => {})
@@ -280,24 +324,50 @@ export default function Soundboard({
   // Keep the ref in sync with current queue/loop/playback state
   useEffect(() => {
     trackEndRef.current = () => {
-      if (queue.tracks.length === 0) {
+      const plan = trackEndPlan({
+        tracks: queue.tracks,
+        currentIndex: queue.currentIndex,
+        playing,
+        loopMode,
+      })
+      if (!plan) {
         stopPlayback()
         return
       }
-      const isLast = queue.currentIndex >= queue.tracks.length - 1
-      if (loopMode === 'single') {
-        if (queue.currentTrack) playTrack(queue.currentTrack, true)
-      } else if (loopMode === 'queue' || !isLast) {
-        const track = queue.next(loopMode === 'queue')
-        if (track) {
-          playTrack(track, true)
-          autopilot.notePlayed(track)
-        } else stopPlayback()
-      } else {
-        stopPlayback()
+
+      const start = (track: string) => {
+        const queued = lastQueued.current
+        if (queued && queued.track === track) {
+          lastQueued.current = null
+          // The queued pick is the automatic change; this is its real start.
+          window.doty
+            .sessionDecision({
+              at: Date.now(),
+              kind: 'music',
+              action: queued.action,
+              reason: queued.reason,
+              track,
+              probability: queued.probability,
+              mood: queued.scene,
+              source: 'auto',
+            })
+            .then(refreshReport)
+            .catch(() => {})
+        }
+        playTrack(track, true)
+        autopilot.notePlayed(track)
       }
+
+      // Repeating a cue is not a new pick: no play-frequency bump and no decision.
+      if (plan.index === null) {
+        playTrack(plan.track, true)
+        return
+      }
+
+      queue.setCurrentIndex(plan.index)
+      start(plan.track)
     }
-  }, [queue, loopMode, playTrack, stopPlayback])
+  }, [queue, loopMode, playing, playTrack, stopPlayback, refreshReport])
 
   // ── Data loading ─────────────────────────────────────────────────────
 
@@ -341,9 +411,18 @@ export default function Soundboard({
     load()
     const offSfx = window.doty.onSfxChanged(load)
     const offScan = window.doty.onScanComplete(load)
+    // The shelf is empty until the first pass otherwise: a 5k-track analysis can
+    // take minutes, and the effects already on disk are listable now.
+    let lastProgressLoad = 0
+    const offProgress = window.doty.onScanProgress(() => {
+      if (Date.now() - lastProgressLoad < 2_000) return
+      lastProgressLoad = Date.now()
+      load()
+    })
     return () => {
       offSfx()
       offScan()
+      offProgress()
     }
   }, [])
 
@@ -368,16 +447,6 @@ export default function Soundboard({
   }, [sfxPinned])
 
   // ── Keyboard shortcuts: N = next, P = prev ───────────────────────────
-  /**
-   * Every manual playback change is both a decision and a label. Skips are weak
-   * labels (rejection, not preference), queue picks are strong ones.
-   */
-  function recordPreference(track: string) {
-    window.doty
-      .sessionPreference({ at: Date.now(), segment: sessionText, track, scene: sceneRef.current, source: 'manual' })
-      .catch(() => {})
-  }
-
   /** A skip is a label: the DM moved off this track for this kind of scene. */
   function recordRejection(track: string) {
     window.doty
@@ -401,31 +470,37 @@ export default function Soundboard({
       .catch(() => {})
   }
 
-  function handleSkipNext() {
-    if (queue.tracks.length === 0) return
-    // Record the track being skipped, not the one that replaces it: the DM's
-    // signal is "not this", and labelling the replacement would teach the wrong
-    // thing.
-    const skipped = queue.tracks[queue.currentIndex]
-    const track = queue.next(loopMode === 'queue')
-    if (track) {
-      playTrack(track, true)
-      autopilot.notePlayed(track)
-      if (skipped) recordSkip(skipped)
-      if (skipped) recordRejection(skipped)
+  /**
+   * Move one row in the queue and start it. The label belongs to the track the
+   * DM is leaving — the loaded one — never to whatever row the queue's index
+   * happened to point at while something outside the queue was playing.
+   */
+  function skipInQueue(step: 1 | -1) {
+    const tracks = queue.tracks
+    if (tracks.length === 0) return
+    // Index -1 means what plays is outside the queue: either direction starts at
+    // the head rather than wrapping to the tail.
+    let target = queue.currentIndex < 0 ? 0 : skipTarget(queue.currentIndex, tracks.length, step, loopMode === 'queue')
+    // Once the queue has run out, the player is gone and N should start it again.
+    if (target < 0 && !playing && step === 1) target = 0
+    if (target < 0) return
+    const track = tracks[target]
+    const skipped = playing ?? undefined
+    queue.setCurrentIndex(target)
+    playTrack(track, true)
+    autopilot.notePlayed(track)
+    if (skipped && skipped !== track) {
+      recordSkip(skipped)
+      recordRejection(skipped)
     }
   }
 
+  function handleSkipNext() {
+    skipInQueue(1)
+  }
+
   function handleSkipPrev() {
-    if (queue.tracks.length === 0) return
-    const skipped = queue.tracks[queue.currentIndex]
-    const track = queue.prev(loopMode === 'queue')
-    if (track) {
-      playTrack(track, true)
-      autopilot.notePlayed(track)
-      if (skipped) recordSkip(skipped)
-      if (skipped) recordRejection(skipped)
-    }
+    skipInQueue(-1)
   }
 
   useEffect(() => {
@@ -452,6 +527,10 @@ export default function Soundboard({
     playTrack(filename, forceRestart)
     window.doty.recordPlay(filename, 'music').catch(() => {})
     autopilot.notePlayed(filename)
+    // The queue's "current" must name the track actually playing. Playing a card
+    // outside the queue clears it, so the player never claims a position in a
+    // list that has nothing to do with what the DM hears.
+    queue.setCurrentIndex(queue.tracks.indexOf(filename))
     // An automatic change is not a label: only the DM's own pick is what they
     // chose for this moment.
     if (source === 'auto') return
@@ -506,14 +585,15 @@ export default function Soundboard({
   function handleQueuePlay(index: number) {
     const track = queue.tracks[index]
     if (!track) return
-    recordPreference(track)
-    queue.setCurrentIndex(index)
     if (playing === track) {
-      // Same track — toggle pause/resume (matches the pause icon in the queue)
+      // Same track — toggle pause/resume (matches the pause icon in the queue).
+      // Transport is not a pick and must not write a preference.
       playTrack(track)
-    } else {
-      handlePlayTrack(track, true)
+      return
     }
+    // One pick, one label: `handlePlayTrack` records it.
+    handlePlayTrack(track, true)
+    queue.setCurrentIndex(index)
   }
 
   // ── SFX handlers ─────────────────────────────────────────────────────
@@ -602,19 +682,20 @@ export default function Soundboard({
    *  must not mean the boundary goes unplanned. */
   const nearEnd = duration > 0 && duration - currentTime <= 21
 
-  const refreshReport = useCallback(() => {
-    window.doty
-      .sessionReport(sessionStartedAt.current)
-      .then((r) => setReport({ autoActions: r.autoActions, manualPicks: r.manualPicks, overrideRate: r.overrideRate }))
-      .catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    refreshReport()
-  }, [refreshReport])
+  // The candidates array is rebuilt on every recommendation, even when the list is
+  // the same. Key the pass on content so identical passes do not pay for the model
+  // again while another one is still running.
+  const candidateKey = candidates.join('\n')
 
   useEffect(() => {
     if (lastRanker !== 'model' || candidates.length === 0 || !sessionText) return
+    // Two forwards (tracks + moods) are only worth paying when the answer can
+    // change what plays: at a boundary, with nothing playing, or with Autopilot
+    // on. Mid-track with the automation off, the scene chip can wait.
+    const boundarySoon = nearEnd
+    const nothingPlaying = !playing || duration <= 0
+    const automationOwns = autopilotEnabled && autopilot.config.musicEnabled
+    if (!boundarySoon && !nothingPlaying && !automationOwns) return
     let cancelled = false
     const { currentTime: at, duration: total } = playerRef.current
     const remaining = total > 0 ? Math.max(0, (total - at) * 1000) : null
@@ -671,10 +752,16 @@ export default function Soundboard({
           // The DM may have lined up the next track by hand. Their choice wins.
           if (queue.currentIndex >= 0 && queue.currentIndex < queue.tracks.length - 1) return
           const already = lastQueued.current
-          if (already && already.track === track && Date.now() - already.at < 120_000) return
-          lastQueued.current = { track, at: Date.now() }
+          if (already && already.track === track && Date.now() - already.queuedAt < 120_000) return
+          lastQueued.current = {
+            track,
+            queuedAt: Date.now(),
+            action: plan.action,
+            reason: plan.reason,
+            probability: tracks[best] ?? 0,
+            scene: plan.scene,
+          }
           queue.playNext(track)
-          recordAuto(tracks[best] ?? 0)
         } else {
           lastQueued.current = null
           handlePlayTrack(track, true, 'auto')
@@ -688,10 +775,12 @@ export default function Soundboard({
     // handlePlayTrack and queue are stable enough for this one-shot planner.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    candidates,
+    candidateKey,
     lastRanker,
     sessionText,
     nearEnd,
+    playing,
+    duration,
     refreshReport,
     metaMap,
     tagsMap,
@@ -797,8 +886,10 @@ export default function Soundboard({
   const hasActiveSfx = sfxPlayer.channels.length > 0
   const hasSfx = pinnedSfxItems.length > 0 || sfxSuggestions.length > 0
 
+  // Only a real position in the queue counts: index -1 means the playing track
+  // is outside it, and "0/2" would be nonsense.
   const queuePosition: [number, number] | null =
-    queue.tracks.length > 0 ? [queue.currentIndex, queue.tracks.length] : null
+    queue.tracks.length > 0 && queue.currentIndex >= 0 ? [queue.currentIndex, queue.tracks.length] : null
 
   // ── Card renderers ───────────────────────────────────────────────────
 
@@ -827,7 +918,7 @@ export default function Soundboard({
               onClick={() =>
                 ch?.playing ? sfxPlayer.toggleLoop(ch.id) : handlePlaySfx(sfx.id, sfx.label, sfx.filename, true)
               }
-              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-60 hover:opacity-100 transition-opacity"
+              className="w-5 h-5 flex items-center justify-center shrink-0 opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               title={ch?.looping ? 'Stop looping' : 'Loop'}
               style={{ color: ch?.looping ? 'var(--rune)' : 'var(--ink-muted)' }}
             >
@@ -855,13 +946,17 @@ export default function Soundboard({
         key={`${opts.pinned ? 'pin' : 'sug'}-${f}`}
         kind="music"
         title={trackName(f)}
-        isPlaying={playing === f}
+        isPlaying={playing === f && isAudioPlaying}
         isPinned={!!opts.pinned}
         probability={opts.probability}
         details={musicDetails(f, metaMap[f])}
         tags={tagsMap[f] || []}
         allTags={allTags}
-        onPlay={() => handlePlayTrack(f)}
+        onPlay={() => {
+          // A pause/resume of the loaded track is transport, not a new pick.
+          if (playing === f) playTrack(f)
+          else handlePlayTrack(f)
+        }}
         onPin={() => togglePin(f)}
         onTagsChange={(tags) => handleTagsChange(f, tags)}
         actions={
@@ -900,7 +995,7 @@ export default function Soundboard({
                   })
                 }}
                 title={isSfxFile ? 'Move to the music library' : 'Move to the effects library'}
-                className="px-1 shrink-0 opacity-70 hover:opacity-100 transition-opacity"
+                className="px-1 shrink-0 opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                 style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: 'var(--accent-dim)' }}
               >
                 {isSfxFile ? '→ music' : '→ fx'}
@@ -951,7 +1046,7 @@ export default function Soundboard({
   return (
     <div className="h-full flex flex-col relative">
       {/* Two-column layout */}
-      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden relative">
         {/* ── Left column: Music ──────────────────────────────────────── */}
         <div className={`flex flex-col min-h-0 min-w-0 overflow-hidden ${showMusic ? 'flex-1' : 'w-9 shrink-0'}`}>
           {!showMusic && (
@@ -993,7 +1088,9 @@ export default function Soundboard({
           )}
 
           {/* Music column header */}
-          <div className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between mb-3 shrink-0`}>
+          <div
+            className={`${showMusic ? 'flex' : 'hidden'} items-center justify-between flex-wrap gap-y-1 mb-3 shrink-0`}
+          >
             <button type="button" className="flex items-center gap-2" onClick={() => setShowMusic((v) => !v)}>
               <MusicNoteIcon />
               <span
@@ -1010,9 +1107,14 @@ export default function Soundboard({
               {autopilotEnabled && autopilot.config.musicEnabled && (
                 <span
                   data-testid="autopilot-chip"
-                  title={`At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(
-                    autopilot.config.confidenceThreshold * 100,
-                  )}% with a clear margin.`}
+                  title={
+                    lastRanker === 'model'
+                      ? `At a track boundary autopilot changes the cue only when the top pick is clearly ahead; otherwise the current cue repeats. It cuts a track short only when the scene changes categorically and the top pick passes ${Math.round(
+                          autopilot.config.confidenceThreshold * 100,
+                        )}% with a clear margin.`
+                      : 'The decision model is not installed, so autopilot follows keyword scores, not calibrated confidence. Install it in Settings for automatic changes.'
+                  }
+                  className="shrink-0 whitespace-nowrap"
                   style={{
                     fontSize: '11px',
                     color: autopilot.state === 'idle' ? '#a5813f' : '#d9a441',
@@ -1022,7 +1124,7 @@ export default function Soundboard({
                     letterSpacing: '0.1em',
                   }}
                 >
-                  AUTO · when sure
+                  {lastRanker === 'model' ? 'AUTO · when sure' : 'AUTO · keywords'}
                 </span>
               )}
               <span style={{ color: '#9d8b66', marginLeft: '2px' }}>
@@ -1030,9 +1132,12 @@ export default function Soundboard({
               </span>
             </button>
             {showMusic && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 {hasTracks && (
-                  <span style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  <span
+                    className="whitespace-nowrap"
+                    style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}
+                  >
                     {pinned.length > 0 ? `${pinned.length} pinned` : ''}
                     {pinned.length > 0 && suggestions.length > 0 ? ' / ' : ''}
                     {suggestions.length > 0
@@ -1140,18 +1245,18 @@ export default function Soundboard({
                           color: lastRanker === 'model' ? '#d9a441' : '#a5813f',
                           letterSpacing: '0.05em',
                         }}
-                        title={`Ranked by ${lastRanker}${lastChoiceConfidence > 0 ? ` — confidence ${(lastChoiceConfidence * 100).toFixed(1)}% (how settled the choice is; each card shows its own probability)` : ''}`}
+                        title={`Ranked by ${lastRanker}${lastConfidence > 0 ? ` — the first card's probability is ${(lastConfidence * 100).toFixed(0)}%` : ''}`}
                       >
                         {lastRanker === 'model'
                           ? 'model'
                           : rankerStatus === 'loading'
                             ? 'keywords · model loading'
                             : rankerStatus === 'error'
-                              ? 'keywords · model failed'
+                              ? rankerDownloading
+                                ? 'keywords · model downloading'
+                                : 'keywords · no model'
                               : 'keywords'}
-                        {lastRanker === 'model' &&
-                          lastChoiceConfidence > 0 &&
-                          ` ${(lastChoiceConfidence * 100).toFixed(0)}% conf`}
+                        {lastRanker === 'model' && lastConfidence > 0 && ` ${(lastConfidence * 100).toFixed(0)}% conf`}
                       </span>
                     )}
                     {scene && (
@@ -1167,10 +1272,14 @@ export default function Soundboard({
                       <span
                         data-testid="session-report"
                         style={{ fontSize: '11px', fontFamily: "'IBM Plex Mono', monospace", color: '#96825f' }}
-                        title="Automatic changes, manual picks, and the share of acted-on decisions the DM replaced"
+                        title="Automatic changes, manual picks, the share the DM replaced, the share of automatic picks kept, and when the DM first chose by hand"
                       >
-                        auto {report.autoActions} · manual {report.manualPicks} · override{' '}
-                        {Math.round(report.overrideRate * 100)}%
+                        auto {report.autoActions} · manual {report.manualPicks}
+                        {report.autoActions > 0 && ` · override ${Math.round(report.overrideRate * 100)}%`}
+                        {report.autoChangeRetention != null &&
+                          ` · kept ${Math.round(report.autoChangeRetention * 100)}%`}
+                        {report.timeToFirstManualPickMs != null &&
+                          ` · first pick ${formatTime(report.timeToFirstManualPickMs / 1000)}`}
                       </span>
                     )}
                     {indexChipText(indexStatus) && (
@@ -1269,7 +1378,7 @@ export default function Soundboard({
                 <span
                   style={{
                     fontSize: '11px',
-                    color: autopilot.lastAutoSfx ? '#6dbf95' : '#3f7d5c',
+                    color: autopilot.lastAutoSfx ? '#6dbf95' : '#a8d5b8',
                     border: `1px solid ${autopilot.lastAutoSfx ? 'rgba(74,138,106,0.5)' : 'rgba(74,138,106,0.3)'}`,
                     padding: '1px 4px',
                     fontFamily: "'IBM Plex Mono', monospace",
@@ -1447,6 +1556,21 @@ export default function Soundboard({
             </>
           )}
         </div>
+
+        {/* Inside the shelves, so the transport below stays clickable while open. */}
+        {showQueue && (
+          <QueuePanel
+            tracks={queue.tracks}
+            currentIndex={queue.currentIndex}
+            playing={playing}
+            isPlaying={isAudioPlaying}
+            onPlay={handleQueuePlay}
+            onRemove={queue.remove}
+            onReorder={queue.reorder}
+            onClear={queue.clear}
+            onClose={() => setShowQueue(false)}
+          />
+        )}
       </div>
       {browsing && musicFolder && (
         <BrowsePanel
@@ -1454,7 +1578,7 @@ export default function Soundboard({
           playing={playing}
           tagsMap={tagsMap}
           allTags={allTags}
-          onPlay={playTrack}
+          onPlay={(f) => (playing === f ? playTrack(f) : handlePlayTrack(f))}
           onPin={togglePin}
           onClose={() => setBrowsing(false)}
         />
@@ -1467,20 +1591,6 @@ export default function Soundboard({
           sfxPinned={sfxPinned}
           onTogglePin={toggleSfxPin}
           onClose={() => setBrowsingSfx(false)}
-        />
-      )}
-
-      {showQueue && (
-        <QueuePanel
-          tracks={queue.tracks}
-          currentIndex={queue.currentIndex}
-          playing={playing}
-          isPlaying={isAudioPlaying}
-          onPlay={handleQueuePlay}
-          onRemove={queue.remove}
-          onReorder={queue.reorder}
-          onClear={queue.clear}
-          onClose={() => setShowQueue(false)}
         />
       )}
 

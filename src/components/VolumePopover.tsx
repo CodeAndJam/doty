@@ -30,7 +30,11 @@ export default function VolumePopover({
 }: VolumePopoverProps) {
   const [show, setShow] = useState(false)
   const btnRef = useRef<HTMLButtonElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const sliderRef = useRef<HTMLInputElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  /** Escape dismissed the panel; do not pull focus back into it until blur. */
+  const dismissedRef = useRef(false)
 
   useEffect(() => {
     if (!show || !btnRef.current) return
@@ -38,15 +42,31 @@ export default function VolumePopover({
     setPos({ top: rect.top, left: rect.left + rect.width / 2 })
   }, [show])
 
+  // The panel is portalled to the end of <body>, so Tab from the trigger would
+  // leave it behind. If the keyboard opened it, put focus on the slider; Escape
+  // returns it to the trigger.
+  useEffect(() => {
+    if (!show || !pos || dismissedRef.current) return
+    if (btnRef.current?.matches(':focus-visible')) sliderRef.current?.focus()
+  }, [show, pos])
+
   return (
     // Keyboard users get the same slider the pointer users see.
     <div
       className="relative flex items-center shrink-0"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
-      onFocus={() => setShow(true)}
+      onFocus={() => {
+        // Escape closes the panel and returns focus to this button; that focus
+        // must not count as a fresh request to open it.
+        if (!dismissedRef.current) setShow(true)
+      }}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShow(false)
+        const next = e.relatedTarget as Node | null
+        if (!e.currentTarget.contains(next) && !panelRef.current?.contains(next)) {
+          dismissedRef.current = false
+          setShow(false)
+        }
       }}
     >
       <button
@@ -63,7 +83,15 @@ export default function VolumePopover({
         pos &&
         ReactDOM.createPortal(
           <div
+            ref={panelRef}
             className="fixed"
+            onKeyDown={(e) => {
+              if (e.key !== 'Escape') return
+              e.stopPropagation()
+              dismissedRef.current = true
+              setShow(false)
+              btnRef.current?.focus()
+            }}
             style={{
               zIndex: 99999,
               top: pos.top,
@@ -87,6 +115,7 @@ export default function VolumePopover({
               }}
             >
               <input
+                ref={sliderRef}
                 type="range"
                 min={0}
                 max={100}

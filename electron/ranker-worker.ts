@@ -10,6 +10,10 @@ const { homePath } = workerData as { homePath: string }
 
 let model: D1Omni | null = null
 let loading: Promise<void> | null = null
+let closing = false
+let shuttingDown = false
+let inFlight = 0
+let loadSettled = false
 
 function load(): Promise<void> {
   if (model) return Promise.resolve()
@@ -19,15 +23,46 @@ function load(): Promise<void> {
   return loading
 }
 
+/**
+ * Leave only when no forward pass is running. Terminating the thread mid-Run
+ * aborts the process inside onnxruntime (Napi::Error), which no later cleanup
+ * can repair.
+ */
+async function maybeShutdown(): Promise<void> {
+  if (!closing || inFlight > 0 || !loadSettled || shuttingDown) return
+  shuttingDown = true
+  try {
+    await model?.dispose()
+  } catch {
+    /* already gone */
+  }
+  parentPort!.postMessage({ type: 'closed' })
+  parentPort!.close()
+}
+
 load().then(
-  () => parentPort!.postMessage({ type: 'ready' }),
-  (e) => parentPort!.postMessage({ type: 'fatal', error: e instanceof Error ? e.message : String(e) }),
+  () => {
+    loadSettled = true
+    parentPort!.postMessage({ type: 'ready' })
+    void maybeShutdown()
+  },
+  (e) => {
+    loadSettled = true
+    parentPort!.postMessage({ type: 'fatal', error: e instanceof Error ? e.message : String(e) })
+    void maybeShutdown()
+  },
 )
 
 type Incoming = { type: string; id?: number; prompt?: string; candidates?: string[] }
 
 parentPort!.on('message', async (msg: Incoming) => {
+  if (msg.type === 'close') {
+    closing = true
+    void maybeShutdown()
+    return
+  }
   if (msg.id === undefined) return
+  inFlight++
   try {
     await load()
     if (msg.type === 'decide') {
@@ -46,5 +81,8 @@ parentPort!.on('message', async (msg: Incoming) => {
     }
   } catch (e) {
     parentPort!.postMessage({ type: 'decide-error', id: msg.id, error: e instanceof Error ? e.message : String(e) })
+  } finally {
+    inFlight--
+    void maybeShutdown()
   }
 })

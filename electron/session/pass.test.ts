@@ -73,6 +73,29 @@ describe('session pass', () => {
     expect(peak).toBe(1)
   })
 
+  it('keeps only the newest state while a pass is in flight', async () => {
+    const { store } = recorder()
+    const states: string[] = []
+    const pass = createSessionPass({
+      evaluate: async (state) => {
+        states.push(state)
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return scores(0.95)
+      },
+      store,
+      now: () => 1_000,
+    })
+
+    const first = pass.run(request)
+    await Promise.resolve()
+    const second = pass.run({ ...request, state: 'second' })
+    const third = pass.run({ ...request, state: 'third' })
+    await Promise.all([first, second, third])
+
+    // The first pass was already running; the two that arrived meanwhile collapse.
+    expect(states).toEqual([request.state, 'third'])
+  })
+
   it('holds everything when automatic music changes are off', async () => {
     const { store } = recorder()
     const pass = createSessionPass({ evaluate: async () => scores(0.99), store, now: () => 1_000 })

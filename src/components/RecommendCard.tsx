@@ -268,20 +268,26 @@ export default function RecommendCard({
         )}
       </div>
 
-      {/* A caller's corner marker stays clickable: the hover toolbar paints over it. */}
-      {corner && <div className="absolute top-1 right-1.5">{corner}</div>}
+      {/* A caller's corner marker stays clickable: it sits above the hover
+          toolbar, which reserves room for it on the right. */}
+      {corner && (
+        <div className="absolute top-1 right-1.5" style={{ zIndex: 2 }}>
+          {corner}
+        </div>
+      )}
 
-      {/* Hover overlay toolbar — appears on top of the right side */}
+      {/* Hover overlay toolbar — appears on top of the right side. Below lg the
+          card is too narrow to paint over the title, so the toolbar drops to its
+          own row and stays visible. */}
       <div
-        className="absolute inset-y-0 right-0 flex items-center gap-1 px-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100 transition-opacity"
+        className={`absolute inset-y-0 right-0 flex items-center gap-1 px-2 pl-7 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity max-lg:static max-lg:w-full max-lg:flex-wrap max-lg:justify-end max-lg:py-1 max-lg:opacity-100 ${corner ? 'lg:pr-8' : ''}`}
         style={{
           background: `linear-gradient(to right, transparent, var(--surface) 24px)`,
-          paddingLeft: '28px',
           zIndex: 1,
         }}
       >
         {tags.length > 0 && !editingTags && (
-          <div className="flex items-center gap-1 shrink-0 overflow-hidden">
+          <div className="hidden lg:flex items-center gap-1 shrink-0 overflow-hidden">
             {tags.slice(0, 2).map((tag) => (
               <span
                 key={tag}
@@ -313,7 +319,7 @@ export default function RecommendCard({
           <div className="relative" onMouseEnter={() => setExpanded(true)} onMouseLeave={() => setExpanded(false)}>
             <button
               type="button"
-              className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+              className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
               title="Details"
               style={{ color: expanded ? tone.accent : undefined }}
             >
@@ -327,7 +333,7 @@ export default function RecommendCard({
           <button
             type="button"
             onClick={() => setEditingTags((e) => !e)}
-            className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+            className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
             title="Edit tags"
             style={{ color: editingTags ? tone.accent : undefined, fontSize: '14px' }}
           >
@@ -338,7 +344,7 @@ export default function RecommendCard({
         <button
           type="button"
           onClick={onPin}
-          className="w-7 h-7 flex items-center justify-center opacity-60 hover:opacity-100 transition-opacity"
+          className="w-7 h-7 flex items-center justify-center opacity-90 hover:opacity-100 focus-visible:opacity-100 transition-opacity"
           title={isPinned ? 'Unpin' : 'Pin'}
           style={{ color: isPinned ? tone.accent : undefined }}
         >

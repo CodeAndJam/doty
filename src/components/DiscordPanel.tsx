@@ -276,6 +276,7 @@ export default function DiscordPanel() {
             <div className="flex gap-2">
               <input
                 type="password"
+                aria-label="Discord bot token"
                 value={tokenInput}
                 onChange={(e) => setTokenInput(e.target.value)}
                 placeholder="Bot token..."

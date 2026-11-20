@@ -25,7 +25,11 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
   const profile = `smoke-e2e-${process.pid}-${test.info().testId}`.replace(/[^a-zA-Z0-9_-]+/g, '-')
   const root = fs.mkdtempSync(join(tmpdir(), 'doty-smoke-'))
   const music = join(root, 'music')
+  const home = join(root, 'home')
   fs.mkdirSync(music, { recursive: true })
+  // A temp HOME has no models: the lane rule is asserted by duration, not by a
+  // classifier verdict from the developer's installed embedder.
+  fs.mkdirSync(home, { recursive: true })
   for (const file of [EFFECT, CUE]) fs.copyFileSync(join(FIXTURES, file), join(music, file))
 
   let app: ElectronApplication | undefined
@@ -33,13 +37,19 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
   try {
     app = await electron.launch({
       args: [join(__dirname, '../out/main/index.js')],
-      env: { ...process.env, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
+      env: { ...process.env, HOME: home, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
     })
     app.process().stderr?.on('data', (chunk) => stderr.push(String(chunk)))
 
     const page: Page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')
     const skip = page.getByText('Skip for now — set it up later in Settings')
+    // The first paint may land after domcontentloaded; a one-shot isVisible() misses
+    // the onboarding button on a loaded machine and the test then waits on a covered UI.
+    await Promise.race([
+      skip.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+      page.getByTestId('dm-input').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+    ])
     if (await skip.isVisible().catch(() => false)) await skip.click()
 
     await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), music)

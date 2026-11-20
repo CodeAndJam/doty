@@ -27,9 +27,31 @@ describe('getLastCueStartMs', () => {
     expect(getLastCueStartMs(path.join(os.tmpdir(), 'does-not-exist.vtt'))).toBe(0)
     fs.unlinkSync(file)
   })
+
+  it('ignores a cue body that contains the arrow', () => {
+    const file = path.join(os.tmpdir(), `test-cue-body-${Date.now()}.vtt`)
+    fs.writeFileSync(file, 'WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nhe said --> and left\n\n')
+    expect(getLastCueStartMs(file)).toBe(5_000)
+    fs.unlinkSync(file)
+  })
+})
+
+describe('appendCue', () => {
+  it('does not take the app down when the transcript cannot be written', () => {
+    expect(() => appendCue(path.join(os.tmpdir(), 'no-such-dir', 'x.vtt'), 0, 'hello')).not.toThrow()
+  })
 })
 
 describe('loadSessionAsync', () => {
+  it('keeps a cue body containing --> inside the same cue', async () => {
+    const file = path.join(os.tmpdir(), `test-arrow-body-${Date.now()}.vtt`)
+    fs.writeFileSync(file, 'WEBVTT\n\n00:00:05.000 --> 00:00:08.000\nhe said --> and left\n\n')
+    const cues = await loadSessionAsync(file)
+    expect(cues).toHaveLength(1)
+    expect(cues[0].text).toContain('he said --> and left')
+    fs.unlinkSync(file)
+  })
+
   let tmpFile: string
 
   beforeEach(() => {
@@ -144,6 +166,17 @@ describe('renameSession', () => {
     fs.writeFileSync(file, 'WEBVTT\nNOTE\nName: Old\nCreated: 2026-01-01\n\n')
     renameSession(file, 'Tavern $& loot $1')
     expect(fs.readFileSync(file, 'utf-8')).toContain('Name: Tavern $& loot $1')
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('cannot inject a cue through the session name', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doty-session-'))
+    const file = path.join(dir, 's.vtt')
+    fs.writeFileSync(file, 'WEBVTT\nNOTE\nName: Old\nCreated: 2026-01-01\n\n')
+    renameSession(file, 'Tavern\n00:00 --> 00:01\nfake line')
+    const text = fs.readFileSync(file, 'utf-8')
+    expect(text).not.toContain('\n00:00 --> 00:01')
+    expect(text.split('\n').filter((line) => line.includes('-->'))).toHaveLength(0)
     fs.rmSync(dir, { recursive: true, force: true })
   })
 })

@@ -9,6 +9,7 @@
  * The client is deliberately dumb about policy: it reports changes and executes
  * commands. `lights.ts` decides what to write and when.
  */
+import { isIP } from 'node:net'
 import WebSocket from 'ws'
 import type { LightState, Rgb } from './lights'
 
@@ -79,7 +80,11 @@ export function isLanHost(host: string): boolean {
   const bare = host.toLowerCase().replace(/^\[|\]$/g, '')
   if (bare.length === 0) return false
   if (bare === 'localhost' || bare.endsWith('.local') || bare.endsWith('.ts.net')) return true
-  if (PRIVATE_IPV4.test(bare) || PRIVATE_IPV6.test(bare)) return true
+  const kind = isIP(bare)
+  if (kind === 4) return PRIVATE_IPV4.test(bare)
+  if (kind === 6) return PRIVATE_IPV6.test(bare)
+  // A single-label hostname (`nas`, `homeassistant`) is a LAN name; anything with
+  // a dot is a DNS name and must not match `fc`/`fd` by prefix.
   return !bare.includes('.') && !bare.includes(':')
 }
 

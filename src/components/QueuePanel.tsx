@@ -1,7 +1,21 @@
-import { closestCenter, DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { CloseIcon, DragHandleIcon, PauseIcon, PlayIcon } from './Icons'
 import { trackName } from './PlayerBar'
 
@@ -97,8 +111,15 @@ function SortableQueueItem({
       {/* Remove */}
       <button
         type="button"
-        onClick={onRemove}
-        className="w-5 h-5 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity"
+        onClick={() => {
+          onRemove()
+          // The row this button lived in is gone; keep focus inside the panel.
+          requestAnimationFrame(() =>
+            (document.querySelector('[aria-label="Playback queue"]') as HTMLElement | null)?.focus(),
+          )
+        }}
+        aria-label={`Remove ${filename} from the queue`}
+        className="w-5 h-5 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-60 focus-visible:opacity-100 hover:!opacity-100 transition-opacity"
         title="Remove from queue"
         style={{ color: '#a5813f' }}
       >
@@ -119,11 +140,25 @@ export default function QueuePanel({
   onClear,
   onClose,
 }: QueuePanelProps) {
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Keyboard reorder: focus a handle, Space, arrows, Space.
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // The panel covers the shelf; focus it, and give focus back when it closes.
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    rootRef.current?.focus()
+    return () => previous?.focus?.()
+  }, [])
 
   // dnd-kit uses string IDs — we use "index:filename" to ensure uniqueness
   // even if the same file appears multiple times in the queue
   const itemIds = tracks.map((f, i) => `${i}:${f}`)
+
+  useFocusTrap(rootRef)
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
@@ -140,7 +175,12 @@ export default function QueuePanel({
 
   return (
     <div
-      className="absolute inset-0 z-30 flex flex-col"
+      ref={rootRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Playback queue"
+      tabIndex={-1}
+      className="absolute inset-0 z-30 flex flex-col outline-none"
       style={{
         background: 'rgba(8,7,5,0.97)',
         backdropFilter: 'blur(8px)',
@@ -192,7 +232,12 @@ export default function QueuePanel({
               Clear
             </button>
           )}
-          <button type="button" onClick={onClose} className="p-1 hover:opacity-80 transition-opacity">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close the queue"
+            className="p-1 hover:opacity-80 transition-opacity"
+          >
             <CloseIcon />
           </button>
         </div>

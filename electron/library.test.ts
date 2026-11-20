@@ -20,6 +20,7 @@ function fakeEmbedder(): Embedder {
     embedDocuments: async (texts) => texts.map((text) => table[text.toLowerCase()] ?? vector(0, 0)),
     embedQuery: async (text) => table[text.toLowerCase()] ?? vector(0, 0),
     embedAudio: null,
+    dispose: async () => {},
   }
 }
 
@@ -56,6 +57,7 @@ function harness(overrides: Partial<LibraryDeps> = {}) {
     embedAudio: async () => null,
     store: {
       getVector: (key, model) => vectors.get(`${key}|${model}`) ?? null,
+      hasVector: (key, model) => vectors.has(`${key}|${model}`),
       putVector: (key, model, v) => vectors.set(`${key}|${model}`, v),
     },
     onStatus: () => {},
@@ -232,6 +234,9 @@ describe('library', () => {
     const { library } = harness({
       store: {
         getVector: () => {
+          throw new Error('The database connection is not open')
+        },
+        hasVector: () => {
           throw new Error('The database connection is not open')
         },
         putVector: () => {},

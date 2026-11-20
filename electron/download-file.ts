@@ -2,6 +2,18 @@ import fs from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
 import { join } from 'node:path'
+import { withDownloadLock } from './download-lock'
+
+/** Plain http is only for a local test server; a model must not travel cleartext. */
+function allowedUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    if (url.protocol === 'https:') return true
+    return url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname)
+  } catch {
+    return false
+  }
+}
 
 export interface DownloadOptions {
   /** Abort the transfer. The `.part` file is kept so the next attempt can resume. */
@@ -13,8 +25,23 @@ export interface DownloadOptions {
  * Writes to `<dest>.part` and renames on success so an interrupted download never
  * leaves a truncated file that looks installed. A kept `.part` is resumed with an
  * HTTP Range request on the next attempt.
+ *
+ * Holds `<dest>.lock` for the duration, and returns without transferring when a
+ * file another instance finished is already there. Callers decide whether an
+ * existing file is ready; this only serialises writers of the same path.
  */
 export function downloadFile(
+  url: string,
+  destPath: string,
+  onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
+  options: DownloadOptions = {},
+): Promise<void> {
+  // Two profiles can fetch the same model at once. One writer per file; the
+  // loser skips a file the winner already finished.
+  return withDownloadLock(destPath, options.signal, () => transfer(url, destPath, onProgress, options))
+}
+
+function transfer(
   url: string,
   destPath: string,
   onProgress?: (percent: number, downloadedMB: number, totalMB: number) => void,
@@ -86,6 +113,7 @@ export function downloadFile(
 
     const get = (u: string) => {
       if (settled) return
+      if (!allowedUrl(u)) return fail(new Error(`Refusing ${u}: downloads must be https`), false)
       if (redirectCount++ > 10) return fail(new Error('Too many redirects'), false)
       const mod = u.startsWith('https') ? https : http
       const headers = existingBytes > 0 ? { Range: `bytes=${existingBytes}-` } : undefined
@@ -146,7 +174,11 @@ export function downloadFile(
 
           res.on('data', (chunk: Buffer) => {
             downloaded += chunk.length
-            file?.write(chunk)
+            // A slow disk must slow the socket, not grow an unbounded buffer.
+            if (file && !file.write(chunk)) {
+              res.pause()
+              file.once('drain', () => res.resume())
+            }
             if (total > 0 && onProgress) {
               onProgress(
                 Math.round((downloaded / total) * 100),

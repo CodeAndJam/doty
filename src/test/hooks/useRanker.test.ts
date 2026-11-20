@@ -11,7 +11,7 @@ describe('useRanker warmup', () => {
     vi.useRealTimers()
   })
 
-  it('defers the model load instead of warming it at mount', async () => {
+  it('leaves the model unloaded until a recommendation asks for it', async () => {
     const rankerDecide = vi.fn<() => Promise<number[]>>().mockResolvedValue([])
     const rankerStatus = vi.fn().mockResolvedValue({ cached: true, downloading: false, languageCovered: true })
     const unsub = vi.fn()
@@ -19,6 +19,7 @@ describe('useRanker warmup', () => {
       configurable: true,
       value: {
         onRankerStatus: vi.fn(() => unsub),
+        onRankerDownloadProgress: vi.fn(() => unsub),
         rankerStatus,
         rankerDecide,
       },
@@ -28,9 +29,10 @@ describe('useRanker warmup', () => {
     expect(rankerDecide).not.toHaveBeenCalled()
 
     await act(async () => {
-      vi.advanceTimersByTime(5000)
+      vi.advanceTimersByTime(10_000)
     })
-    expect(rankerDecide).toHaveBeenCalledTimes(1)
+    // No idle warmup: a session with no ranking never initialises ONNX.
+    expect(rankerDecide).not.toHaveBeenCalled()
 
     unmount()
     expect(unsub).toHaveBeenCalled()

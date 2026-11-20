@@ -248,6 +248,12 @@ describe('lan guard', () => {
     expect(isLanHost('example.com')).toBe(false)
     expect(isLanHost('8.8.8.8')).toBe(false)
     expect(isLanHost('100.128.0.1')).toBe(false)
+    // `fc`/`fd` are IPv6 prefixes, not hostname prefixes: a DNS name that starts
+    // with them must not inherit LAN trust.
+    expect(isLanHost('fd.attacker.net')).toBe(false)
+    expect(isLanHost('fc.example.com')).toBe(false)
+    expect(isLanHost('fd12:3456::1')).toBe(true)
+    expect(isLanHost('nas')).toBe(true)
     expect(() => socketUrl('https://ha.example.com')).toThrow(/local network/)
   })
 })

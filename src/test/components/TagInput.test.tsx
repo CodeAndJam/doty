@@ -33,7 +33,7 @@ describe('TagInput', () => {
 
   it('does not add duplicate tags', () => {
     render(<TagInput tags={['combat']} allTags={[]} onChange={onChange} />)
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('combobox')
     fireEvent.change(input, { target: { value: 'combat' } })
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onChange).not.toHaveBeenCalled()
@@ -48,7 +48,7 @@ describe('TagInput', () => {
 
   it('removes last tag on Backspace when input is empty', () => {
     render(<TagInput tags={['combat', 'boss']} allTags={[]} onChange={onChange} />)
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('combobox')
     fireEvent.keyDown(input, { key: 'Backspace' })
     expect(onChange).toHaveBeenCalledWith(['combat'])
   })
@@ -75,7 +75,7 @@ describe('TagInput', () => {
 
   it('does not show already-added tags in suggestions', () => {
     render(<TagInput tags={['combat']} allTags={['combat', 'campfire']} onChange={onChange} />)
-    const input = screen.getByRole('textbox')
+    const input = screen.getByRole('combobox')
     fireEvent.focus(input)
     fireEvent.change(input, { target: { value: 'c' } })
     // 'combat' is already added, should not appear in suggestions

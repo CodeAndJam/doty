@@ -78,6 +78,7 @@ export interface LibraryDeps {
   store: {
     getVector(key: string, model: string): Float32Array | null
     putVector(key: string, model: string, vector: Float32Array): void
+    hasVector(key: string, model: string): boolean
   }
   onStatus(status: IndexStatus): void
 }
@@ -190,7 +191,7 @@ export function createLibrary(deps: LibraryDeps): Library {
     try {
       const all = items()
       let indexed = 0
-      for (const item of all) if (deps.store.getVector(item.key, RETRIEVAL_KEY)) indexed++
+      for (const item of all) if (deps.store.hasVector(item.key, RETRIEVAL_KEY)) indexed++
       return { indexed, total: all.length }
     } catch {
       return { indexed: 0, total: 0 }
@@ -307,9 +308,7 @@ export function createLibrary(deps: LibraryDeps): Library {
     // Semantic only when it can answer for every track in the folder: a partial
     // index hides tracks silently, which is worse than answering by name.
     const fullyIndexed =
-      embedder !== null &&
-      pool.length > 0 &&
-      pool.every((item) => deps.store.getVector(item.key, RETRIEVAL_KEY) !== null)
+      embedder !== null && pool.length > 0 && pool.every((item) => deps.store.hasVector(item.key, RETRIEVAL_KEY))
 
     if (!embedder || !fullyIndexed) return { items: textSearch(pool, query, k), mode: 'text' }
 

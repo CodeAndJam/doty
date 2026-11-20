@@ -30,6 +30,7 @@ test.describe('transcribe-cpp streaming STT', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousModel: string | null = null
     try {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
@@ -44,6 +45,10 @@ test.describe('transcribe-cpp streaming STT', () => {
       })
 
       // Ensure model is set (in case store path differs in test mode)
+      previousModel = await page.evaluate(async () => {
+        // @ts-ignore
+        return await window.doty.getSttModel()
+      })
       await page.evaluate(async () => {
         // @ts-ignore
         await window.doty.setSttModel('parakeet-unified-en')
@@ -146,6 +151,12 @@ test.describe('transcribe-cpp streaming STT', () => {
 
       console.log(`Full flow completed in ${Date.now() - startTime}ms`)
     } finally {
+      const page = await app.firstWindow().catch(() => null)
+      if (page && previousModel) {
+        await page
+          .evaluate((m: string) => window.doty.setSttModel(m), previousModel)
+          .catch(() => {})
+      }
       await gracefulClose(app)
     }
   })

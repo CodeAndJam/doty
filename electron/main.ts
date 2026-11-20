@@ -26,6 +26,7 @@ import {
   RANKER_URL,
   rankerLanguages,
   rankerPaths,
+  sha256File,
 } from './d1-model'
 import { MOODS } from './d1-omni'
 import {
@@ -79,6 +80,7 @@ import {
 import { ffmpegStatus } from './discord-audio'
 import { getCaptureState, setCaptureMode, setOnRemoteSegment, setOnRemoteState } from './discord-capture'
 import { downloadFile } from './download-file'
+import { downloadEmbedder } from './embedder-model'
 import { createHaClient } from './home-assistant'
 import { discoverHomeAssistants } from './home-assistant-discovery'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
@@ -193,6 +195,16 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
   { scheme: 'music', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
 ])
+
+/** An empty string clears the folder; anything else must be a directory. */
+function isDirectoryOrEmpty(folderPath: string): boolean {
+  if (!folderPath) return true
+  try {
+    return fs.statSync(folderPath).isDirectory()
+  } catch {
+    return false
+  }
+}
 
 /** True when the path is inside the configured music or SFX folder. */
 function isAllowedMediaPath(filePath: string): boolean {
@@ -335,13 +347,19 @@ function finalizeWavRecording(): void {
   remoteWav = null
 }
 
+let lastScanInvalidate = 0
 function launchScanner(folder: string, force = false) {
   startScanner(
     folder,
     (done, total, current) => {
-      // Each analysed file changes the duration the lane rule reads, so a library
-      // built mid-scan is stale before the scan even finishes.
-      library.invalidate()
+      // Each analysed file changes the duration the lane rule reads, but rebuilding
+      // the library for every file during a 5k-track scan is wasted work. Readers
+      // see a fresh library at most every two seconds; the completion callback
+      // always invalidates.
+      if (Date.now() - lastScanInvalidate > 2_000) {
+        lastScanInvalidate = Date.now()
+        library.invalidate()
+      }
       send(EVENTS.scanProgress, { done, total, current })
     },
     () => {
@@ -379,9 +397,52 @@ function registerAppProtocol() {
   const rendererRoot = join(__dirname, '../renderer')
   protocol.handle('app', (request) => {
     const url = new URL(request.url)
-    const filePath = join(rendererRoot, url.pathname === '/' ? 'index.html' : url.pathname)
+    const root = resolve(rendererRoot)
+    const filePath = resolve(root, `.${decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname)}`)
+    // URL normalisation usually prevents this; a custom scheme is reachable from
+    // the renderer, so prove the file is inside the bundle.
+    if (filePath !== root && !filePath.startsWith(root + sep)) {
+      return new Response('Forbidden', { status: 403 })
+    }
     return net.fetch(pathToFileURL(filePath).toString())
   })
+}
+
+/** One live process per profile: two writers share one WAV and one database. */
+function acquireProfileLock(): boolean {
+  const lock = join(DOTY_HOME, '.instance.lock')
+  try {
+    fs.mkdirSync(DOTY_HOME, { recursive: true })
+  } catch {
+    /* the store would fail later with a clearer message */
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.writeFileSync(lock, String(process.pid), { flag: 'wx' })
+      app.on('will-quit', () => fs.rmSync(lock, { force: true }))
+      return true
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') return true
+      let owner = 0
+      try {
+        owner = Number.parseInt(fs.readFileSync(lock, 'utf8'), 10)
+      } catch {
+        /* unreadable: treat as stale */
+      }
+      let alive = false
+      if (owner > 0) {
+        try {
+          process.kill(owner, 0)
+          alive = true
+        } catch (err) {
+          alive = (err as NodeJS.ErrnoException).code === 'EPERM'
+        }
+      }
+      if (alive) return false
+      fs.rmSync(lock, { force: true })
+    }
+  }
+  return false
 }
 
 function createWindow() {
@@ -409,6 +470,9 @@ function createWindow() {
     },
   })
 
+  // E2E drives playback on purpose; nobody at the keyboard needs to hear it.
+  if (process.env.DOTY_E2E_MUTE === '1') mainWindow.webContents.setAudioMuted(true)
+
   if (process.env.ELECTRON_RENDERER_URL) {
     mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
@@ -420,6 +484,30 @@ function createWindow() {
   // navigation, which also fires during shutdown, after the database is closed.
   mainWindow.webContents.on('render-process-gone', () => library.resume())
   mainWindow.webContents.on('did-finish-load', () => library.resume())
+
+  // Nothing in this app navigates: every link is either a card or `shell.openExternal`.
+  // Denying both also keeps `window.doty` out of reach of a rendered link in track
+  // names, Discord names or Home Assistant labels.
+  const devOrigin = (() => {
+    try {
+      return process.env.ELECTRON_RENDERER_URL ? new URL(process.env.ELECTRON_RENDERER_URL).origin : null
+    } catch {
+      return null
+    }
+  })()
+  const allowedNavigation = (url: string) => {
+    try {
+      const target = new URL(url)
+      if (target.protocol === 'app:') return target.host === 'doty'
+      return devOrigin !== null && target.origin === devOrigin
+    } catch {
+      return false
+    }
+  }
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (!allowedNavigation(url)) event.preventDefault()
+  })
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   // Async callbacks keep using mainWindow; clear it so sends after close are no-ops
   mainWindow.on('closed', () => {
@@ -455,6 +543,14 @@ function registerMusicProtocol() {
 }
 
 app.whenReady().then(async () => {
+  // Two writers on one profile share a WAV and a database; that cannot be merged
+  // after the fact, so the second launch stops here.
+  if (!acquireProfileLock()) {
+    dialog.showErrorBox('Doty is already running', 'Close the other Doty window for this profile, then reopen.')
+    app.quit()
+    return
+  }
+
   // Debug mode is a persisted choice; apply it before anything else logs.
   const debugOn = store.get('debugMode', false) ?? false
   enableDebugLogging(debugOn)
@@ -574,8 +670,9 @@ app.whenReady().then(async () => {
   if (musicFolder || store.get('sfxFolder', '')) startBackgroundPasses()
 
   // One background download, once per machine. No prompt: the app is useless
-  // without it, and 1.5 GB of silence during a session would be worse.
-  if (!isRankerInstalled()) {
+  // without it, and 1.5 GB of silence during a session would be worse. E2E keeps
+  // the machine quiet: the tests assert behaviour, not the network.
+  if (!isRankerInstalled() && process.env.DOTY_E2E_NO_MODEL_DOWNLOAD !== '1') {
     downloadRanker().catch((e) => console.error('[ranker] background download failed:', e))
   }
 
@@ -584,15 +681,32 @@ app.whenReady().then(async () => {
   setTimeout(() => void checkUpdates(), 5_000)
 })
 
-app.on('before-quit', () => {
-  // Before the database closes: nothing may emit status after that point.
+let cleaningUp = false
+
+app.on('before-quit', (event) => {
+  if (cleaningUp) return
+  // Closing the database or terminating the ONNX worker while a run is in flight
+  // aborts the process (Napi::Error). Stop the indexer, let the current batch
+  // finish, then do the teardown.
+  event.preventDefault()
+  cleaningUp = true
   quitting = true
-  finalizeWavRecording()
-  freeRecognizer()
-  disposeRanker()
-  stopScanner()
-  closeDb()
-  destroyDiscord()
+  library.pause()
+  // Restore the room before the light director loses the database.
+  void lighting.endSession().catch(() => {})
+  setTimeout(() => {
+    void (async () => {
+      finalizeWavRecording()
+      freeRecognizer()
+      stopScanner()
+      closeDb()
+      destroyDiscord()
+      // Every write is closed above. Touching an ONNX session here (terminate,
+      // release) aborts the process inside the native binding; SIGKILL skips the
+      // finalizers entirely. All state is durable by this point.
+      app.exit(0)
+    })()
+  }, 3_000)
 })
 
 app.on('window-all-closed', () => {
@@ -679,7 +793,13 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   if (!source || !destination) return { ok: false, reason: 'both folders must be set' }
 
   const from = join(source, trackPath)
+  // The renderer chooses the path; `../../` must not relocate a file outside the
+  // library, even though the DM's own click normally comes from a card.
+  if (!isAllowedMediaPath(from)) return { ok: false, reason: 'not in a library folder' }
   if (!fs.existsSync(from)) return { ok: false, reason: 'file not found' }
+  // `a/..` resolves to the library root itself, which exists and would rename the
+  // whole folder. Only a regular file can move.
+  if (!fs.statSync(from).isFile()) return { ok: false, reason: 'not a file' }
 
   const dir = join(destination, '..')
   fs.mkdirSync(dir, { recursive: true })
@@ -694,8 +814,16 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
   // Keep metadata and tags with the track rather than losing them on a move.
   try {
     const db = getDb()
-    db.prepare('update tracks set path = ? where path = ?').run(to.replace(`${dir}/`, ''), trackPath)
-    db.prepare('update track_tags set filename = ? where filename = ?').run(to.replace(`${dir}/`, ''), trackPath)
+    const newRelative = to.replace(`${dir}/`, '')
+    db.prepare('update tracks set path = ? where path = ?').run(newRelative, trackPath)
+    db.prepare('update track_tags set filename = ? where filename = ?').run(newRelative, trackPath)
+    // Every other keyed row has to move with the file, or the moved cue loses its
+    // vector, its measured duration and its play history.
+    const oldKey = source === musicFolder ? trackPath : `sfx:${trackPath}`
+    const newKey = target === 'music' ? newRelative : `sfx:${newRelative}`
+    db.prepare('update track_vectors set path = ? where path = ?').run(newKey, oldKey)
+    db.prepare('update sfx_durations set path = ? where path = ?').run(to, from)
+    db.prepare('update play_history set item_id = ? where item_id = ?').run(newKey, oldKey)
   } catch (e) {
     console.error('[library] could not update the moved track:', e)
   }
@@ -710,9 +838,10 @@ handle(INVOKE.moveTrack, async (_e, trackPath: string, target: 'music' | 'sfx') 
 handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
   if (lane !== 'music' && lane !== 'sfx') return { ok: false }
   const item = library.items().find((candidate) => candidate.key === key)
-  // Choosing the folder's own lane is not an override; writing one would pin the
-  // file forever and the classifier could never be improved.
-  if (item && item.origin === lane) library.clearLane(key)
+  // Choosing the folder's own lane is not an override, but only when the file
+  // already resolves there. A cue the classifier called an effect must be
+  // overridable back to music; clearing that request would re-apply the verdict.
+  if (item && item.origin === lane && item.lane === lane) library.clearLane(key)
   else library.setLane(key, lane)
   // Every panel and the director read the same label, so they all have to hear it.
   send(EVENTS.sfxChanged)
@@ -721,6 +850,7 @@ handle(INVOKE.setLane, (_e, key: string, lane: 'music' | 'sfx') => {
 })
 
 handle(INVOKE.setMusicFolder, (_e, folderPath: string) => {
+  if (!isDirectoryOrEmpty(folderPath)) return { ok: false, reason: 'not a folder' }
   store.set('musicFolder', folderPath)
   library.invalidate()
   launchScanner(folderPath)
@@ -769,7 +899,7 @@ handle(INVOKE.triggerScan, () => {
   return { ok: true }
 })
 
-handle(INVOKE.getAllMetadata, () => {
+function metadataWithLanes() {
   const all = getAllMetadata()
   const kinds = library.kinds()
   // One library read for both the lane map and the items that have no analysed
@@ -795,7 +925,17 @@ handle(INVOKE.getAllMetadata, () => {
     if (!withKind[key]) withKind[key] = { lane: item.lane } as Row
   }
   return withKind
-})
+}
+
+handle(INVOKE.getAllMetadata, () => metadataWithLanes())
+
+// One round trip for everything a ranking pass reads: three separate IPCs
+// serialised the same library three times per prompt.
+handle(INVOKE.recommendSignals, () => ({
+  metadata: metadataWithLanes(),
+  tagsMap: getTagsMap(),
+  playFrequencies: getPlayFrequencies('music'),
+}))
 
 // ── IPC: Tags ─────────────────────────────────────────────────────────────────
 
@@ -968,12 +1108,15 @@ const sessionStore = createSessionStore(getDb())
 // ── Lights: the DM's Home Assistant, on their LAN only (ADR-0004) ────────────
 // The token is encrypted at rest like Discord's; the keychain can refuse after a
 // signature change, and an unremembered token is one paste, not a broken app.
+let sessionLightToken = ''
+
 async function saveLightToken(token: string): Promise<void> {
   try {
     if (safeStorage.isEncryptionAvailable()) {
       store.set('lightToken', safeStorage.encryptString(token).toString('base64'))
     } else {
-      store.set('lightToken', token)
+      // No keychain: keep it for this run rather than on disk in clear text.
+      sessionLightToken = token
     }
   } catch (err) {
     console.error('[lights] token not saved:', err)
@@ -981,6 +1124,7 @@ async function saveLightToken(token: string): Promise<void> {
 }
 
 function loadLightToken(): Promise<string> {
+  if (sessionLightToken) return Promise.resolve(sessionLightToken)
   const raw = (store.get('lightToken', '') as string) || ''
   if (!raw) return Promise.resolve('')
   if (safeStorage.isEncryptionAvailable()) {
@@ -1002,7 +1146,10 @@ const lighting = createLighting({
   setSetting: (key, value) => store.set(key as 'lightUrl', value as string),
   saveToken: saveLightToken,
   loadToken: loadLightToken,
-  clearToken: () => store.set('lightToken', ''),
+  clearToken: () => {
+    sessionLightToken = ''
+    store.set('lightToken', '')
+  },
   connect: (url, token) => createHaClient({ url, token }),
   sessionStore,
   now: () => Date.now(),
@@ -1055,6 +1202,27 @@ async function loadEmbedderOnce(): Promise<Awaited<ReturnType<typeof loadEmbedde
   return embedder
 }
 
+/**
+ * The model is not bundled: ~378 MiB travels on first use, like the ranker.
+ * One attempt at a time; a failed fetch is retried on the next pass rather than
+ * on every scan.
+ */
+let embedderFetch: Promise<void> | null = null
+
+const embedderReady = () => embedderAvailable(EMBEDDER_DIR) && audioAvailable(EMBEDDER_DIR)
+
+function ensureEmbedder(): Promise<void> {
+  if (embedderReady()) return Promise.resolve()
+  embedderFetch ??= downloadEmbedder(downloadFile, EMBEDDER_DIR, (percent) => {
+    if (percent >= 100) console.log('[library] embedding model installed')
+  }).catch((e) => {
+    embedderFetch = null
+    console.warn('[library] embedding model download failed:', e instanceof Error ? e.message : e)
+    throw e
+  })
+  return embedderFetch
+}
+
 const library = createLibrary({
   folders: () => ({
     music: store.get('musicFolder', '') as string,
@@ -1095,15 +1263,22 @@ async function startSfxDurations(): Promise<void> {
   const missing = listSfx(folder).filter((item) => !cached[item.filename])
   if (missing.length === 0) return
   const { parseFile } = await import('music-metadata')
-  for (const item of missing) {
-    try {
-      const meta = await parseFile(item.filename, { duration: true })
-      const seconds = meta.format.duration
-      if (seconds) setSfxDuration(item.filename, seconds)
-    } catch {
-      /* unreadable: it keeps the folder's answer */
+  // A folder of hundreds of effects: four parsers at a time keeps the main
+  // process responsive without opening one fd per file.
+  let next = 0
+  const probe = async () => {
+    while (next < missing.length) {
+      const item = missing[next++]
+      try {
+        const meta = await parseFile(item.filename, { duration: true })
+        const seconds = meta.format.duration
+        if (seconds) setSfxDuration(item.filename, seconds)
+      } catch {
+        /* unreadable: it keeps the folder's answer */
+      }
     }
   }
+  await Promise.all(Array.from({ length: Math.min(4, missing.length) }, probe))
   // The lanes were resolved with the old numbers.
   library.invalidate()
   send(EVENTS.sfxChanged)
@@ -1120,6 +1295,13 @@ function startBackgroundPasses(): void {
   passesTimer = setTimeout(() => {
     passesTimer = null
     void startSfxDurations().catch((e) => console.warn('[sfx] duration probe failed:', e))
+    // Search by meaning and the audio lane verdict both need the embedder. Fetch
+    // it in the background, then run the pass again with it on disk.
+    if (!embedderReady() && process.env.DOTY_E2E_NO_MODEL_DOWNLOAD !== '1') {
+      ensureEmbedder()
+        .then(() => startBackgroundPasses())
+        .catch(() => {})
+    }
     library
       .ensureIndexed()
       .then(() => {
@@ -1191,8 +1373,16 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
 async function ensureSideModels(): Promise<void> {
   for (const side of STT_SIDE_MODELS) {
     if (side.isReady()) continue
-    const result = await sttDownloads.start({ id: side.id, url: side.url }, join(MODELS_DIR, side.ggufFile))
-    if (!result.ok) console.warn(`[model] optional ${side.id} not installed:`, result)
+    const dest = join(MODELS_DIR, side.ggufFile)
+    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest)
+    if (!result.ok) {
+      console.warn(`[model] optional ${side.id} not installed:`, result)
+      continue
+    }
+    if (side.sha256 && sha256File(dest) !== side.sha256) {
+      fs.rmSync(dest, { force: true })
+      console.error(`[model] ${side.id} failed its checksum and was removed`)
+    }
   }
 }
 
@@ -1214,6 +1404,14 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
     join(MODELS_DIR, modelInfo.ggufFile),
   )
   if (!result.ok) return result
+
+  if (modelInfo.sha256) {
+    const dest = join(MODELS_DIR, modelInfo.ggufFile)
+    if (sha256File(dest) !== modelInfo.sha256) {
+      fs.rmSync(dest, { force: true })
+      return { ok: false, reason: 'download failed its checksum' }
+    }
+  }
 
   store.set('sttModel', modelInfo.id)
   await ensureSideModels()
@@ -1470,6 +1668,7 @@ handle(INVOKE.pickSfxFolder, async () => {
 })
 
 handle(INVOKE.setSfxFolder, (_e, folderPath: string) => {
+  if (!isDirectoryOrEmpty(folderPath)) return { ok: false, reason: 'not a folder' }
   store.set('sfxFolder', folderPath)
   library.invalidate()
   send(EVENTS.sfxChanged)

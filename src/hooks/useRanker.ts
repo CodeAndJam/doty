@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
 import { type RankerType, rankTracks } from '../lib/rankTracks'
-import type { TrackMeta } from '../types'
 
 export type { RankerType } from '../lib/rankTracks'
 
@@ -23,10 +22,27 @@ function requestWarmup(setModelStatus: (s: Status) => void): void {
   if (_warmupRequested) return
   _warmupRequested = true
   window.doty
-    .rankerDecide('', [])
-    .then(() => {
-      _currentStatus = 'ready'
-      setModelStatus('ready')
+    .rankerStatus()
+    .then(({ cached }) => {
+      if (!cached) {
+        // Deciding without the graph can only throw ENOENT and log an unhandled
+        // handler error. Stay on keywords until the download finishes.
+        _warmupRequested = false
+        _currentStatus = 'error'
+        setModelStatus('error')
+        return
+      }
+      return window.doty
+        .rankerDecide('', [])
+        .then(() => {
+          _currentStatus = 'ready'
+          setModelStatus('ready')
+        })
+        .catch(() => {
+          _warmupRequested = false
+          _currentStatus = 'error'
+          setModelStatus('error')
+        })
     })
     .catch(() => {
       _warmupRequested = false
@@ -37,7 +53,6 @@ function requestWarmup(setModelStatus: (s: Status) => void): void {
 
 export function useRanker() {
   const [modelStatus, setModelStatus] = useState<Status>(_currentStatus)
-  const [lastRanker, setLastRanker] = useState<RankerType>(null)
 
   useEffect(() => {
     const unsub = window.doty.onRankerStatus((status: string) => {
@@ -47,22 +62,9 @@ export function useRanker() {
       setModelStatus(status as Status)
     })
 
-    // Warm the model during idle time so startup stays snappy. Recommendations
-    // use the heuristic path until it is ready.
-    const warm = () => requestWarmup(setModelStatus)
-    let idleId: number | undefined
-    let timeoutId: ReturnType<typeof setTimeout> | undefined
-    if (typeof window.requestIdleCallback === 'function') {
-      idleId = window.requestIdleCallback(warm, { timeout: 10_000 })
-    } else {
-      timeoutId = setTimeout(warm, 5_000)
-    }
-
-    return () => {
-      unsub()
-      if (idleId !== undefined) window.cancelIdleCallback(idleId)
-      if (timeoutId !== undefined) clearTimeout(timeoutId)
-    }
+    // The graph loads on the first recommendation (requestWarmup), not at idle.
+    // A session nobody ranks in never initialises ONNX at all.
+    return unsub
   }, [])
 
   const recommend = useCallback(async (transcript: string, files: string[], count = 5): Promise<RecommendResult> => {
@@ -70,11 +72,7 @@ export function useRanker() {
       return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
     }
 
-    const [metadata, tagsMap, playFrequencies] = await Promise.all([
-      window.doty.getAllMetadata() as Promise<Record<string, TrackMeta>>,
-      window.doty.getTagsMap(),
-      window.doty.getPlayFrequencies('music'),
-    ])
+    const { metadata, tagsMap, playFrequencies } = await window.doty.recommendSignals()
 
     const ready = _currentStatus === 'ready'
     if (!ready) requestWarmup(setModelStatus)
@@ -87,9 +85,8 @@ export function useRanker() {
       count,
     )
 
-    setLastRanker(result.ranker)
     return result
   }, [])
 
-  return { recommend, modelStatus, lastRanker }
+  return { recommend, modelStatus }
 }

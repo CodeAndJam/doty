@@ -93,6 +93,14 @@ describe('moveDestination', () => {
   it('refuses to invent a path when the target folder is unknown', () => {
     expect(moveDestination('roar.wav', 'sfx', { music: '/lib/Music', sfx: '' })).toBe('')
   })
+
+  it('refuses a basename that would escape the folder', () => {
+    expect(moveDestination('..', 'sfx', { music: '/lib/Music', sfx: '/lib/Effects' })).toBe('')
+    // Separators are stripped, so the result stays directly under the root.
+    expect(moveDestination('../evil.wav', 'sfx', { music: '/lib/Music', sfx: '/lib/Effects' })).toBe(
+      '/lib/Effects/..evil.wav',
+    )
+  })
 })
 
 describe('disambiguate', () => {

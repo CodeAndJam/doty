@@ -72,10 +72,10 @@ export function loadSession(file: string): VttCue[] {
   const lines = content.split('\n')
   let i = 0
   // Skip header and NOTE block
-  while (i < lines.length && !lines[i].includes('-->')) i++
+  while (i < lines.length && !CUE_HEADER.test(lines[i])) i++
   while (i < lines.length) {
     const line = lines[i]
-    if (line.includes('-->')) {
+    if (CUE_HEADER.test(line)) {
       const [start, end] = line.split('-->').map((s) => s.trim())
       const textLines: string[] = []
       i++
@@ -92,6 +92,8 @@ export function loadSession(file: string): VttCue[] {
   return cues
 }
 
+let appendFailed = false
+
 export function appendCue(file: string, elapsedMs: number, text: string, speaker?: string): void {
   const start = formatTimestamp(elapsedMs)
   const end = formatTimestamp(elapsedMs + 3000)
@@ -99,7 +101,23 @@ export function appendCue(file: string, elapsedMs: number, text: string, speaker
   // reads the tag back into a speaker instead of showing it as text.
   const body = speaker ? `<v ${safeVoiceName(speaker)}>${safeVoiceText(text)}</v>` : text
   const cue = `${start} --> ${end}\n${body}\n\n`
-  fs.appendFileSync(file, cue, 'utf-8')
+  try {
+    fs.appendFileSync(file, cue, 'utf-8')
+  } catch (e) {
+    // An ejected disk or a full volume must not take the session down with it.
+    // One line, then silence: the transcript is still in the UI and the WAV.
+    if (!appendFailed) {
+      appendFailed = true
+      console.error('[session] transcript append failed:', e instanceof Error ? e.message : e)
+    }
+  }
+}
+
+/** Write a whole file through a temp name, so a crash leaves the old one intact. */
+function writeAtomic(file: string, content: string): void {
+  const tmp = `${file}.tmp`
+  fs.writeFileSync(tmp, content, 'utf-8')
+  fs.renameSync(tmp, file)
 }
 
 /**
@@ -136,10 +154,10 @@ export function getLastCueStartMs(file: string): number {
     const content = fs.readFileSync(file, 'utf-8')
     const lines = content.split('\n')
     for (let i = lines.length - 1; i >= 0; i--) {
-      const arrow = lines[i].indexOf('-->')
-      if (arrow < 0) continue
-      const m = /(\d+):(\d+):(\d+)\.(\d+)/.exec(lines[i].slice(0, arrow).trim())
-      if (!m) return 0
+      // A cue *text* may contain "-->"; only a line that starts with a timestamp
+      // is a cue header.
+      const m = /^(\d+):(\d+):(\d+)\.(\d+)\s+-->/.exec(lines[i].trim())
+      if (!m) continue
       return Number(m[1]) * 3600000 + Number(m[2]) * 60000 + Number(m[3]) * 1000 + Number(m[4])
     }
   } catch {
@@ -152,8 +170,12 @@ export function renameSession(file: string, newName: string): void {
   if (!fs.existsSync(file)) return
   const content = fs.readFileSync(file, 'utf-8')
   // A function replacement: a typed `$&` is part of the name, not a pattern.
-  const updated = content.replace(/^(NOTE\n)Name: .*/m, (_match, note: string) => `${note}Name: ${newName}`)
-  fs.writeFileSync(file, updated, 'utf-8')
+  const safe = newName
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/-->/g, '->')
+    .trim()
+  const updated = content.replace(/^(NOTE\n)Name: .*/m, (_match, note: string) => `${note}Name: ${safe}`)
+  writeAtomic(file, updated)
 }
 
 function parseNoteBlock(file: string): { name: string; created: string } {
@@ -203,7 +225,7 @@ export function rewriteSessionCues(file: string, cues: Array<{ start: string; en
   const noteEnd = content.indexOf('\n\n', content.indexOf('NOTE'))
   const header = noteEnd > 0 ? content.slice(0, noteEnd + 2) : 'WEBVTT\n\n'
   const body = cues.map((c) => `${c.start} --> ${c.end}\n${c.text}\n`).join('\n')
-  fs.writeFileSync(file, header + body, 'utf-8')
+  writeAtomic(file, header + body)
 }
 
 export async function loadSessionAsync(file: string): Promise<VttCue[]> {
@@ -215,14 +237,16 @@ export async function loadSessionAsync(file: string): Promise<VttCue[]> {
   }
 }
 
+const CUE_HEADER = /^\d+:\d+:\d+\.\d+\s+-->/
+
 function parseVttCues(content: string): VttCue[] {
   const cues: VttCue[] = []
   const lines = content.split('\n')
   let i = 0
-  while (i < lines.length && !lines[i].includes('-->')) i++
+  while (i < lines.length && !CUE_HEADER.test(lines[i])) i++
   while (i < lines.length) {
     const line = lines[i]
-    if (line.includes('-->')) {
+    if (CUE_HEADER.test(line)) {
       const [start, end] = line.split('-->').map((s) => s.trim())
       const textLines: string[] = []
       i++

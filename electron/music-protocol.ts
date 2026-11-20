@@ -36,7 +36,10 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
       nodeStream.on('data', (chunk: Buffer | string) => {
         if (!closed) {
           try {
+            // Respect the consumer: a 24 MB range must not be buffered whole
+            // because the demuxer is behind.
             controller.enqueue(chunk)
+            if ((controller.desiredSize ?? 1) <= 0) nodeStream.pause()
           } catch {
             closed = true
             nodeStream.destroy()
@@ -64,6 +67,9 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
         }
       })
     },
+    pull() {
+      nodeStream.resume()
+    },
     cancel() {
       closed = true
       nodeStream.destroy()
@@ -89,6 +95,11 @@ export interface MusicProtocolOptions {
 export function handleMusicRequest(request: MusicRequestInfo, options: MusicProtocolOptions): Response {
   const { musicFolder, sfxFolder } = options
   const filename = parseMusicUrl(request.url)
+  // Turn on when debugging playback: a seek that fails is a range request and
+  // nothing else tells you which one the demuxer asked for.
+  if (process.env.DOTY_DEBUG_PROTOCOL === '1') {
+    console.log('[music]', request.rangeHeader ?? 'full', filename)
+  }
 
   // Support absolute paths (for SFX) or relative paths (for music).
   // Chromium normalises %2F → / in custom-scheme URLs, so an absolute path
@@ -113,7 +124,21 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
     return new Response('Not found', { status: 404 })
   }
 
-  const stat = fs.statSync(resolved)
+  // A symlink inside the library can point anywhere: check where the bytes really
+  // live, not just the lexical path.
+  const real = fs.realpathSync(resolved)
+  const realRoots = roots.map((root) => {
+    try {
+      return fs.realpathSync(root)
+    } catch {
+      return root
+    }
+  })
+  if (!realRoots.some((root) => real === root || real.startsWith(root + sep))) {
+    return new Response('Forbidden', { status: 403 })
+  }
+
+  const stat = fs.statSync(real)
   const total = stat.size
   const ext = resolved.slice(resolved.lastIndexOf('.'))
   const mime = audioMime(ext)
@@ -121,11 +146,14 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
   // Handle Range requests — required for audio seeking.
   if (request.rangeHeader) {
     const match = /bytes=(\d+)-(\d*)/.exec(request.rangeHeader)
-    const start = match ? parseInt(match[1], 10) : 0
-    const end = match?.[2] ? parseInt(match[2], 10) : total - 1
+    // RFC 9110 says a start past the file is unsatisfiable, but Chromium seeks a
+    // VBR MP3 by estimated byte offset, overshoots EOF near the tail, and treats
+    // the 416 as a fatal demuxer error. Clamp both ends: the last byte is a valid
+    // answer and keeps the cue playing.
+    const start = Math.min(match ? parseInt(match[1], 10) : 0, Math.max(0, total - 1))
+    const end = Math.min(match?.[2] ? parseInt(match[2], 10) : total - 1, total - 1)
 
-    // Validate range bounds
-    if (start >= total || end >= total || start > end) {
+    if (total === 0 || start > end) {
       return new Response('Range Not Satisfiable', {
         status: 416,
         headers: { 'Content-Range': `bytes */${total}` },
@@ -134,7 +162,7 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
 
     const chunkSize = end - start + 1
 
-    const readable = nodeStreamToWeb(fs.createReadStream(resolved, { start, end }))
+    const readable = nodeStreamToWeb(fs.createReadStream(real, { start, end }))
 
     return new Response(readable, {
       status: 206,
@@ -149,7 +177,7 @@ export function handleMusicRequest(request: MusicRequestInfo, options: MusicProt
 
   // Full file response — advertise Accept-Ranges so Chromium knows
   // it can send Range requests for seeking.
-  const readable = nodeStreamToWeb(fs.createReadStream(resolved))
+  const readable = nodeStreamToWeb(fs.createReadStream(real))
 
   return new Response(readable, {
     status: 200,

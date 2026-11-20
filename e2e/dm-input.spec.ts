@@ -35,8 +35,11 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
+    let pageRef: Page | null = null
     try {
       const page = await app.firstWindow()
+      pageRef = page
       await page.waitForLoadState('domcontentloaded')
 
       page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
@@ -52,6 +55,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -75,6 +79,12 @@ test.describe('DM input box', () => {
       await input.fill('campfire')
       await expect(input).toHaveValue('campfire')
     } finally {
+      if (pageRef && previousFolder !== null) {
+        await Promise.race([
+          pageRef.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 10_000)),
+        ])
+      }
       await gracefulClose(app)
     }
   })
@@ -84,8 +94,11 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
+    let pageRef: Page | null = null
     try {
       const page = await app.firstWindow()
+      pageRef = page
       await page.waitForLoadState('domcontentloaded')
 
       page.on('console', msg => console.log(`[renderer:${msg.type()}]`, msg.text()))
@@ -101,6 +114,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -153,6 +167,12 @@ test.describe('DM input box', () => {
       // We just verify that tracks are still shown (the app didn't break).
       expect(clearedNames.length).toBeGreaterThan(0)
     } finally {
+      if (pageRef && previousFolder !== null) {
+        await Promise.race([
+          pageRef.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 10_000)),
+        ])
+      }
       await gracefulClose(app)
     }
   })
@@ -162,8 +182,11 @@ test.describe('DM input box', () => {
       args: [join(__dirname, '../out/main/index.js')],
     })
 
+    let previousFolder: string | null = null
+    let pageRef: Page | null = null
     try {
       const page = await app.firstWindow()
+      pageRef = page
       await page.waitForLoadState('domcontentloaded')
 
       // Collect console messages to verify the recommendation pipeline fires
@@ -185,6 +208,7 @@ test.describe('DM input box', () => {
         return
       }
 
+      previousFolder = await page.evaluate(() => window.doty.getMusicFolder())
       // Point app at fixtures folder
       await page.evaluate((dir: string) => {
         return (window as unknown as { doty: { setMusicFolder: (p: string) => Promise<unknown> } }).doty.setMusicFolder(dir)
@@ -200,8 +224,8 @@ test.describe('DM input box', () => {
       // Type into the input
       await input.fill('tavern')
 
-      // Wait for debounce to fire (500ms) + processing
-      await page.waitForTimeout(2000)
+      // Wait for the idle commit (900ms) + processing
+      await page.waitForTimeout(2500)
 
       // Verify the recommendation pipeline was triggered by checking console logs.
       // MainLayout.handleDmChange logs: '[recommend] handleDmChange: ...'
@@ -236,6 +260,12 @@ test.describe('DM input box', () => {
         `Captured logs: ${consoleLogs.filter(l => l.includes('[recommend]')).join(' | ')}`,
       ).toBe(true)
     } finally {
+      if (pageRef && previousFolder !== null) {
+        await Promise.race([
+          pageRef.evaluate((p: string) => window.doty.setMusicFolder(p), previousFolder).catch(() => {}),
+          new Promise((resolve) => setTimeout(resolve, 10_000)),
+        ])
+      }
       await gracefulClose(app)
     }
   })

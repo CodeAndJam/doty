@@ -10,6 +10,7 @@ interface TagInputProps {
 export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
   const [input, setInput] = useState('')
   const [focused, setFocused] = useState(false)
+  const [active, setActive] = useState(-1)
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null)
@@ -40,13 +41,24 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && trimmed) {
+    if (e.key === 'ArrowDown' && suggestions.length > 0) {
       e.preventDefault()
-      addTag(trimmed)
+      setActive((i) => (i + 1) % suggestions.length)
+    } else if (e.key === 'ArrowUp' && suggestions.length > 0) {
+      e.preventDefault()
+      setActive((i) => (i <= 0 ? suggestions.length - 1 : i - 1))
+    } else if (e.key === 'Enter') {
+      const picked = active >= 0 ? suggestions[active] : null
+      if (picked || trimmed) {
+        e.preventDefault()
+        addTag(picked ?? trimmed)
+        setActive(-1)
+      }
     } else if (e.key === 'Backspace' && !input && tags.length > 0) {
       removeTag(tags[tags.length - 1])
     } else if (e.key === 'Escape') {
       setInput('')
+      setActive(-1)
       inputRef.current?.blur()
     }
   }
@@ -97,6 +109,7 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
                 e.stopPropagation()
                 removeTag(tag)
               }}
+              aria-label={`Remove tag ${tag}`}
               className="ml-0.5 hover:opacity-100 opacity-60"
               style={{ fontSize: '13px', color: '#d9a441', lineHeight: 1 }}
             >
@@ -108,9 +121,16 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
           ref={inputRef}
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value)
+            setActive(-1)
+          }}
           onKeyDown={handleKeyDown}
           onFocus={() => setFocused(true)}
+          role="combobox"
+          aria-expanded={focused && suggestions.length > 0}
+          aria-autocomplete="list"
+          aria-controls="tag-suggestions"
           placeholder={tags.length === 0 ? 'add tag...' : ''}
           className="flex-1 min-w-[60px] bg-transparent outline-none"
           style={{
@@ -127,6 +147,9 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
         dropdownPos &&
         ReactDOM.createPortal(
           <div
+            id="tag-suggestions"
+            role="listbox"
+            aria-label="Tag suggestions"
             className="fixed"
             style={{
               top: dropdownPos.top,
@@ -145,6 +168,8 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
               <button
                 type="button"
                 key={s}
+                role="option"
+                aria-selected={active === suggestions.indexOf(s)}
                 className="block w-full text-left px-2 py-1 hover:bg-[rgba(200,146,42,0.1)]"
                 style={{
                   fontSize: '11px',
@@ -154,7 +179,9 @@ export default function TagInput({ tags, allTags, onChange }: TagInputProps) {
                 onMouseDown={(e) => {
                   e.preventDefault()
                   addTag(s)
+                  setActive(-1)
                 }}
+                onClick={() => addTag(s)}
               >
                 {s}
               </button>

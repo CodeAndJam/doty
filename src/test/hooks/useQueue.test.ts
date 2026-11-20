@@ -11,17 +11,18 @@ describe('useQueue', () => {
   })
 
   describe('enqueue', () => {
-    it('adds a track and sets index to 0 if queue was empty', () => {
+    it('appends without inventing a current row when nothing is queued', () => {
+      // Adding does not start playback; the index is -1 until a queued row plays.
       const { result } = renderHook(() => useQueue())
       act(() => result.current.enqueue('track1.mp3'))
       expect(result.current.tracks).toEqual(['track1.mp3'])
-      expect(result.current.currentIndex).toBe(0)
-      expect(result.current.currentTrack).toBe('track1.mp3')
+      expect(result.current.currentIndex).toBe(-1)
+      expect(result.current.currentTrack).toBeNull()
     })
 
     it('appends to end without changing current index', () => {
       const { result } = renderHook(() => useQueue())
-      act(() => result.current.enqueue('track1.mp3'))
+      act(() => result.current.setQueue(['track1.mp3'], 0))
       act(() => result.current.enqueue('track2.mp3'))
       act(() => result.current.enqueue('track3.mp3'))
       expect(result.current.tracks).toEqual(['track1.mp3', 'track2.mp3', 'track3.mp3'])
@@ -38,11 +39,11 @@ describe('useQueue', () => {
       expect(result.current.currentIndex).toBe(0)
     })
 
-    it('works on empty queue', () => {
+    it('queues at the head without claiming to be current', () => {
       const { result } = renderHook(() => useQueue())
       act(() => result.current.playNext('a.mp3'))
       expect(result.current.tracks).toEqual(['a.mp3'])
-      expect(result.current.currentIndex).toBe(0)
+      expect(result.current.currentIndex).toBe(-1)
     })
   })
 
@@ -70,12 +71,14 @@ describe('useQueue', () => {
       expect(result.current.tracks).toEqual(['a.mp3'])
     })
 
-    it('clamps currentIndex when removing last item at current position', () => {
+    it('clears the position when the playing row is removed', () => {
+      // The track keeps playing but is no longer in the queue: a position into a
+      // list that does not contain it would be a lie.
       const { result } = renderHook(() => useQueue())
       act(() => result.current.setQueue(['a.mp3', 'b.mp3', 'c.mp3'], 2))
       act(() => result.current.remove(2))
       expect(result.current.tracks).toEqual(['a.mp3', 'b.mp3'])
-      expect(result.current.currentIndex).toBe(1) // clamped to last valid index
+      expect(result.current.currentIndex).toBe(-1)
     })
 
     it('resets to -1 when removing the only track', () => {

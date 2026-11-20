@@ -50,14 +50,14 @@ const GATE_MODELS: GateModel[] = [
     ggufFile: 'nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf',
     languages: ['pt-PT'],
     streaming: true,
-    absolute: true,
+    absolute: false,
   },
   {
     id: 'parakeet-ultra',
     ggufFile: 'parakeet-ultra-Q8_0.gguf',
     languages: ['pt'],
     streaming: false,
-    absolute: false,
+    absolute: true,
   },
 ]
 

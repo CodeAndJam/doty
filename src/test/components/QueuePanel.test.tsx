@@ -7,6 +7,7 @@ vi.mock('@dnd-kit/core', () => ({
   DndContext: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   closestCenter: vi.fn(),
   PointerSensor: vi.fn(),
+  KeyboardSensor: vi.fn(),
   useSensor: vi.fn(() => ({})),
   useSensors: vi.fn(() => []),
 }))
@@ -14,6 +15,7 @@ vi.mock('@dnd-kit/core', () => ({
 vi.mock('@dnd-kit/sortable', () => ({
   SortableContext: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   verticalListSortingStrategy: 'vertical',
+  sortableKeyboardCoordinates: vi.fn(),
   useSortable: ({ id }: { id: string }) => ({
     attributes: { 'data-sortable-id': id },
     listeners: {},
@@ -91,10 +93,10 @@ describe('QueuePanel', () => {
       const svg = b.querySelector('svg')
       return svg && b.classList.contains('w-6')
     })
-    if (playButtons.length >= 2) {
-      fireEvent.click(playButtons[1])
-      expect(onPlay).toHaveBeenCalledWith(1)
-    }
+    // A selector that finds nothing must fail, not silently pass.
+    expect(playButtons).toHaveLength(defaultProps.tracks.length)
+    fireEvent.click(playButtons[1])
+    expect(onPlay).toHaveBeenCalledWith(1)
   })
 
   it('calls onRemove with correct index when remove button is clicked', () => {

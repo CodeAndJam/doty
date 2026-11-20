@@ -91,8 +91,12 @@ export function moveDestination(
 ): string {
   const root = target === 'music' ? roots.music : roots.sfx
   if (!root) return ''
+  // The basename comes from the renderer; `..` or a separator would move the
+  // file outside the destination folder.
+  const safe = basename.replace(/[\\/]/g, '').trim()
+  if (!safe || safe === '.' || safe === '..') return ''
   const trimmed = root.replace(/[\\/]+$/, '')
-  return `${trimmed}/${basename}`
+  return `${trimmed}/${safe}`
 }
 
 /** `roar.wav` collided → `roar (2).wav`, matching what a file manager would do. */

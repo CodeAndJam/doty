@@ -31,7 +31,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { Tokenizer } from '@huggingface/tokenizers'
-import * as ort from 'onnxruntime-node'
+import type * as Ort from 'onnxruntime-node'
 import { audioTokenCount, logMelSpectrogram } from './audio/mel'
 import { normalise } from './embedding'
 
@@ -64,6 +64,8 @@ export interface Embedder {
   /** A track's sound, in the same space as the text vectors. Null without the encoder. */
   embedAudio: ((pcm: Float32Array) => Promise<Float32Array>) | null
   dim: number
+  /** Release the native sessions before the process exits. */
+  dispose(): Promise<void>
 }
 
 /**
@@ -119,6 +121,9 @@ function readAudioTokens(dir: string): AudioTokens | null {
 }
 
 export async function loadEmbedder(dir: string): Promise<Embedder> {
+  // Loaded lazily: a launch with no folder must not initialise the ONNX native
+  // binding, whose finalizers abort the process at exit.
+  const ort = await import('onnxruntime-node')
   const tokenizer = new Tokenizer(
     JSON.parse(fs.readFileSync(join(dir, 'tokenizer.json'), 'utf8')),
     JSON.parse(fs.readFileSync(join(dir, 'tokenizer_config.json'), 'utf8')),
@@ -152,7 +157,7 @@ export async function loadEmbedder(dir: string): Promise<Embedder> {
   }
 
   const tokens = audioAvailable(dir) ? readAudioTokens(dir) : null
-  let encoder: Promise<ort.InferenceSession> | null = null
+  let encoder: Promise<Ort.InferenceSession> | null = null
 
   /**
    * Two passes: log-mel clip → audio encoder → media tokens → fused graph with
@@ -190,5 +195,15 @@ export async function loadEmbedder(dir: string): Promise<Embedder> {
     embedDocuments: (texts) => Promise.all(texts.map((t) => embedOne(DOCUMENT_PREFIX, t))),
     embedQuery: (text) => embedOne(QUERY_PREFIX, text),
     embedAudio: tokens ? embedAudio : null,
+    async dispose() {
+      if (encoder) {
+        try {
+          await (await encoder).release()
+        } catch {
+          /* already gone */
+        }
+      }
+      await session.release()
+    },
   }
 }

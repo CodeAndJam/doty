@@ -163,6 +163,28 @@ export async function evaluateSession(
   })
 }
 
-export function disposeRanker(): void {
-  reset(new Error('Ranker disposed'))
+/**
+ * Ask the worker to finish its current forward pass and leave. Terminating a
+ * thread mid-Run aborts the whole process inside onnxruntime.
+ */
+export async function disposeRanker(): Promise<void> {
+  const w = worker
+  if (!w) return
+  worker = null
+  ready = false
+  loadPromise = null
+  rejectPending(new Error('Ranker disposed'))
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(() => {
+      w.terminate()
+      resolve()
+    }, 3_000)
+    w.once('message', (msg: WorkerMessage) => {
+      if (msg.type !== 'closed') return
+      clearTimeout(timer)
+      w.terminate()
+      resolve()
+    })
+    w.postMessage({ type: 'close' })
+  })
 }

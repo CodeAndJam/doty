@@ -293,6 +293,18 @@ export default function Transcript({
                 }
                 setShowDropdown((open) => !open)
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setShowDropdown(false)
+                  return
+                }
+                // Mouse users toggle on mousedown; the button's own click is a
+                // no-op after a rename, so keyboard gets the toggle here.
+                if (e.key !== 'Enter' && e.key !== ' ') return
+                e.preventDefault()
+                setShowDropdown((open) => !open)
+              }}
+              aria-haspopup="menu"
               title="Switch session"
               aria-label="Switch session"
               className="p-1 opacity-80 hover:opacity-100"
@@ -447,7 +459,14 @@ export default function Transcript({
       )}
 
       {/* Scrollable content */}
-      <div ref={scrollRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-3 select-text cursor-text">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        role="log"
+        aria-live="polite"
+        aria-label="Session transcript"
+        className="flex-1 overflow-y-auto px-4 py-3 select-text cursor-text"
+      >
         {paragraphs.length === 0 && !interimText ? (
           <p style={{ fontSize: '15px', color: '#9d8b66', fontStyle: 'italic', fontFamily: "'Crimson Text', serif" }}>
             {recording

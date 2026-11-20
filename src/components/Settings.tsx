@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
+import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress } from '../types'
@@ -146,6 +147,8 @@ export default function Settings({
     }
   }, [])
 
+  useFocusTrap(dialogRef)
+
   /** One rail: a column on a wide window, a wrapped tab row on a narrow one. */
   const settingsNav = () => (
     <div
@@ -243,13 +246,32 @@ export default function Settings({
     window.doty.rankerStatus().then((s) => {
       setRankerInstalled(s.cached)
       setRankerLanguageCovered(s.languageCovered)
+      // A download may already be running from launch; the label must say so
+      // rather than "failed" until the first progress event arrives.
+      if (s.downloading) setRankerProgress((prev) => prev ?? 0)
     })
     window.doty.getSfxFolder().then(setSfxFolder)
     window.doty.getSfxRecommendationCount().then(setSfxRecommendCount)
     window.doty.getSttModel().then(setSttModel)
     window.doty.getSttLanguage().then(setSttLanguage)
     window.doty.getSttModelStatus().then(setSttModelStatus)
-    window.doty.getSttModelList().then(setSttModelList)
+    // The list is static, but an early/failed IPC used to leave the pane empty
+    // with no download path. Retry a few times before giving up.
+    const cancelled = false
+    let tries = 0
+    const loadModels = () => {
+      window.doty
+        .getSttModelList()
+        .then((list) => {
+          if (cancelled) return
+          setSttModelList(list)
+          if (list.length === 0 && ++tries < 4) setTimeout(loadModels, 500)
+        })
+        .catch(() => {
+          if (!cancelled && ++tries < 4) setTimeout(loadModels, 500)
+        })
+    }
+    loadModels()
     // Subscribe first, then fetch: an event that lands while the fetch is in
     // flight must not be overwritten by the older snapshot.
     let sawEvent = false
@@ -415,13 +437,27 @@ export default function Settings({
       ? [sttLanguage, ...activeSttLanguages]
       : activeSttLanguages
 
-  const rankerDotColor = rankerIsReady ? '#6dbf95' : rankerIsError ? '#ef4444' : '#d9a441'
+  const rankerDotColor = rankerIsReady
+    ? '#6dbf95'
+    : rankerProgress !== null
+      ? '#d9a441'
+      : rankerIsError
+        ? '#ef4444'
+        : '#d9a441'
   const rankerDotShadow = rankerIsReady
     ? '0 0 6px rgba(74,138,106,0.7)'
-    : rankerIsError
-      ? '0 0 6px rgba(239,68,68,0.7)'
-      : '0 0 6px rgba(200,146,42,0.7)'
-  const rankerLabel = rankerIsReady ? 'Attuned' : rankerIsError ? 'Failed — using heuristic fallback' : 'Summoning...'
+    : rankerProgress !== null
+      ? '0 0 6px rgba(200,146,42,0.7)'
+      : rankerIsError
+        ? '0 0 6px rgba(239,68,68,0.7)'
+        : '0 0 6px rgba(200,146,42,0.7)'
+  const rankerLabel = rankerIsReady
+    ? 'Attuned'
+    : rankerProgress !== null
+      ? `Downloading${rankerProgress > 0 ? ` ${rankerProgress}%` : '…'}`
+      : rankerIsError
+        ? 'Failed — using heuristic fallback'
+        : 'Summoning...'
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -514,6 +550,7 @@ export default function Settings({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close settings"
               style={{
                 color: '#9d8b66',
                 transition: 'color 0.2s',
@@ -597,6 +634,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="Crossfade duration"
                   min={0}
                   max={5000}
                   step={100}
@@ -791,6 +829,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="SFX suggestions"
                   min={1}
                   max={10}
                   value={sfxRecommendCount}
@@ -894,137 +933,133 @@ export default function Settings({
 
                 {/* Model radio buttons — driven by registry */}
                 <div className="space-y-1.5 mt-3">
-                  {sttModelList.map((m) => {
-                    const isDownloaded = m.ready
-                    const isActive = sttModel === m.id
-                    const isDownloading = whisperDownloading === m.id
-                    const needsDownload = !isDownloaded
+                  {/* One radio group: the dot and the label describe the same choice. */}
+                  <div role="radiogroup" aria-label="Speech recognition model">
+                    {sttModelList.map((m) => {
+                      const isDownloaded = m.ready
+                      const isActive = sttModel === m.id
+                      const isDownloading = whisperDownloading === m.id
+                      const needsDownload = !isDownloaded
 
-                    return (
-                      <div
-                        key={m.id}
-                        className="flex items-center gap-2"
-                        style={{
-                          padding: '6px 8px',
-                          background: isActive ? 'rgba(200,146,42,0.06)' : 'transparent',
-                          border: isActive ? '1px solid rgba(200,146,42,0.2)' : '1px solid transparent',
-                        }}
-                      >
-                        {/* Radio dot */}
-                        <button
-                          type="button"
-                          disabled={needsDownload || isDownloading}
-                          onClick={async () => {
-                            if (!needsDownload && !isActive) {
-                              const result = await window.doty.setSttModel(m.id)
-                              if (result.ok) {
-                                setSttModel(m.id)
-                                window.doty.getSttLanguage().then(setSttLanguage)
-                              }
-                            }
-                          }}
+                      return (
+                        <div
+                          key={m.id}
+                          className="flex items-center gap-2"
                           style={{
-                            width: '14px',
-                            height: '14px',
-                            borderRadius: '50%',
-                            border: `1px solid ${isActive ? '#d9a441' : '#9d8b66'}`,
-                            background: 'transparent',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: !needsDownload && !isActive ? 'pointer' : 'default',
-                            flexShrink: 0,
-                            padding: 0,
+                            padding: '6px 8px',
+                            background: isActive ? 'rgba(200,146,42,0.06)' : 'transparent',
+                            border: isActive ? '1px solid rgba(200,146,42,0.2)' : '1px solid transparent',
                           }}
                         >
-                          {isActive && (
-                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#d9a441' }} />
-                          )}
-                        </button>
-
-                        {/* Label */}
-                        <div className="flex-1 min-w-0">
-                          <span style={{ fontSize: '13px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
-                            {m.label}
-                          </span>
-                          <span
-                            className="ml-1.5 px-1 rounded text-[10px]"
-                            style={{ background: 'rgba(200,146,42,0.1)', color: '#a5813f' }}
-                          >
-                            {m.size}
-                          </span>
-                          <br />
-                          <span
-                            style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}
-                          >
-                            {m.description}
-                          </span>
-                        </div>
-
-                        {/* Status / Download button */}
-                        {isDownloading ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: '#d9a441',
-                              fontFamily: "'IBM Plex Mono', monospace",
-                              flexShrink: 0,
-                            }}
-                          >
-                            {whisperProgress}%
-                          </span>
-                        ) : isDownloaded ? (
-                          <span
-                            style={{
-                              fontSize: '11px',
-                              color: '#6dbf95',
-                              fontFamily: "'IBM Plex Mono', monospace",
-                              flexShrink: 0,
-                            }}
-                          >
-                            ready
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={whisperDownloading !== null}
-                            onClick={async () => {
-                              setWhisperDownloading(m.id)
-                              setWhisperProgress(0)
-                              setWhisperDownloadError(null)
-                              try {
-                                const res = await window.doty.downloadModel(m.id)
-                                if (!res.ok && res.reason !== 'cancelled') {
-                                  setWhisperDownloadError(res.reason ?? 'Download failed')
+                          {/* Radio dot */}
+                          <input
+                            type="radio"
+                            name="stt-model"
+                            checked={isActive}
+                            disabled={needsDownload || isDownloading}
+                            onChange={async () => {
+                              if (!needsDownload && !isActive) {
+                                const result = await window.doty.setSttModel(m.id)
+                                if (result.ok) {
+                                  setSttModel(m.id)
+                                  window.doty.getSttLanguage().then(setSttLanguage)
                                 }
-                              } catch (e) {
-                                setWhisperDownloadError(String(e))
-                                console.error('Model download failed:', e)
                               }
-                              setWhisperDownloading(null)
-                              window.doty.getSttModelStatus().then(setSttModelStatus)
-                              window.doty.getSttModelList().then(setSttModelList)
                             }}
+                            aria-label={`Use ${m.label}`}
                             style={{
-                              fontSize: '11px',
-                              color: '#d9a441',
-                              fontFamily: "'IBM Plex Mono', monospace",
-                              background: 'none',
-                              border: '1px solid rgba(200,146,42,0.3)',
-                              padding: '2px 8px',
-                              cursor: whisperDownloading === null ? 'pointer' : 'default',
-                              opacity: whisperDownloading === null ? 1 : 0.4,
+                              width: '18px',
+                              height: '18px',
+                              accentColor: '#d9a441',
                               flexShrink: 0,
+                              cursor: !needsDownload && !isActive ? 'pointer' : 'default',
                             }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.1)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
-                          >
-                            download
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
+                          />
+
+                          {/* Label */}
+                          <div className="flex-1 min-w-0">
+                            <span style={{ fontSize: '13px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
+                              {m.label}
+                            </span>
+                            <span
+                              className="ml-1.5 px-1 rounded text-[10px]"
+                              style={{ background: 'rgba(200,146,42,0.1)', color: '#a5813f' }}
+                            >
+                              {m.size}
+                            </span>
+                            <br />
+                            <span
+                              style={{ fontSize: '11px', color: '#9d8b66', fontFamily: "'IBM Plex Mono', monospace" }}
+                            >
+                              {m.description}
+                            </span>
+                          </div>
+
+                          {/* Status / Download button */}
+                          {isDownloading ? (
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                color: '#d9a441',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                flexShrink: 0,
+                              }}
+                            >
+                              {whisperProgress}%
+                            </span>
+                          ) : isDownloaded ? (
+                            <span
+                              style={{
+                                fontSize: '11px',
+                                color: '#6dbf95',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                flexShrink: 0,
+                              }}
+                            >
+                              ready
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={whisperDownloading !== null}
+                              onClick={async () => {
+                                setWhisperDownloading(m.id)
+                                setWhisperProgress(0)
+                                setWhisperDownloadError(null)
+                                try {
+                                  const res = await window.doty.downloadModel(m.id)
+                                  if (!res.ok && res.reason !== 'cancelled') {
+                                    setWhisperDownloadError(res.reason ?? 'Download failed')
+                                  }
+                                } catch (e) {
+                                  setWhisperDownloadError(String(e))
+                                  console.error('Model download failed:', e)
+                                }
+                                setWhisperDownloading(null)
+                                window.doty.getSttModelStatus().then(setSttModelStatus)
+                                window.doty.getSttModelList().then(setSttModelList)
+                              }}
+                              style={{
+                                fontSize: '11px',
+                                color: '#d9a441',
+                                fontFamily: "'IBM Plex Mono', monospace",
+                                background: 'none',
+                                border: '1px solid rgba(200,146,42,0.3)',
+                                padding: '2px 8px',
+                                cursor: whisperDownloading === null ? 'pointer' : 'default',
+                                opacity: whisperDownloading === null ? 1 : 0.4,
+                                flexShrink: 0,
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(200,146,42,0.1)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = 'none')}
+                            >
+                              download
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 {/* Focused language — avoids per-utterance language detection */}
@@ -1034,6 +1069,7 @@ export default function Settings({
                 >
                   <span style={{ color: '#a5813f' }}>Language</span>
                   <select
+                    aria-label="Speech language"
                     value={sttLanguage}
                     onChange={async (e) => {
                       const language = e.target.value
@@ -1209,6 +1245,7 @@ export default function Settings({
               <div className="flex items-center gap-3">
                 <input
                   type="range"
+                  aria-label="Recommendations per query"
                   min={1}
                   max={20}
                   value={recommendCount}
@@ -1354,6 +1391,7 @@ export default function Settings({
                     </div>
                     <input
                       type="range"
+                      aria-label="Autopilot confidence threshold"
                       min={80}
                       max={99}
                       value={Math.round(autopilotThreshold * 100)}
@@ -1379,6 +1417,7 @@ export default function Settings({
                     </div>
                     <input
                       type="range"
+                      aria-label="Autopilot crossfade duration"
                       min={1}
                       max={10}
                       value={autopilotCrossfade}

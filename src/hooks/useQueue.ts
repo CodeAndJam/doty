@@ -33,8 +33,8 @@ export function useQueue(): UseQueueReturn {
 
   const enqueue = useCallback((filename: string) => {
     setTracks((prev) => [...prev, filename])
-    // If queue was empty, point to the new track
-    setCurrentIndex((prev) => (prev === -1 ? 0 : prev))
+    // Adding does not start playback, so it does not invent a current row. The
+    // index is -1 while the DM hears a track that is not in the queue.
   }, [])
 
   const playNext = useCallback(
@@ -45,7 +45,6 @@ export function useQueue(): UseQueueReturn {
         next.splice(insertAt, 0, filename)
         return next
       })
-      setCurrentIndex((prev) => (prev === -1 ? 0 : prev))
     },
     [currentIndex],
   )
@@ -58,7 +57,9 @@ export function useQueue(): UseQueueReturn {
       setCurrentIndex((ci) => {
         if (next.length === 0) return -1
         if (index < ci) return ci - 1
-        if (index === ci) return Math.min(ci, next.length - 1)
+        // Removing the row that was playing leaves no queue position: playback
+        // continues on a track the queue no longer lists.
+        if (index === ci) return -1
         return ci
       })
     },

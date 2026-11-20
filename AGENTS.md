@@ -128,6 +128,10 @@ Running the app yourself:
   Playwright handle; a pattern kill ends the DM's session too.
 - **Verify a UI slice with `pnpm test:e2e`.** Specs run one at a time (each
   launches its own app); `DOTY_E2E_HIDE_WINDOW=1` runs them without a window.
+  Playback is muted by default so the suite is silent; `DOTY_E2E_MUTE=0` hears it.
+  Copy the temp-profile harness in `e2e/library-search.spec.ts` for a new spec;
+  one that touches the real profile must restore the folder/model in `finally`
+  (`scripts/forbidden-apis.mjs` refuses a spec that does not).
 - **Check the lights against a real Home Assistant** with
   `HA_LIVE=1 HA_URL=… HA_TOKEN=… npx vitest run electron/home-assistant-live.test.ts`.
   It picks the Area, writes one light and puts it back; `pnpm check` never runs it.
@@ -165,7 +169,8 @@ pnpm run rebuild
 
 ## Model Files
 
-- Default STT: Nemotron 3.5 streaming GGUF (~716 MB), focused on `pt-PT`; other GGUF models are selectable in Settings. Downloaded to `~/.doty/models/`.
-- Recommendation reranker: multilingual `mmarco-mMiniLMv2-L12` cross-encoder (~80 MB), downloaded on first use to `~/.doty/hf-cache/`. Runs in a worker thread, never on the Electron main thread.
+- Default STT: Parakeet Ultra GGUF (~740 MB), the most accurate European-Portuguese option. Nemotron 3.5 Streaming (~716 MB) is the low-latency alternative; both are selectable in Settings. Downloaded to `~/.doty/models/`.
+- Decision model: `d1-omni-600M` exported to ONNX (~1.4 GB), fetched once from the `models-v1` release and run in a worker thread, never on the Electron main thread.
+- Embedder: EmbeddingGemma-2-300M (ONNX q4, ~380 MB) from `onnx-community/embeddinggemma-2-ONNX`, downloaded on first use. Semantic search and the audio lane verdict degrade to keywords/duration when it is absent.
 
 These are never committed to the repository.
