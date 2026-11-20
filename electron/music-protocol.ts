@@ -23,7 +23,9 @@ export function audioMime(ext: string): string {
 /** Parse a music:// URL into a relative filename. */
 export function parseMusicUrl(raw: string): string {
   const prefix = 'music://play/'
-  return decodeURIComponent(raw.startsWith(prefix) ? raw.slice(prefix.length) : raw.slice('music://'.length))
+  // A query is a cache-buster for a recovery fetch, never part of the filename.
+  const clean = raw.split('?')[0].split('#')[0]
+  return decodeURIComponent(clean.startsWith(prefix) ? clean.slice(prefix.length) : clean.slice('music://'.length))
 }
 
 /** Build a ReadableStream from a Node fs.ReadStream, guarding against

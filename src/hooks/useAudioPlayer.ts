@@ -238,6 +238,9 @@ export function useAudioPlayer({
         }
       }
       audio.onerror = () => {
+        // Detaching the source during recovery fires a second error; it is not a
+        // new failure.
+        if (recoveringRef.current) return
         const message = audio.error?.message ?? audio.error?.code ?? 'unknown'
         console.error(`[player] media error on ${filename}:`, message)
         // A range read can fail once and be retried by the demuxer; the element
@@ -264,16 +267,40 @@ export function useAudioPlayer({
         }
         recoveringRef.current = true
         const target = Number.isFinite(audio.currentTime) ? audio.currentTime : 0
+        // Release the failed media request before asking the scheme for the file:
+        // a fetch while the demuxer still holds it fails with "Failed to fetch".
         try {
-          const response = await fetch(`music://play/${encodeURIComponent(filename)}`)
+          audio.removeAttribute('src')
+          audio.load()
+        } catch {
+          /* already detached */
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250))
+        try {
+          // The scheme can refuse a new fetch for a moment while the failed media
+          // request is being torn down; retry before giving up.
+          let response: Response | null = null
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              // A unique query makes Chromium skip the failed cache entry for the same URL.
+              response = await fetch(`music://play/${encodeURIComponent(filename)}?recover=${Date.now()}-${attempt}`)
+              break
+            } catch (e) {
+              if (attempt === 2) throw e
+              await new Promise((resolve) => setTimeout(resolve, 1_500 * (attempt + 1)))
+            }
+          }
+          if (!response) throw new Error('no response')
           if (!response.ok) throw new Error(`HTTP ${response.status}`)
           const blob = await response.blob()
           if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
           blobUrlRef.current = URL.createObjectURL(blob)
           audio.src = blobUrlRef.current
-          audio.onloadedmetadata = () => {
+          audio.onloadedmetadata = () => setDuration(audio.duration)
+          // loadeddata, not loadedmetadata: a blob's metadata is known before it
+          // is seekable, and a currentTime set too early collapses to 0.
+          audio.oncanplay = () => {
             audio.currentTime = Math.min(target, audio.duration || target)
-            setDuration(audio.duration)
             audio.play().catch(() => {})
             setIsAudioPlaying(true)
           }
