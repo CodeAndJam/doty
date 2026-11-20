@@ -49,9 +49,6 @@ export function normalizeContext(value: Partial<ContextConfig> | undefined): Con
     const [min, max] = CONTEXT_LIMITS[key]
     out[key] = Math.round(Math.min(max, Math.max(min, raw)))
   }
-  // A reader cannot read more than the window keeps, or the slider lies.
-  out.rankerChars = Math.min(out.rankerChars, out.windowChars)
-  out.sfxChars = Math.min(out.sfxChars, out.windowChars)
   return out
 }
 
@@ -82,4 +79,13 @@ export function composeState(
 /** The window a session's cues seed: the room's most recent words, within the DM's budget. */
 export function seedWindow(texts: string[], windowChars: number): string {
   return texts.filter(Boolean).join(' ').slice(-windowChars)
+}
+
+/**
+ * What the effects embedder reads: the hint heads the state and the newest words
+ * end it, so both ends are kept. The middle is what a per-line embedder cannot
+ * afford to pay for.
+ */
+export function embedQuery(text: string): string {
+  return text.length > 400 ? `${text.slice(0, 100)} ${text.slice(-300)}` : text
 }

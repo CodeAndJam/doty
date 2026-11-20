@@ -5,6 +5,7 @@ import {
   type ContextConfig,
   composeState,
   DEFAULT_CONTEXT,
+  embedQuery,
   MODEL_STATE_CHARS,
   mergeContext,
   seedWindow,
@@ -162,8 +163,8 @@ export default function MainLayout() {
   // Stable handle for the IPC effect below (a plain function is rebuilt every render)
   const toggleRecordingRef = useRef<() => void>(() => {})
   toggleRecordingRef.current = toggleRecording
-  /** Re-runs the typed hint when the session it describes is replaced. */
-  const rerankHintRef = useRef<() => void>(() => {})
+  /** Re-asks for both shelves when a session load wipes them. */
+  const rerankAfterLoadRef = useRef<() => void>(() => {})
 
   // A different folder or session is a different scene: no held pick crosses it.
   useEffect(() => {
@@ -199,7 +200,7 @@ export default function MainLayout() {
    * session is the only time its file seeds the window; nothing re-reads it per
    * decision. Answers still in flight belong to the session that started them.
    */
-  const applyCues = useCallback((cues: Array<{ text: string; speaker?: string }>) => {
+  const adoptSession = useCallback((cues: Array<{ text: string; speaker?: string }>) => {
     lastRecApplied.current = ++recSeq.current
     lastSfxApplied.current = ++sfxSeq.current
     lastDmApplied.current = ++dmSeq.current
@@ -224,8 +225,11 @@ export default function MainLayout() {
     setSfxCandidates([])
     setSfxProbabilities({})
     setSfxAutopilot([])
-    // A typed hint owns both shelves; the wipe above must not leave them empty.
-    if (dmPromptRef.current.trim()) rerankHintRef.current()
+    // The effects dedupe holds the room that just went away.
+    sfxLastText.current = ''
+    sfxLastAt.current = 0
+    // The wipe above must not leave the DM looking at empty columns.
+    rerankAfterLoadRef.current()
   }, [])
 
   /** Load a session, and let only the last load start paint the pane. */
@@ -234,16 +238,16 @@ export default function MainLayout() {
       const run = ++sessionSeqRef.current
       const cues = await window.doty.sessionLoad(file)
       if (run !== sessionSeqRef.current) return
-      applyCues(cues)
+      adoptSession(cues)
     },
-    [applyCues],
+    [adoptSession],
   )
 
   /** A fresh session has no cues; it also cancels a load that is still in flight. */
   const resetSession = useCallback(() => {
     sessionSeqRef.current++
-    applyCues([])
-  }, [applyCues])
+    adoptSession([])
+  }, [adoptSession])
 
   // Load recommendation count and the autopilot master switch on mount
   useEffect(() => {
@@ -413,8 +417,8 @@ export default function MainLayout() {
     // The embedder pays per token on every final line, so only the moment is
     // embedded — but the hint sits at the head of a composed state, so keep both
     // ends rather than the tail alone.
-    const embedQuery = text.length > 400 ? `${text.slice(0, 100)} ${text.slice(-300)}` : text
-    const hits = embedQuery.trim() ? await window.doty.librarySearch(embedQuery, 'sfx', count).catch(() => null) : null
+    const query = embedQuery(text)
+    const hits = query.trim() ? await window.doty.librarySearch(query, 'sfx', count).catch(() => null) : null
     const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
     const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
     const candidates = mergeSfxCandidates(nearest, results, count)
@@ -498,10 +502,15 @@ export default function MainLayout() {
     [runSfxRecommendation, showRanking],
   )
 
-  // A hint owns both shelves, so a session switch has to re-ask for them.
-  rerankHintRef.current = () => {
+  // A session load wipes both shelves; they have to be asked for again.
+  rerankAfterLoadRef.current = () => {
     const hint = dmPromptRef.current.trim()
-    if (hint) void runDmRecommendation(hint)
+    if (hint) {
+      void runDmRecommendation(hint)
+      return
+    }
+    void runRecommendation()
+    runSfxRecommendation()
   }
 
   // When music folder becomes available, trigger default recommendations
@@ -525,8 +534,8 @@ export default function MainLayout() {
       // three new words, and two seconds since the last answer. A request that is
       // only too early is retried when the interval allows, not dropped, or a
       // long uninterrupted sentence would never refresh.
-      if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
       const maybeRecommend = () => {
+        recommendDebounceRef.current = null
         const wordsSince = cadenceRef.current.words
         const msSince = Date.now() - cadenceRef.current.at
         if (!shouldRecommend(wordsSince, msSince)) {
@@ -538,7 +547,11 @@ export default function MainLayout() {
         }
         void runRecommendation()
       }
-      recommendDebounceRef.current = setTimeout(maybeRecommend, contextRef.current.debounceMs)
+      // A line that re-armed the timer on every word would never rank a table
+      // that never pauses; the first pending timer is the ceiling.
+      if (!recommendDebounceRef.current) {
+        recommendDebounceRef.current = setTimeout(maybeRecommend, contextRef.current.debounceMs)
+      }
       // Run SFX recommendations immediately — heuristic is cheap (~5ms) and
       // autopilot needs low latency for reactive SFX triggers (see #43)
       runSfxRecommendation()

@@ -4,6 +4,7 @@ import {
   type ContextConfig,
   composeState,
   DEFAULT_CONTEXT,
+  embedQuery,
   MODEL_STATE_CHARS,
   mergeContext,
   normalizeContext,
@@ -53,12 +54,6 @@ describe('normalizeContext', () => {
     }
   })
 
-  it('keeps a reader below the window it reads from', () => {
-    const out = normalizeContext({ windowChars: 200, rankerChars: 4000, sfxChars: 4000 })
-    expect(out.rankerChars).toBe(200)
-    expect(out.sfxChars).toBe(200)
-  })
-
   it('rounds a fractional value', () => {
     expect(normalizeContext({ windowChars: 200.6 }).windowChars).toBe(201)
   })
@@ -96,10 +91,9 @@ describe('composeState', () => {
     expect(composeState('   ', 'they open the door', budget)).toBe('pen the door')
   })
 
-  it('never hands the model more than its row can hold, and keeps the hint', () => {
+  it('never hands the model more than its row can hold, and keeps the whole hint', () => {
     const long = composeState('h'.repeat(2000), 'w '.repeat(2000), { hintChars: 2000, transcriptChars: 4000 })
-    expect(long.length).toBeLessThanOrEqual(MODEL_STATE_CHARS)
-    expect(long.startsWith('hhhh')).toBe(true)
+    expect(long).toBe('h'.repeat(MODEL_STATE_CHARS))
   })
 
   it('keeps the newest words when the transcript has to give way', () => {
@@ -119,6 +113,20 @@ describe('seedWindow', () => {
   })
 })
 
+describe('embedQuery', () => {
+  it('leaves a short state alone', () => {
+    expect(embedQuery('the lich wakes')).toBe('the lich wakes')
+  })
+
+  it('keeps the hint at the head and the newest words at the tail', () => {
+    const hint = `hint:${'h'.repeat(95)}`
+    const query = embedQuery(`${hint} ${'m'.repeat(2000)} newest`)
+    expect(query.startsWith(hint)).toBe(true)
+    expect(query.endsWith('newest')).toBe(true)
+    expect(query.length).toBeLessThanOrEqual(401)
+  })
+})
+
 describe('mergeContext', () => {
   it('keeps the stored fields a patch does not mention', () => {
     const merged = mergeContext({ windowChars: 2000 }, { hintChars: 0 })
@@ -126,7 +134,7 @@ describe('mergeContext', () => {
     expect(merged.hintChars).toBe(0)
   })
 
-  it('clamps the merged result the way main does', () => {
-    expect(mergeContext({ windowChars: 200 }, { rankerChars: 4000 }).rankerChars).toBe(200)
+  it('clamps the merged result to its own bounds', () => {
+    expect(mergeContext({ windowChars: 200 }, { rankerChars: 4000 }).rankerChars).toBe(MODEL_STATE_CHARS)
   })
 })

@@ -1541,7 +1541,7 @@ export default function Settings({
               />
               <ContextSlider
                 label="Music context"
-                help="Characters of that window sent to the music ranker."
+                help="Characters of the window sent to the music ranker; the window caps it."
                 unit="chars"
                 value={context.rankerChars}
                 min={CONTEXT_LIMITS.rankerChars[0]}
@@ -1551,7 +1551,7 @@ export default function Settings({
               />
               <ContextSlider
                 label="Effects context"
-                help="Characters sent to the effects ranker."
+                help="Characters sent to the effects ranker; the window caps it."
                 unit="chars"
                 value={context.sfxChars}
                 min={CONTEXT_LIMITS.sfxChars[0]}
