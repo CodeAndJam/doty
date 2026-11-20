@@ -147,8 +147,8 @@ describe('embedQuery', () => {
     const hint = `hint:${'h'.repeat(95)}`
     const query = embedQuery(`${hint} ${'m'.repeat(2000)} newest`)
     expect(query.startsWith(hint)).toBe(true)
-    expect(query.endsWith('newest')).toBe(true)
-    expect(query.length).toBeLessThanOrEqual(401)
+    expect(query.endsWith(`${'m'.repeat(2000)} newest`.slice(-300))).toBe(true)
+    expect(query.length).toBe(401)
   })
 })
 

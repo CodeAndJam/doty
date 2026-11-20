@@ -135,10 +135,12 @@ export default function MainLayout() {
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Words spoken since the last ranking and when that was, for the two gates. */
   const cadenceRef = useRef(seedCadence(0))
-  /** The state the shelf is showing; a session load wipes it and clears this. */
-  const lastRecTextRef = useRef('')
+  /** The state the shelf is showing; null when the shelf paints nothing yet. */
+  const lastRecTextRef = useRef<string | null>(null)
   /** The state a ranking is already working on, so two callers do not both run it. */
   const recInFlightRef = useRef<string | null>(null)
+  /** Which run holds the in-flight marker: a superseded run must not clear a newer one. */
+  const recInFlightRunRef = useRef(0)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** The prompt the shelf is following; empty means the transcript owns it. */
@@ -208,6 +210,7 @@ export default function MainLayout() {
     lastRecApplied.current = ++recSeq.current
     lastSfxApplied.current = ++sfxSeq.current
     lastDmApplied.current = ++dmSeq.current
+    recInFlightRef.current = null
     setDmBusy(false)
     setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
     transcriptBufferRef.current = seedWindow(
@@ -232,7 +235,7 @@ export default function MainLayout() {
     // Both dedupes hold the room that just went away.
     sfxLastText.current = ''
     sfxLastAt.current = 0
-    lastRecTextRef.current = ''
+    lastRecTextRef.current = null
     // The wipe above must not leave the DM looking at empty columns.
     rerankAfterLoadRef.current()
   }, [])
@@ -369,6 +372,7 @@ export default function MainLayout() {
     // anything said while it runs stays pending.
     const rankedWords = cadenceRef.current.words
     recInFlightRef.current = state
+    recInFlightRunRef.current = run
     try {
       const files = await window.doty.listMusic()
       console.log('[recommend] runRecommendation called, files:', files.length)
@@ -394,8 +398,11 @@ export default function MainLayout() {
       setSessionText(state)
       lastRecTextRef.current = state
       cadenceRef.current = noteRanked(cadenceRef.current, Date.now(), rankedWords)
+    } catch (e) {
+      // Keep the previous list on screen; the next line retries.
+      console.error('[recommend] ranking failed:', e)
     } finally {
-      if (recInFlightRef.current === state) recInFlightRef.current = null
+      if (recInFlightRunRef.current === run) recInFlightRef.current = null
     }
   }, [showRanking])
 
@@ -406,6 +413,15 @@ export default function MainLayout() {
     const text =
       overrideText ??
       transcriptBufferRef.current.slice(-Math.min(contextRef.current.sfxChars, MODEL_STATE_CHARS)).trim()
+    // An empty room has nothing to rank, and the three library reads behind it
+    // are the expensive part: clear the column instead.
+    if (!text.trim()) {
+      setSfxRecommendations([])
+      setSfxCandidates([])
+      setSfxProbabilities({})
+      setSfxAutopilot([])
+      return
+    }
     // With a prompt set, the effects column follows the prompt, not the room.
     if (!overrideText && dmPromptRef.current.trim()) return
     if (text === sfxLastText.current && Date.now() - sfxLastAt.current < 5_000) return
@@ -501,7 +517,8 @@ export default function MainLayout() {
         showRanking(result)
         // The DM's answer does not describe a transcript state: when the hint is
         // cleared, the room must be allowed to rank that text again.
-        lastRecTextRef.current = ''
+        lastRecTextRef.current = null
+        recInFlightRef.current = null
         setLastTranscriptSnippet(prompt.slice(-120))
         setSessionText(combined)
         // The effects ranker has its own budget: the same hint, less of the room.
@@ -533,8 +550,11 @@ export default function MainLayout() {
   // When music folder becomes available, trigger default recommendations
   useEffect(() => {
     if (musicFolder) {
-      // The files changed; the last answer described another library.
-      lastRecTextRef.current = ''
+      // The files changed; the last answer described another library, and any
+      // ranking already running belongs to the old one.
+      lastRecApplied.current = ++recSeq.current
+      lastRecTextRef.current = null
+      recInFlightRef.current = null
       runRecommendation()
       runSfxRecommendation()
     }

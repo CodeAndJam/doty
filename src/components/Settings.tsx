@@ -146,23 +146,25 @@ function ContextSlider({
     }
   }, [flush])
 
+  // A range snaps to its step; announce the value the thumb actually holds.
+  const shown = min + Math.round((draft - min) / step) * step
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
         <span style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>{label}</span>
         <span style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>
-          {draft} {unit}
+          {shown} {unit}
         </span>
       </div>
       <input
         type="range"
         aria-label={label}
-        aria-valuetext={`${draft} ${spokenUnit}`}
+        aria-valuetext={`${shown} ${spokenUnit}`}
         aria-describedby={helpId}
         min={min}
         max={max}
         step={step}
-        value={draft}
+        value={shown}
         onChange={(e) => setDraft(Number(e.target.value))}
         onKeyUp={flushSoon}
         onBlur={flush}
