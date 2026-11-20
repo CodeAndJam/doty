@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { ARGS, decodeArgs, EVENTS, INVOKE } from './ipc'
+import { EVENTS, INVOKE } from './ipc'
+import { ARGS, decodeArgs } from './ipc-schema'
 
 const dir = join(process.cwd(), 'electron')
 const read = (file: string) => fs.readFileSync(join(dir, file), 'utf8')
