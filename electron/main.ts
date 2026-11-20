@@ -702,10 +702,19 @@ app.on('before-quit', (event) => {
       stopScanner()
       closeDb()
       destroyDiscord()
-      // Every write is closed above. Touching an ONNX session here (terminate,
-      // release) aborts the process inside the native binding; SIGKILL skips the
-      // finalizers entirely. All state is durable by this point.
-      app.exit(0)
+      // Every write is closed above. Releasing or exiting through Electron runs
+      // the ONNX finalizers, which abort when a session exists; SIGKILL skips
+      // them. The helpers are killed first, so none is left orphaned holding the
+      // profile (a plain SIGKILL leaves the GPU/renderer processes behind).
+      for (const metric of app.getAppMetrics()) {
+        if (metric.pid === process.pid) continue
+        try {
+          process.kill(metric.pid, 'SIGKILL')
+        } catch {
+          /* already gone */
+        }
+      }
+      process.kill(process.pid, 'SIGKILL')
     })()
   }, 3_000)
 })
