@@ -85,6 +85,9 @@ export const INVOKE = {
   // Autopilot (#12)
   getAutopilotConfig: 'autopilot:get-config',
   setAutopilotConfig: 'autopilot:set-config',
+  // Updates
+  updateGetState: 'update:get-state',
+  updateInstall: 'update:install',
   // Debug
   debugGetState: 'debug:get-state',
   debugSetEnabled: 'debug:set-enabled',
@@ -155,6 +158,8 @@ export const EVENTS = {
   musicFolderChanged: 'music:folder-changed',
   sessionsChanged: 'sessions:changed',
   sfxChanged: 'sfx:changed',
+  // Updates
+  updateState: 'update:state',
   // Lights
   lightsState: 'lights:state',
   // Discord

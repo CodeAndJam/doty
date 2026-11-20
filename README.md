@@ -83,6 +83,8 @@ first-run fetch, so it is deliberately not the default.
 
 Grab the latest `.dmg` from the [Releases](https://github.com/CodeAndJam/doty/releases) page, open it, and drag Doty to your Applications folder. If macOS refuses to open it, see [Troubleshooting](#troubleshooting).
 
+After that first install Doty updates itself: it asks GitHub once per launch, and when there is a newer release a slim bar appears at the bottom of the window with **Update & restart**. The DMG is downloaded by the app, so no browser writes `com.apple.quarantine` onto it, and the swapped-in build opens without the `xattr` step below. That step is still needed for the first download, and for any build you fetch by hand.
+
 ### Requirements
 
 - macOS (Apple Silicon)
@@ -187,6 +189,8 @@ xattr -dr com.apple.quarantine /Applications/Doty.app
 ```
 
 Alternatively: right-click (or Control-click) Doty in Applications, choose **Open**, then confirm **Open** in the dialog. macOS remembers the choice for later launches.
+
+This is a first-launch problem only. Updates installed from the bar inside Doty need none of it: the app downloads the DMG itself, and a file no browser touched carries no quarantine flag.
 
 ### Discord
 

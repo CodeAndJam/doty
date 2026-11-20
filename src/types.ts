@@ -242,6 +242,17 @@ export interface DiscordState {
 
 export type MicPermission = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
 
+/**
+ * The updater's one state: a newer release is offered, downloaded, and swapped
+ * in after quit. Nothing here ever interrupts playback.
+ */
+export type UpdateState =
+  | { status: 'idle' }
+  | { status: 'available'; version: string; sizeMB: number }
+  | { status: 'downloading'; version: string; percent: number }
+  | { status: 'installing'; version: string }
+  | { status: 'error'; version: string; error: string }
+
 /** What the Advanced tab needs to explain a machine that misbehaves. */
 export interface DebugState {
   enabled: boolean
@@ -476,6 +487,12 @@ export interface DotyAPI {
   onDiscordState: (cb: (state: DiscordState) => void) => () => void
   /** Capture mode, who is being captured, and why it stopped. */
   onCaptureState: (cb: (state: CaptureState) => void) => () => void
+
+  // Updates
+  updateState: () => Promise<UpdateState>
+  /** Download and swap in the offered release, then quit. */
+  updateInstall: () => Promise<{ ok: boolean; error?: string }>
+  onUpdateState: (cb: (state: UpdateState) => void) => () => void
 }
 
 declare global {

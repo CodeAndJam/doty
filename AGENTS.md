@@ -93,9 +93,9 @@ Concretely, when changing anything in the recommendation or playback path:
   the KPIs. Thresholds and heuristics change only against real session data (see
   `test-fixtures/` and the eval items in `TODO.md`), never on intuition.
 - **Everything local.** No telemetry, no cloud calls; network use is model
-  downloads and the DM's own Home Assistant on their own network — LAN or
-  tailnet, never a public address
-  (`docs/adr/0004-home-assistant-on-the-lan.md`).
+  downloads, the release check (`docs/adr/0006-updates-without-a-developer-id.md`)
+  and the DM's own Home Assistant on their own network — LAN or tailnet, never a
+  public address (`docs/adr/0004-home-assistant-on-the-lan.md`).
 
 ## Contracts before you grep
 

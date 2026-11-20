@@ -10,6 +10,13 @@
       targets, `switch.*` lamps, switches as a device class, and OAuth consent
       (ADR v2). Thresholds and the 25 s dwell move only
       against `session_decisions` rows with `kind = 'light'`.
+- [ ] Updates: the bar, the 234 MB download and the post-quit swap ship
+      (`electron/updater.ts`, `docs/adr/0006`). The artifact is verified — v5.4.0's
+      DMG carries no `com.apple.quarantine` anywhere in the bundle, `codesign
+      --verify --deep --strict` passes, and its designated requirement is a
+      per-build cdhash, which is why Squirrel cannot update it. Still open: one
+      release end to end on a machine where Doty lives in `/Applications`, the
+      only way to watch the swap and the new build's first launch.
 - [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
       soundboard until they are configured, the way the lights pane already
       hides itself. Needs its own before/after; it moves muscle memory.
