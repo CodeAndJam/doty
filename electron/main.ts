@@ -628,17 +628,28 @@ app.whenReady().then(async () => {
   }
 })
 
-app.on('before-quit', () => {
-  // Before the database closes: nothing may emit status after that point.
+let cleaningUp = false
+
+app.on('before-quit', (event) => {
+  if (cleaningUp) return
+  // Closing the database or terminating the ONNX worker while a run is in flight
+  // aborts the process (Napi::Error). Stop the indexer, let the current batch
+  // finish, then do the teardown.
+  event.preventDefault()
+  cleaningUp = true
   quitting = true
+  library.pause()
   // Restore the room before the light director loses the database.
   void lighting.endSession().catch(() => {})
-  finalizeWavRecording()
-  freeRecognizer()
-  disposeRanker()
-  stopScanner()
-  closeDb()
-  destroyDiscord()
+  setTimeout(() => {
+    finalizeWavRecording()
+    freeRecognizer()
+    disposeRanker()
+    stopScanner()
+    closeDb()
+    destroyDiscord()
+    app.quit()
+  }, 3_000)
 })
 
 app.on('window-all-closed', () => {
