@@ -16,7 +16,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           release-type: node
@@ -28,21 +28,21 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'pnpm'
 
-      - name: Setup Python 3.10 (required for native addon rebuild)
-        uses: actions/setup-python@v5
+      - name: Setup Python 3.14 (required for native addon rebuild)
+        uses: actions/setup-python@v7
         with:
-          python-version: '3.10'
+          python-version: '3.14'
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -59,7 +59,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Upload DMG to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: dist/*.dmg
