@@ -1533,6 +1533,7 @@ export default function Settings({
                 label="Transcript window"
                 help="Characters kept from the live transcript."
                 unit="chars"
+                spokenUnit="characters"
                 value={context.windowChars}
                 min={CONTEXT_LIMITS.windowChars[0]}
                 max={CONTEXT_LIMITS.windowChars[1]}
@@ -1543,6 +1544,7 @@ export default function Settings({
                 label="Music context"
                 help="Characters of the window sent to the music ranker; the window caps it."
                 unit="chars"
+                spokenUnit="characters"
                 value={context.rankerChars}
                 min={CONTEXT_LIMITS.rankerChars[0]}
                 max={CONTEXT_LIMITS.rankerChars[1]}
@@ -1553,6 +1555,7 @@ export default function Settings({
                 label="Effects context"
                 help="Characters sent to the effects ranker; the window caps it."
                 unit="chars"
+                spokenUnit="characters"
                 value={context.sfxChars}
                 min={CONTEXT_LIMITS.sfxChars[0]}
                 max={CONTEXT_LIMITS.sfxChars[1]}
@@ -1563,6 +1566,7 @@ export default function Settings({
                 label="Hint length"
                 help="How much of your typed hint reaches the models. Zero silences it for them; the lights still read all of it."
                 unit="chars"
+                spokenUnit="characters"
                 value={context.hintChars}
                 min={CONTEXT_LIMITS.hintChars[0]}
                 max={CONTEXT_LIMITS.hintChars[1]}
@@ -1571,7 +1575,7 @@ export default function Settings({
               />
               <ContextSlider
                 label="Ranking delay"
-                help="Quiet after a line before ranking. A ranking still waits two seconds after the last one."
+                help="The longest a line waits before ranking. A ranking still waits two seconds after the last one."
                 unit="ms"
                 spokenUnit="milliseconds"
                 value={context.debounceMs}

@@ -19,7 +19,7 @@ export interface ContextConfig {
   sfxChars: number
   /** Chars of the DM's Session Hint sent to the models. */
   hintChars: number
-  /** Ms between a transcript line and the ranking it triggers. */
+  /** The longest a line waits before the ranking it triggers. */
   debounceMs: number
 }
 

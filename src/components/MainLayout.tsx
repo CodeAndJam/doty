@@ -135,6 +135,8 @@ export default function MainLayout() {
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Words spoken since the last ranking and when that was, for the two gates. */
   const cadenceRef = useRef(seedCadence(0))
+  /** The state the shelf is already showing: the same words are not ranked twice. */
+  const lastRecTextRef = useRef('')
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** The prompt the shelf is following; empty means the transcript owns it. */
@@ -356,16 +358,19 @@ export default function MainLayout() {
     // Words already spoken when this run starts are the ones it accounts for;
     // anything said while it runs stays pending.
     const rankedWords = cadenceRef.current.words
+    const recentTranscript = transcriptBufferRef.current
+      .slice(-Math.min(contextRef.current.rankerChars, MODEL_STATE_CHARS))
+      .trim()
+    const state = recentTranscript
+    // A folder event and a session load can both ask for the same state; the
+    // second answer would queue behind the first and paint the same cards.
+    if (state === lastRecTextRef.current && Date.now() - cadenceRef.current.at < 5_000) return
     const files = await window.doty.listMusic()
     console.log('[recommend] runRecommendation called, files:', files.length)
     if (files.length === 0) {
       console.log('[recommend] no files, skipping')
       return
     }
-    const recentTranscript = transcriptBufferRef.current
-      .slice(-Math.min(contextRef.current.rankerChars, MODEL_STATE_CHARS))
-      .trim()
-    const state = recentTranscript
     console.log(
       '[recommend] transcript context:',
       recentTranscript.length,
@@ -382,6 +387,7 @@ export default function MainLayout() {
     showRanking(result)
     setLastTranscriptSnippet(recentTranscript.slice(-120))
     setSessionText(state)
+    lastRecTextRef.current = state
     cadenceRef.current = noteRanked(cadenceRef.current, Date.now(), rankedWords)
   }, [showRanking])
 
@@ -641,6 +647,7 @@ export default function MainLayout() {
       unsubSessions()
       window.removeEventListener('keydown', handleKeyDown)
       if (recommendDebounceRef.current) clearTimeout(recommendDebounceRef.current)
+      recommendDebounceRef.current = null
       if (dmDebounceRef.current) clearTimeout(dmDebounceRef.current)
       if (interimDebounceRef.current) clearTimeout(interimDebounceRef.current)
     }

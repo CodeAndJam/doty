@@ -43,7 +43,7 @@ describe('recommendation cadence', () => {
 
     cadence = noteSpokenWords(cadence, 'the lich wakes')
     cadence = noteSpokenWords(cadence, '')
-    expect(cadence.words).toBe(3)
+    expect(cadence).toEqual({ words: 3, at: 0 })
     expect(shouldRecommend(cadence.words, MIN_INTERVAL_MS)).toBe(true)
   })
 
@@ -58,8 +58,9 @@ describe('recommendation cadence', () => {
     let cadence = noteSpokenWords(seedCadence(0), 'a b c')
     const rankedWords = cadence.words
     cadence = noteSpokenWords(cadence, 'd e f')
+    expect(cadence).toEqual({ words: 6, at: 0 })
     cadence = noteRanked(cadence, 5_000, rankedWords)
-    expect(cadence.words).toBe(3)
+    expect(cadence).toEqual({ words: 3, at: 5_000 })
   })
 
   it('never goes negative when the counter was reset under a ranking', () => {

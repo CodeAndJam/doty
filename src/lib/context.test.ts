@@ -14,6 +14,16 @@ import {
 const KEYS = Object.keys(CONTEXT_LIMITS) as Array<keyof ContextConfig>
 
 describe('normalizeContext', () => {
+  it('ships the defaults the rest of the app was built on', () => {
+    expect(DEFAULT_CONTEXT).toEqual({
+      windowChars: 800,
+      rankerChars: 500,
+      sfxChars: 500,
+      hintChars: 300,
+      debounceMs: 1500,
+    })
+  })
+
   it('fills every field from the defaults', () => {
     expect(normalizeContext(undefined)).toEqual(DEFAULT_CONTEXT)
     expect(normalizeContext({})).toEqual(DEFAULT_CONTEXT)
@@ -109,6 +119,7 @@ describe('seedWindow', () => {
     const seeded = seedWindow(['old words', 'the lich wakes'], 13)
     expect(seeded).toHaveLength(13)
     expect('the lich wakes'.endsWith(seeded)).toBe(true)
+    expect(seedWindow(['old words', 'the lich wakes'], 100)).toBe('old words the lich wakes')
     expect(seedWindow(['', 'only this'], 100)).toBe('only this')
   })
 })
@@ -116,6 +127,7 @@ describe('seedWindow', () => {
 describe('embedQuery', () => {
   it('leaves a short state alone', () => {
     expect(embedQuery('the lich wakes')).toBe('the lich wakes')
+    expect(embedQuery('x'.repeat(400))).toBe('x'.repeat(400))
   })
 
   it('keeps the hint at the head and the newest words at the tail', () => {
