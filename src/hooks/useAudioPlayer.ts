@@ -300,6 +300,9 @@ export function useAudioPlayer({
           // loadeddata, not loadedmetadata: a blob's metadata is known before it
           // is seekable, and a currentTime set too early collapses to 0.
           audio.oncanplay = () => {
+            // One shot: `canplay` fires again after every seek, and re-applying
+            // the recovery target would drag the DM's next seek back to it.
+            audio.oncanplay = null
             audio.currentTime = Math.min(target, audio.duration || target)
             audio.play().catch(() => {})
             setIsAudioPlaying(true)

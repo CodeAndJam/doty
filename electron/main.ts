@@ -1765,6 +1765,7 @@ handle(INVOKE.updateInstall, async () => {
       workDir: join(app.getPath('temp'), 'doty-update'),
       onProgress: (percent) => setUpdateState({ status: 'downloading', version, percent }),
       download: downloadFile,
+      canSwap: () => !recordingActive,
     })
     // The script waits for this process to exit, then swaps the bundle.
     setUpdateState({ status: 'installing', version })

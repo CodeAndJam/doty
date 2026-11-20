@@ -83,16 +83,31 @@ describe('bundleFromExecutable', () => {
 describe('checkForUpdate', () => {
   const release = {
     tag_name: 'v5.4.0',
-    assets: [{ name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 1024 }],
+    assets: [
+      {
+        name: 'Doty-5.4.0-arm64.dmg',
+        browser_download_url: 'https://x/arm64.dmg',
+        size: 1024,
+        digest: 'sha256:abc',
+      },
+    ],
   }
 
   it('offers a newer release with its DMG', async () => {
     const found = await checkForUpdate('5.3.0', 'arm64', async () => [release])
-    expect(found).toEqual({ version: '5.4.0', url: 'https://x/arm64.dmg', sizeMB: 0 })
+    expect(found).toEqual({ version: '5.4.0', url: 'https://x/arm64.dmg', sizeMB: 0, sha256: 'abc' })
   })
 
   it('offers nothing when this build is current', async () => {
     expect(await checkForUpdate('5.4.0', 'arm64', async () => [release])).toBeNull()
+  })
+
+  it('offers nothing for a release whose DMG has no digest', async () => {
+    const undigested = {
+      tag_name: 'v5.4.0',
+      assets: [{ name: 'Doty-5.4.0-arm64.dmg', browser_download_url: 'https://x/arm64.dmg', size: 1024 }],
+    }
+    expect(await checkForUpdate('5.3.0', 'arm64', async () => [undigested])).toBeNull()
   })
 
   it('offers nothing for a release with no DMG attached', async () => {
@@ -106,6 +121,7 @@ describe('checkForUpdate', () => {
       version: '5.4.0',
       url: 'https://x/arm64.dmg',
       sizeMB: 0,
+      sha256: 'abc',
     })
   })
 

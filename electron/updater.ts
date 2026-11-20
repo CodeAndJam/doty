@@ -96,7 +96,8 @@ export async function checkForUpdate(
   const tag = String(newest.tag_name)
   if (!isNewer(tag, currentVersion)) return null
   const dmg = pickDmg(newest.assets ?? [], arch)
-  return dmg ? { version: parseVersion(tag)?.join('.') ?? tag, ...dmg } : null
+  // No digest, no offer: an install that can only fail is a dead end.
+  return dmg?.sha256 ? { version: parseVersion(tag)?.join('.') ?? tag, ...dmg } : null
 }
 
 export interface InstallOptions {
@@ -110,6 +111,8 @@ export interface InstallOptions {
   workDir: string
   onProgress(percent: number): void
   download(url: string, dest: string, onProgress: (percent: number) => void): Promise<void>
+  /** Checked after the mount, before quitting is armed: a take may have begun. */
+  canSwap?: () => boolean
 }
 
 /**
@@ -159,6 +162,12 @@ export async function installUpdate(options: InstallOptions): Promise<void> {
     // A rejected image is still mounted; leave nothing behind.
     await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
     throw error
+  }
+
+  // The download can take minutes; the DM may have started recording since.
+  if (options.canSwap && !options.canSwap()) {
+    await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
+    throw new Error('A session started; finish it before updating')
   }
 
   fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o755 })
@@ -215,7 +224,8 @@ restore() {
 trap restore EXIT INT TERM
 src=$(ls -d "$mount"/*.app 2>/dev/null | head -1)
 rm -rf "$target.new"
-if [ -n "$src" ] && ditto "$src" "$target.new" && rm -rf "$target.old" && mv "$target" "$target.old" && mv "$target.new" "$target"; then
+if [ -n "$src" ] && ditto "$src" "$target.new" && mv "$target" "$target.old" && mv "$target.new" "$target"; then
+  rm -rf "$target.old"
   hdiutil detach "$mount" -quiet
   rm -f "$dmg"
   open "$target"
