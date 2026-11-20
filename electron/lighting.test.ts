@@ -104,6 +104,21 @@ describe('lighting service', () => {
     expect(applied[1]).toEqual({ ids: ['light.desk'], preset: { effect: 'rainbow' } })
   })
 
+  it('releases the gate when a write fails', async () => {
+    let fail = true
+    const { lighting, applied } = rig(async () => {
+      if (!fail) return
+      fail = false
+      throw new Error('lamp offline')
+    })
+    await lighting.state(null)
+
+    await expect(lighting.setBrightness(20)).rejects.toThrow('lamp offline')
+    // A refused write must not hold the permit: the next command still lands.
+    await lighting.setBrightness(80)
+    expect(applied.at(-1)?.preset.brightnessPct).toBe(80)
+  })
+
   it('lets one command finish before the next one writes', async () => {
     const events: string[] = []
     let release: () => void = () => {}

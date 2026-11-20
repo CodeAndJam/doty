@@ -161,43 +161,14 @@ describe('ranker supervisor', () => {
     await queuedFailed
   })
 
-  it('does not merge a reordered option list', async () => {
-    const ranker = await load()
-
-    const first = ranker.decide('first', ['x', 'y'])
-    await waitFor(() => decidePosts().length === 1)
-    const second = ranker.decide('second', ['y', 'x'])
-    // Same files, different order: a sorted-key merge would fold this into
-    // `second`, and the probabilities would map to the wrong tracks.
-    const third = ranker.decide('third', ['x', 'y'])
-    await settle()
-    expect(decidePosts()).toHaveLength(1)
-
-    const worker = fake.FakeWorker.latest!
-    worker.hold = false
-    worker.answer(worker.posted[0])
-    await expect(first).resolves.toEqual([0.5])
-    await waitFor(() => decidePosts().length === 2)
-    worker.answer(worker.posted[1])
-    await waitFor(() => decidePosts().length === 3)
-    worker.answer(worker.posted[2])
-    await expect(second).resolves.toEqual([0.5])
-    await expect(third).resolves.toEqual([0.5])
-    expect(decidePosts()).toHaveLength(3)
-
-    await ranker.disposeRanker()
-  })
-
-  it('serves another question kind before the next queued decide', async () => {
+  it('serves a waiting effects question before a later decide', async () => {
     const ranker = await load()
 
     const first = ranker.decide('first', ['x'])
     await waitFor(() => decidePosts().length === 1)
-    // A backlog of two decides, then one effects question. The first decide job
-    // is taken; the second must go behind `sfx`, not in front of it.
-    const second = ranker.decide('second', ['y'])
-    const third = ranker.decide('third', ['w'])
+    // Arrival order decides: one waiting job per question, so nothing can starve.
     const sfx = ranker.rankSfx('a roar', ['z'])
+    const second = ranker.decide('second', ['y'])
     await settle()
 
     const worker = fake.FakeWorker.latest!
@@ -205,66 +176,43 @@ describe('ranker supervisor', () => {
     worker.answer(worker.posted[0])
     await expect(first).resolves.toEqual([0.5])
 
-    // `second` was queued first; the rotation only reorders what is left.
     await waitFor(() => worker.posted.length === 2)
-    expect((worker.posted[1] as { prompt?: string }).prompt).toBe('second')
+    expect((worker.posted[1] as { type: string }).type).toBe('sfx')
     worker.answer(worker.posted[1])
-    await expect(second).resolves.toEqual([0.5])
-
-    // Round-robin: the decide backlog must not starve the effects question.
-    await waitFor(() => worker.posted.length === 3)
-    expect((worker.posted[2] as { type: string }).type).toBe('sfx')
-    worker.answer(worker.posted[2])
     await expect(sfx).resolves.toEqual([0.5])
 
-    await waitFor(() => worker.posted.length === 4)
-    worker.answer(worker.posted[3])
-    await expect(third).resolves.toEqual([0.5])
+    await waitFor(() => worker.posted.length === 3)
+    worker.answer(worker.posted[2])
+    await expect(second).resolves.toEqual([0.5])
 
     await ranker.disposeRanker()
   })
 
-  it('ignores an answer that arrives during teardown and still terminates', async () => {
+  it('replaces a waiting job whose options changed and fails its caller', async () => {
     const ranker = await load()
+
     const first = ranker.decide('first', ['x'])
     await waitFor(() => decidePosts().length === 1)
-    const worker = fake.FakeWorker.latest!
-    const answerId = worker.posted[0].id
-    worker.autoClose = false
-
-    // Attach before disposing: `failPending` rejects it synchronously.
-    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
-    const closing = ranker.disposeRanker()
+    const second = ranker.decide('second', ['y'])
+    const secondFailed = expect(second).rejects.toThrow('superseded')
+    // A newer scene with different options: the waiting job is replaced rather
+    // than queued behind, or the pass would describe a scene that is over.
+    const third = ranker.decide('third', ['z'])
     await settle()
-    // The in-flight forward pass answers after the close request. A `once`
-    // listener would swallow it and wait out the 3 s teardown.
-    worker.emit('message', { type: 'probabilities', id: answerId, probabilities: [0.5] })
-    await settle()
-    expect(worker.terminated).toBe(false)
 
-    worker.emit('message', { type: 'closed' })
-    await closing
-    expect(worker.terminated).toBe(true)
-    await firstFailed
-  })
-
-  it('refuses a caller that arrives during the teardown', async () => {
-    const ranker = await load()
-    const first = ranker.decide('first', ['x'])
-    await waitFor(() => decidePosts().length === 1)
     const worker = fake.FakeWorker.latest!
-    worker.autoClose = false
+    worker.hold = false
+    worker.answer(worker.posted[0])
+    await expect(first).resolves.toEqual([0.5])
+    await secondFailed
 
-    const firstFailed = expect(first).rejects.toThrow(/disposed|exited/)
-    const closing = ranker.disposeRanker()
-    // Lands inside the close handshake: it must not fork a worker for a model
-    // that is being deleted.
-    await expect(ranker.decide('late', ['y'])).rejects.toThrow(/disposed/)
+    await waitFor(() => decidePosts().length === 2)
+    expect((worker.posted[1] as { prompt?: string }).prompt).toBe('third')
+    worker.answer(worker.posted[1])
+    await expect(third).resolves.toEqual([0.5])
+    expect(decidePosts()).toHaveLength(2)
 
-    worker.emit('message', { type: 'closed' })
-    await closing
-    await firstFailed
-    expect(fake.FakeWorker.latest).toBe(worker)
+    await ranker.disposeRanker()
   })
 
   it('waits for the teardown it joined, and refuses work meanwhile', async () => {
@@ -324,32 +272,6 @@ describe('ranker supervisor', () => {
     fresh.hold = false
     fresh.answer(fresh.posted[fresh.posted.length - 1])
     await expect(next).resolves.toEqual([0.5])
-    await ranker.disposeRanker()
-  })
-
-  it('does not merge a question whose options changed', async () => {
-    const ranker = await load()
-
-    const first = ranker.decide('first', ['x'])
-    await waitFor(() => decidePosts().length === 1)
-    const second = ranker.decide('second', ['y'])
-    const third = ranker.decide('third', ['z'])
-    await settle()
-    expect(decidePosts()).toHaveLength(1)
-
-    const worker = fake.FakeWorker.latest!
-    worker.hold = false
-    worker.answer(worker.posted[0])
-    await expect(first).resolves.toEqual([0.5])
-    await waitFor(() => decidePosts().length === 2)
-    worker.answer(worker.posted[1])
-    await waitFor(() => decidePosts().length === 3)
-    worker.answer(worker.posted[2])
-
-    await expect(second).resolves.toEqual([0.5])
-    await expect(third).resolves.toEqual([0.5])
-    expect(decidePosts()).toHaveLength(3)
-
     await ranker.disposeRanker()
   })
 

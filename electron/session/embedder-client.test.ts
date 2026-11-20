@@ -172,6 +172,25 @@ describe('embedder client', () => {
     await vi.advanceTimersByTimeAsync(15_100)
     await failed
     expect(child.killed).toBe(false)
+
+    // A document batch keeps the long budget: a query queued behind an audio
+    // pass must not be the reason a batch gives up.
+    const batch = embedder.embedDocuments(['a'])
+    // Attach before advancing: the timer rejects during `advance`.
+    const batchFailed = expect(batch).rejects.toThrow('did not answer documents')
+    let settled = false
+    void batch.then(
+      () => {
+        settled = true
+      },
+      () => {
+        settled = true
+      },
+    )
+    await vi.advanceTimersByTimeAsync(15_100)
+    expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(285_000)
+    await batchFailed
   })
 
   it('kills a worker that never answers its dispose', async () => {

@@ -383,6 +383,7 @@ Nothing here may stop playback or hide the suggestions.
 
 | Area | Channels |
 |---|---|
+| Settings | `settings:get-context` · `settings:set-context` |
 | Transcript | `stt:start` · `stt:stop` · `stt:transcribe-chunk` · `stt:transcript` · `stt:interim` · `stt:status` |
 | Sessions | `session:create` · `session:list` · `session:load` · `session:rename` · `session:delete` |
 | Library | `music:list` · `music:get-all-metadata` · `library:search` · `library:set-lane` · `library:move-track` · `embedding:status` · `embedding:progress` |
@@ -393,6 +394,11 @@ Nothing here may stop playback or hide the suggestions.
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
 | Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-pulse` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
 | Updates | `update:get-state` · `update:install` · event `update:state` |
+`electron/ipc.ts` declares the channel names; `electron/ipc-schema.ts` declares
+one argument tuple per channel, and `handle` decodes every call through it. The
+schema file is main-only because it imports Effect, and the preload must stay
+free of the runtime.
+
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a
 command, so the renderer stays the only thing that touches playback.

@@ -1916,6 +1916,9 @@ handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: 
     await embeddingDispose(settling ?? null)
     await embeddingDispose(embedder)
     embedder = null
+    // A resolved fetch memo would make `ensureEmbedder` a no-op for the rest of
+    // the session, so the model would never come back.
+    embedderFetch = null
     fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
   } finally {
     deletingEmbedder = false

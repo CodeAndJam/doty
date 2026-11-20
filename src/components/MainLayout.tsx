@@ -139,6 +139,9 @@ export default function MainLayout() {
   const lastRecTextRef = useRef<string | null>(null)
   /** The state a ranking is already working on, so two callers do not both run it. */
   const recInFlightRef = useRef<string | null>(null)
+  /** A line that arrived while a pass was running, ranked once it lands. */
+  const recSkippedRef = useRef(false)
+  const runRecommendationRef = useRef<() => Promise<void>>(async () => {})
   /** Which run holds the in-flight marker: a superseded run must not clear a newer one. */
   const recInFlightRunRef = useRef(0)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -366,7 +369,13 @@ export default function MainLayout() {
     const state = recentTranscript
     // The same words are not ranked twice: a folder event and a session load can
     // both ask. A session load clears this, because it also cleared the shelf.
-    if (state === lastRecTextRef.current || state === recInFlightRef.current) return
+    if (state === lastRecTextRef.current) return
+    // One pass at a time: a 4.4 s pass against a 2 s cadence would otherwise
+    // queue a request every debounce and answer a scene the table has left.
+    if (recInFlightRef.current !== null) {
+      recSkippedRef.current = true
+      return
+    }
     const run = ++recSeq.current
     // Words already spoken when this run starts are the ones it accounts for;
     // anything said while it runs stays pending.
@@ -403,8 +412,16 @@ export default function MainLayout() {
       console.error('[recommend] ranking failed:', e)
     } finally {
       if (recInFlightRunRef.current === run) recInFlightRef.current = null
+      // The table kept talking while the pass ran: rank once more with the words
+      // that arrived, so the last line is never dropped.
+      if (recSkippedRef.current) {
+        recSkippedRef.current = false
+        setTimeout(() => void runRecommendationRef.current(), 0)
+      }
     }
   }, [showRanking])
+
+  runRecommendationRef.current = runRecommendation
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
     // Every recommendation re-sends the same DM text. Re-ranking it within a few
@@ -528,6 +545,11 @@ export default function MainLayout() {
             transcriptChars: budget.sfxChars,
           }),
         )
+      } catch (e) {
+        // A rejected IPC call must not become an unhandled rejection out of a
+        // `void` caller; the room's own ranking retries on the next line.
+        console.error('[recommend] DM ranking failed:', e)
+        lastRecTextRef.current = null
       } finally {
         // Still busy if the DM has typed something newer since this answer.
         if (run === dmSeq.current && dmPromptRef.current.trim() === prompt.trim()) setDmBusy(false)

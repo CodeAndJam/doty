@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { Option, Schema } from 'effect'
+import { ContextConfigSchema } from '../src/lib/context-schema'
 import { USER_DATA_DIR } from './profile'
 
 /**
@@ -16,15 +17,7 @@ const FIELDS = {
   transcriptFolder: Schema.String,
   recommendationCount: Schema.Number,
   /** What the models may read of the room: the DM's experiment surface. */
-  context: Schema.optional(
-    Schema.Struct({
-      windowChars: Schema.optional(Schema.Number),
-      rankerChars: Schema.optional(Schema.Number),
-      sfxChars: Schema.optional(Schema.Number),
-      hintChars: Schema.optional(Schema.Number),
-      debounceMs: Schema.optional(Schema.Number),
-    }),
-  ),
+  context: Schema.optional(ContextConfigSchema),
   hotwordsFile: Schema.String,
   sfxFolder: Schema.String,
   sfxRecommendationCount: Schema.Number,
@@ -135,6 +128,11 @@ function load(): StoreData {
   if (ignored.length > 0) {
     console.warn(`[store] ignored settings with the wrong type: ${ignored.join(', ')}`)
   }
+  // Keep keys this build does not know: a downgrade must not erase a newer
+  // release's settings on the first write.
+  for (const [key, value] of Object.entries(source)) {
+    if (!(key in FIELDS)) data[key] = value
+  }
   return data as StoreData
 }
 
@@ -151,6 +149,9 @@ function write(data: StoreData): void {
   // Atomic replace: a crash mid-write must not truncate the existing config.
   const tmpPath = `${storePath}.tmp`
   fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), { mode: 0o600 })
+  // `mode` only applies to a new file: a temp left by an older build is 0644 and
+  // the rename would carry that onto the config.
+  fs.chmodSync(tmpPath, 0o600)
   fs.renameSync(tmpPath, storePath)
 }
 

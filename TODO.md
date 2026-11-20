@@ -248,6 +248,22 @@
       and a voice channel), a co-tenancy stage with OBS and a browser, and a
       clean way to run the gate without GitHub's 7 GB macOS runners.
 
+- [ ] STT: the readiness signal (`asr.ts`: `armReadiness`/`settleReadiness`, the
+      generation counter, the 60 s deadline) has no test, and the module has no
+      seam to give it one. Extract it to `electron/asr-readiness.ts` taking a
+      clock, the way `policy.ts` takes `now`.
+- [ ] Ranker: the 3 s teardown timeout resolves with the old thread still alive,
+      so a delete can unlink the graph under a running pass and a new `decide`
+      can put two 1.5 GB workers in memory for those seconds. Needs a decision:
+      wait for `closed` unconditionally, or refuse the delete while a pass runs.
+- [ ] Embedder: the utility process opens whatever `dir` its parent sends. Not
+      reachable today (one constant), but the root should travel with the request
+      and be checked where the file is opened.
+- [ ] Context: `rankerChars`/`sfxChars`/`hintChars` allow 1400 chars, but the
+      model row holds ~1024 tokens (~800 chars in Portuguese), and truncation
+      keeps the head, so raising the sliders spends tokens and drops the newest
+      words. Cap them at the row, or budget the composition in tokens.
+
 ## Music Player — Implementation Order
 
 1. [x] #24 — Architecture refactor: extract composable hooks from `useAudioPlayer` (foundation)

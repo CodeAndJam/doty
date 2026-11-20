@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { CONTEXT_LIMITS, DEFAULT_CONTEXT, mergeContext } from '../src/lib/context'
 import { EVENTS, INVOKE } from './ipc'
 import { ARGS, decodeArgs } from './ipc-schema'
 
@@ -55,5 +56,14 @@ describe('IPC channel registry', () => {
     expect(() => decodeArgs(INVOKE.setSttLanguage, [42])).toThrow()
     // A channel with no arguments passes through untouched.
     expect(decodeArgs(INVOKE.sttStart, [])).toEqual([])
+  })
+
+  it('decodes a context patch without inventing fields', () => {
+    const [patch] = decodeArgs(INVOKE.setContext, [{ hintChars: 0, bogus: true }])
+    expect(patch).toEqual({ hintChars: 0 })
+    expect(mergeContext(DEFAULT_CONTEXT, patch).hintChars).toBe(0)
+    // The renderer is a hint, not the authority: main clamps what arrives.
+    const [absurd] = decodeArgs(INVOKE.setContext, [{ hintChars: 1e9 }])
+    expect(mergeContext(DEFAULT_CONTEXT, absurd).hintChars).toBe(CONTEXT_LIMITS.hintChars[1])
   })
 })

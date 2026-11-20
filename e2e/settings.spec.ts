@@ -249,3 +249,27 @@ test('opening from the header model-missing chip lands on Transcription', async 
     cleanup(h)
   }
 })
+
+test('a context budget is clamped by main, not by the panel', async () => {
+  const h = harness()
+  let app: ElectronApplication | undefined
+  try {
+    let page: Page
+    ;({ app, page } = await openApp(h))
+
+    // Straight through the seam, bypassing the slider: the IPC schema decodes
+    // the patch, the store keeps it, and main normalises what it hands back.
+    const saved = await page.evaluate(() => window.doty.setContext({ hintChars: 1e9 }))
+    expect(saved.hintChars).toBe(1400)
+    expect((await page.evaluate(() => window.doty.getContext())).hintChars).toBe(1400)
+
+    // A key the schema does not know must not reach the store or reset a budget.
+    const partial = await page.evaluate(() =>
+      window.doty.setContext({ bogus: 1 } as unknown as { hintChars?: number }),
+    )
+    expect(partial.hintChars).toBe(1400)
+  } finally {
+    if (app) await gracefulClose(app)
+    cleanup(h)
+  }
+})

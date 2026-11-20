@@ -92,6 +92,7 @@ function ContextSlider({
   unit,
   spokenUnit = unit,
   value,
+  defaultValue,
   min,
   max,
   step,
@@ -102,12 +103,15 @@ function ContextSlider({
   unit: string
   spokenUnit?: string
   value: number
+  /** The shipped value, named in the help text so a moved slider is identifiable. */
+  defaultValue: number
   min: number
   max: number
   step: number
   onCommit: (value: number) => number
 }) {
   const helpId = useId()
+  const labelId = useId()
   // The slider moves locally and only the release writes: a drag would
   // otherwise rewrite config.json dozens of times on the main process.
   const [draft, setDraft] = useState(value)
@@ -151,14 +155,20 @@ function ContextSlider({
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
-        <span style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>{label}</span>
-        <span style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>
+        <label htmlFor={labelId} style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
+          {label}
+        </label>
+        {/* `aria-valuetext` already speaks this; loose text would repeat it. */}
+        <span
+          aria-hidden="true"
+          style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}
+        >
           {shown} {unit}
         </span>
       </div>
       <input
+        id={labelId}
         type="range"
-        aria-label={label}
         aria-valuetext={`${shown} ${spokenUnit}`}
         aria-describedby={helpId}
         min={min}
@@ -174,7 +184,7 @@ function ContextSlider({
         id={helpId}
         style={{ fontSize: '13px', color: '#9d8b66', marginTop: '2px', fontFamily: "'Crimson Text', serif" }}
       >
-        {help}
+        {help} Default {defaultValue} {spokenUnit}.
       </p>
     </div>
   )
@@ -1537,6 +1547,7 @@ export default function Settings({
                 unit="chars"
                 spokenUnit="characters"
                 value={context.windowChars}
+                defaultValue={DEFAULT_CONTEXT.windowChars}
                 min={CONTEXT_LIMITS.windowChars[0]}
                 max={CONTEXT_LIMITS.windowChars[1]}
                 step={100}
@@ -1548,6 +1559,7 @@ export default function Settings({
                 unit="chars"
                 spokenUnit="characters"
                 value={context.rankerChars}
+                defaultValue={DEFAULT_CONTEXT.rankerChars}
                 min={CONTEXT_LIMITS.rankerChars[0]}
                 max={CONTEXT_LIMITS.rankerChars[1]}
                 step={50}
@@ -1559,6 +1571,7 @@ export default function Settings({
                 unit="chars"
                 spokenUnit="characters"
                 value={context.sfxChars}
+                defaultValue={DEFAULT_CONTEXT.sfxChars}
                 min={CONTEXT_LIMITS.sfxChars[0]}
                 max={CONTEXT_LIMITS.sfxChars[1]}
                 step={50}
@@ -1570,6 +1583,7 @@ export default function Settings({
                 unit="chars"
                 spokenUnit="characters"
                 value={context.hintChars}
+                defaultValue={DEFAULT_CONTEXT.hintChars}
                 min={CONTEXT_LIMITS.hintChars[0]}
                 max={CONTEXT_LIMITS.hintChars[1]}
                 step={50}
@@ -1581,6 +1595,7 @@ export default function Settings({
                 unit="ms"
                 spokenUnit="milliseconds"
                 value={context.debounceMs}
+                defaultValue={DEFAULT_CONTEXT.debounceMs}
                 min={CONTEXT_LIMITS.debounceMs[0]}
                 max={CONTEXT_LIMITS.debounceMs[1]}
                 step={250}
@@ -1590,7 +1605,12 @@ export default function Settings({
                 type="button"
                 onClick={() => {
                   onContextChange(DEFAULT_CONTEXT)
-                  setContextNotice((n) => ({ id: n.id + 1, text: 'Model context reset to defaults' }))
+                  // Read the values back: a live region with unchanged text is
+                  // not announced twice, and this also says what "defaults" are.
+                  setContextNotice((n) => ({
+                    id: n.id + 1,
+                    text: `Reset to defaults: transcript ${DEFAULT_CONTEXT.windowChars}, music ${DEFAULT_CONTEXT.rankerChars}, effects ${DEFAULT_CONTEXT.sfxChars}, hint ${DEFAULT_CONTEXT.hintChars}, delay ${DEFAULT_CONTEXT.debounceMs} ms`,
+                  }))
                 }}
                 style={{
                   fontSize: '14px',

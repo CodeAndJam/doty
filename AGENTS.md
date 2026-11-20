@@ -99,9 +99,10 @@ Concretely, when changing anything in the recommendation or playback path:
 
 ## Contracts before you grep
 
-- **An IPC channel is declared once** in `electron/ipc.ts` and then appears in
-  `electron/preload.ts`, `src/types.ts` and a handler in `electron/main.ts`.
-  Four files, no exceptions.
+- **An IPC channel is declared once** in `electron/ipc.ts`, with its argument
+  shape in `electron/ipc-schema.ts`, and then appears in `electron/preload.ts`,
+  `src/types.ts` and a handler in `electron/main.ts`. Five files, no exceptions.
+  The schema file is main-only: it imports Effect, and the preload must not.
 - **Every path names its space**: relative inside the music folder, absolute
   everywhere else (effects, sessions). Mixing the two is the defect behind most
   of the library bugs; `docs/ARCHITECTURE.md` has the diagram and the rules.

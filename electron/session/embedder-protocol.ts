@@ -35,6 +35,24 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
   let modelDir: string | null = null
   /** Two first requests used to load two 300M models; they join this instead. */
   let loading: { promise: Promise<Embedder> } | null = null
+  /** Requests currently using the session; `dispose` waits for them. */
+  let inFlight = 0
+  let idleWaiters: Array<() => void> = []
+  /** Bumped by `dispose`, so a load that finishes afterwards releases itself. */
+  let generation = 0
+
+  const idle = () =>
+    new Promise<void>((resolve) => {
+      if (inFlight === 0) resolve()
+      else idleWaiters.push(resolve)
+    })
+
+  function settleOne(): void {
+    inFlight--
+    if (inFlight > 0) return
+    for (const resolve of idleWaiters) resolve()
+    idleWaiters = []
+  }
 
   async function modelFor(dir: string): Promise<Embedder> {
     if (model && modelDir === dir) return model
@@ -51,12 +69,18 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
       }
       if (model && modelDir === dir) return model
     }
+    const mine = generation
     const current = (async () => {
       const previous = model
       model = null
       modelDir = dir
       await previous?.dispose().catch(() => {})
       const next = await load(dir)
+      if (mine !== generation) {
+        // Disposed while we were loading: hand nothing to a closed handler.
+        await next.dispose().catch(() => {})
+        throw new Error('the embedder was disposed while loading')
+      }
       model = next
       console.log('[embedder] model loaded in the utility process')
       return next
@@ -74,14 +98,19 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
     async handle(request) {
       if (request.kind === 'dispose') {
         // Capture and clear before awaiting: two disposals must not release the
-        // same native session twice.
+        // same native session twice. The generation stops a load that is already
+        // running from assigning a model to a disposed handler.
+        generation++
         const doomed = model
         model = null
         modelDir = null
+        // Release only after the forward pass that is using the session ends.
+        await idle()
         await doomed?.dispose().catch(() => {})
         return { id: request.id, ok: true }
       }
 
+      inFlight++
       try {
         const embedder = await modelFor(request.dir)
         if (request.kind === 'load') {
@@ -97,6 +126,8 @@ export function createEmbedderHandler(load: (dir: string) => Promise<Embedder>):
         return { id: request.id, ok: true, value: await embedder.embedAudio(request.pcm) }
       } catch (err) {
         return { id: request.id, ok: false, error: err instanceof Error ? err.message : String(err) }
+      } finally {
+        settleOne()
       }
     },
   }

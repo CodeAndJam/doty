@@ -38,6 +38,8 @@ let nextId = 1
 let worker: Worker | null = null
 let ready = false
 let loadPromise: Promise<void> | null = null
+/** Rejects whoever is waiting on the load without touching the worker. */
+let abortLoad: ((err: Error) => void) | null = null
 let onStatus: (status: RankerStatus) => void = () => {}
 
 /**
@@ -50,7 +52,13 @@ let onStatus: (status: RankerStatus) => void = () => {}
  */
 type Job = { prompt: string; candidates: string[]; replies: Array<Deferred.Deferred<Answer, Error>> }
 
-const queued = new Map<Question, Job[]>()
+/**
+ * At most one waiting job per question. A pass takes ~4.4 s and the cadence is
+ * ~2 s, so a queue would grow without bound and every answer would describe a
+ * scene the table has left. A newer state replaces the waiting one; its callers
+ * are failed as superseded and the renderer keeps what it already shows.
+ */
+const queued = new Map<Question, Job>()
 let draining = false
 /** Set while the worker is being torn down: a job must not fork a new one. */
 let disposing = false
@@ -58,18 +66,8 @@ let disposing = false
 const sameCandidates = (a: string[], b: string[]) => a.length === b.length && a.every((value, i) => value === b[i])
 
 function nextJob(): { question: Question; job: Job } | null {
-  for (const [question, jobs] of queued) {
-    const job = jobs.shift()
-    if (!job) {
-      queued.delete(question)
-      continue
-    }
-    // Round-robin: a question that keeps arriving must not starve the others.
-    if (jobs.length === 0) queued.delete(question)
-    else {
-      queued.delete(question)
-      queued.set(question, jobs)
-    }
+  for (const [question, job] of queued) {
+    queued.delete(question)
     return { question, job }
   }
   return null
@@ -92,6 +90,7 @@ function reset(err: Error): void {
   worker = null
   ready = false
   loadPromise = null
+  abortLoad = null
   doomed?.terminate()
   failPending(err)
 }
@@ -116,18 +115,41 @@ function ensureWorker(): Promise<void> {
   if (loadPromise) return loadPromise
 
   loadPromise = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      // A stale attempt must not tear down the worker that replaced it.
+      if (worker && worker === attempt) fail(new Error('Ranker load timed out'))
+    }, LOAD_TIMEOUT_MS)
+    // Settles the callers waiting on this load; `runDispose` uses it so a delete
+    // during a 1.5 GB load does not leave a request hanging for the deadline.
+    abortLoad = (err: Error) => {
+      clearTimeout(timer)
+      loadPromise = null
+      onStatus('error')
+      reject(err)
+    }
     const fail = (err: Error) => {
       clearTimeout(timer)
       reset(err)
       onStatus('error')
       reject(err)
     }
-    const timer = setTimeout(() => fail(new Error('Ranker load timed out')), LOAD_TIMEOUT_MS)
 
     onStatus('loading')
-    const w = new Worker(join(__dirname, 'ranker-worker.js'), {
-      workerData: { homePath: app.getPath('home') },
-    })
+    let w: Worker
+    try {
+      w = new Worker(join(__dirname, 'ranker-worker.js'), {
+        workerData: { homePath: app.getPath('home') },
+      })
+    } catch (err) {
+      // A constructor throw (ENOMEM, a missing entry) must not memoise a
+      // rejected promise: that would poison the ranker for the whole session.
+      clearTimeout(timer)
+      loadPromise = null
+      onStatus('error')
+      reject(err instanceof Error ? err : new Error(String(err)))
+      return
+    }
+    const attempt = w
     worker = w
 
     // Ignore events from a worker that has already been torn down.
@@ -139,6 +161,7 @@ function ensureWorker(): Promise<void> {
       if (msg.type === 'ready') {
         if (!isCurrent()) return
         clearTimeout(timer)
+        abortLoad = null
         ready = true
         onStatus('ready')
         resolve()
@@ -166,18 +189,23 @@ function ensureWorker(): Promise<void> {
   return loadPromise
 }
 
-/** Queue one question, joining the newest batch of the same shape. */
+/** Queue one question, replacing the waiting one when its options are the same. */
 function ask<A>(question: Question, prompt: string, candidates: string[], read: (answer: Answer) => A) {
   return Effect.gen(function* () {
     const reply = yield* Deferred.make<Answer, Error>()
-    const jobs = queued.get(question) ?? []
-    const last = jobs[jobs.length - 1]
-    if (last && sameCandidates(last.candidates, candidates)) {
-      last.prompt = prompt
-      last.replies.push(reply)
+    const waiting = queued.get(question)
+    if (waiting && sameCandidates(waiting.candidates, candidates)) {
+      waiting.prompt = prompt
+      waiting.replies.push(reply)
     } else {
-      jobs.push({ prompt, candidates, replies: [reply] })
-      queued.set(question, jobs)
+      if (waiting) {
+        // The newer state wins; the queued callers fall back rather than wait
+        // for an answer about a scene that is over.
+        for (const stale of waiting.replies) {
+          Deferred.doneUnsafe(stale, Exit.fail(new Error('Ranker superseded')))
+        }
+      }
+      queued.set(question, { prompt, candidates, replies: [reply] })
     }
     if (!draining) void drain()
     return read(yield* Deferred.await(reply))
@@ -231,9 +259,9 @@ async function drain(): Promise<void> {
 
 /** Fail every queued job, so a dispose cannot be followed by a fresh load. */
 function failQueued(err: Error): void {
-  for (const [question, jobs] of queued) {
+  for (const [question, job] of queued) {
     queued.delete(question)
-    for (const job of jobs) for (const reply of job.replies) Deferred.doneUnsafe(reply, Exit.fail(err))
+    for (const reply of job.replies) Deferred.doneUnsafe(reply, Exit.fail(err))
   }
 }
 
@@ -311,6 +339,9 @@ async function runDispose(): Promise<void> {
     worker = null
     ready = false
     loadPromise = null
+    // Whoever is waiting on the load must be told now, not at the 180 s deadline.
+    abortLoad?.(disposed)
+    abortLoad = null
     failPending(disposed)
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {

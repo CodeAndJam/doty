@@ -11,6 +11,7 @@
  * drifts from its row stops compiling.
  */
 import { Schema } from 'effect'
+import { ContextConfigSchema } from '../src/lib/context-schema'
 import { INVOKE, type InvokeChannel } from './ipc'
 
 const Lane = Schema.Literals(['music', 'sfx'])
@@ -44,15 +45,6 @@ const DecisionRowSchema = Schema.Struct({
   probability: Schema.Number,
   mood: Schema.NullOr(Schema.String),
   source: Schema.Literals(['auto', 'manual', 'hint']),
-})
-
-/** What the models may read; every field optional because the UI sends a patch. */
-const ContextConfigSchema = Schema.Struct({
-  windowChars: Schema.optional(Schema.Number),
-  rankerChars: Schema.optional(Schema.Number),
-  sfxChars: Schema.optional(Schema.Number),
-  hintChars: Schema.optional(Schema.Number),
-  debounceMs: Schema.optional(Schema.Number),
 })
 
 /** A pick or a rejection. Mirrors `PreferenceRow`. */
