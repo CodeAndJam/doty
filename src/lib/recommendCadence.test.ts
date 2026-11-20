@@ -61,4 +61,10 @@ describe('recommendation cadence', () => {
     cadence = noteRanked(cadence, 5_000, rankedWords)
     expect(cadence.words).toBe(3)
   })
+
+  it('never goes negative when the counter was reset under a ranking', () => {
+    // A session switch reseeds the counter while a ranking is in flight.
+    const cadence = noteRanked(seedCadence(0), 1_000, 5)
+    expect(cadence.words).toBe(0)
+  })
 })

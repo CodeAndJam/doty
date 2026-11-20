@@ -7,9 +7,10 @@ import {
   MODEL_STATE_CHARS,
   mergeContext,
   normalizeContext,
+  seedWindow,
 } from './context'
 
-const KEYS = Object.keys(DEFAULT_CONTEXT) as Array<keyof ContextConfig>
+const KEYS = Object.keys(CONTEXT_LIMITS) as Array<keyof ContextConfig>
 
 describe('normalizeContext', () => {
   it('fills every field from the defaults', () => {
@@ -17,8 +18,10 @@ describe('normalizeContext', () => {
     expect(normalizeContext({})).toEqual(DEFAULT_CONTEXT)
   })
 
-  it('returns a fresh object rather than the defaults themselves', () => {
+  it('returns a fresh object rather than the input or the defaults', () => {
     expect(normalizeContext(undefined)).not.toBe(DEFAULT_CONTEXT)
+    const patch = { windowChars: 900 }
+    expect(normalizeContext(patch)).not.toBe(patch)
     normalizeContext({ windowChars: 1e9 })
     expect(DEFAULT_CONTEXT.windowChars).toBe(800)
   })
@@ -34,7 +37,13 @@ describe('normalizeContext', () => {
       hintChars: 1e9,
       debounceMs: 1e9,
     })
-    expect(high).toEqual({ windowChars: 8000, rankerChars: 4000, sfxChars: 4000, hintChars: 2000, debounceMs: 10000 })
+    expect(high).toEqual({
+      windowChars: 8000,
+      rankerChars: MODEL_STATE_CHARS,
+      sfxChars: MODEL_STATE_CHARS,
+      hintChars: MODEL_STATE_CHARS,
+      debounceMs: 10000,
+    })
   })
 
   it('keeps a default that lies outside its own limits impossible', () => {
@@ -98,6 +107,15 @@ describe('composeState', () => {
     expect(text.startsWith('tomb\n')).toBe(true)
     expect(text.endsWith('newest')).toBe(true)
     expect(text.length).toBeLessThanOrEqual(MODEL_STATE_CHARS)
+  })
+})
+
+describe('seedWindow', () => {
+  it('keeps the newest words within the budget', () => {
+    const seeded = seedWindow(['old words', 'the lich wakes'], 13)
+    expect(seeded).toHaveLength(13)
+    expect('the lich wakes'.endsWith(seeded)).toBe(true)
+    expect(seedWindow(['', 'only this'], 100)).toBe('only this')
   })
 })
 

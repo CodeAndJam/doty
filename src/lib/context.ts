@@ -1,4 +1,11 @@
 /**
+ * Roughly what the model's fixed 1024-token row can hold for the state once the
+ * option block is in it. Past this the extra characters are tokenized and
+ * dropped, so the budget stops being honest.
+ */
+export const MODEL_STATE_CHARS = 1400
+
+/**
  * What the decision models are allowed to read. The DM tunes these to see what
  * changes a pick; every value is a character or millisecond budget, never a
  * scoring rule.
@@ -24,12 +31,12 @@ export const DEFAULT_CONTEXT: ContextConfig = {
   debounceMs: 1500,
 }
 
-/** Below these a model sees nothing usable; above them the state costs tokens. */
+/** Below these a model sees nothing usable; above MODEL_STATE_CHARS the row drops it. */
 export const CONTEXT_LIMITS: Record<keyof ContextConfig, [number, number]> = {
   windowChars: [200, 8000],
-  rankerChars: [100, 4000],
-  sfxChars: [100, 4000],
-  hintChars: [0, 2000],
+  rankerChars: [100, MODEL_STATE_CHARS],
+  sfxChars: [100, MODEL_STATE_CHARS],
+  hintChars: [0, MODEL_STATE_CHARS],
   debounceMs: [250, 10000],
 }
 
@@ -47,13 +54,6 @@ export function normalizeContext(value: Partial<ContextConfig> | undefined): Con
   out.sfxChars = Math.min(out.sfxChars, out.windowChars)
   return out
 }
-
-/**
- * Roughly what the model's fixed 1024-token row can hold for the state once the
- * option block is in it. Past this the extra characters are tokenized and
- * dropped, so the budget stops being honest.
- */
-export const MODEL_STATE_CHARS = 1400
 
 /** Merge a patch the way main does, so the panel cannot show a value the store refuses. */
 export function mergeContext(stored: Partial<ContextConfig>, patch: Partial<ContextConfig>): ContextConfig {
@@ -77,4 +77,9 @@ export function composeState(
   const chars = Math.min(budget.transcriptChars, room)
   const words = chars > 0 ? transcript.slice(-chars).trim() : ''
   return [instruction, words].filter(Boolean).join('\n')
+}
+
+/** The window a session's cues seed: the room's most recent words, within the DM's budget. */
+export function seedWindow(texts: string[], windowChars: number): string {
+  return texts.filter(Boolean).join(' ').slice(-windowChars)
 }

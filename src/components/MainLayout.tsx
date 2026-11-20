@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type RankerType, type RecommendResult, useRanker } from '../hooks/useRanker'
 import { useRecorder } from '../hooks/useRecorder'
-import { type ContextConfig, composeState, DEFAULT_CONTEXT, mergeContext } from '../lib/context'
+import {
+  type ContextConfig,
+  composeState,
+  DEFAULT_CONTEXT,
+  MODEL_STATE_CHARS,
+  mergeContext,
+  seedWindow,
+} from '../lib/context'
 import { heuristicSfxRecommend } from '../lib/heuristicSfxRecommend'
 import {
   MIN_NEW_WORDS,
@@ -155,6 +162,8 @@ export default function MainLayout() {
   // Stable handle for the IPC effect below (a plain function is rebuilt every render)
   const toggleRecordingRef = useRef<() => void>(() => {})
   toggleRecordingRef.current = toggleRecording
+  /** Re-runs the typed hint when the session it describes is replaced. */
+  const rerankHintRef = useRef<() => void>(() => {})
 
   // A different folder or session is a different scene: no held pick crosses it.
   useEffect(() => {
@@ -196,11 +205,10 @@ export default function MainLayout() {
     lastDmApplied.current = ++dmSeq.current
     setDmBusy(false)
     setTranscripts(cues.map((c) => ({ text: c.text, elapsedMs: 0, speaker: c.speaker })))
-    transcriptBufferRef.current = cues
-      .map((c) => c.text)
-      .filter(Boolean)
-      .join(' ')
-      .slice(-contextRef.current.windowChars)
+    transcriptBufferRef.current = seedWindow(
+      cues.map((c) => c.text),
+      contextRef.current.windowChars,
+    )
     // A new buffer is a new zero: the gate counts words spoken since the last
     // ranking, never a buffer length, which trimming makes negative.
     cadenceRef.current = seedCadence(Date.now())
@@ -216,6 +224,8 @@ export default function MainLayout() {
     setSfxCandidates([])
     setSfxProbabilities({})
     setSfxAutopilot([])
+    // A typed hint owns both shelves; the wipe above must not leave them empty.
+    if (dmPromptRef.current.trim()) rerankHintRef.current()
   }, [])
 
   /** Load a session, and let only the last load start paint the pane. */
@@ -348,7 +358,9 @@ export default function MainLayout() {
       console.log('[recommend] no files, skipping')
       return
     }
-    const recentTranscript = transcriptBufferRef.current.slice(-contextRef.current.rankerChars).trim()
+    const recentTranscript = transcriptBufferRef.current
+      .slice(-Math.min(contextRef.current.rankerChars, MODEL_STATE_CHARS))
+      .trim()
     const state = recentTranscript
     console.log(
       '[recommend] transcript context:',
@@ -373,7 +385,9 @@ export default function MainLayout() {
     // Every recommendation re-sends the same DM text. Re-ranking it within a few
     // seconds returns the same answer and adds work to the worker queue that the
     // director's music pass is waiting in.
-    const text = overrideText ?? transcriptBufferRef.current.slice(-contextRef.current.sfxChars).trim()
+    const text =
+      overrideText ??
+      transcriptBufferRef.current.slice(-Math.min(contextRef.current.sfxChars, MODEL_STATE_CHARS)).trim()
     // With a prompt set, the effects column follows the prompt, not the room.
     if (!overrideText && dmPromptRef.current.trim()) return
     if (text === sfxLastText.current && Date.now() - sfxLastAt.current < 5_000) return
@@ -396,9 +410,10 @@ export default function MainLayout() {
     // so the heuristic falls back to history and offers a monster roar. The index
     // can answer it — the same one the search box uses — so both lists go to the
     // model, which is the only thing that can tell which of them fits the scene.
-    // The embedder pays per token on every final line, and the effect options are
-    // described in few words: only the newest moment is worth embedding.
-    const embedQuery = text.slice(-300)
+    // The embedder pays per token on every final line, so only the moment is
+    // embedded — but the hint sits at the head of a composed state, so keep both
+    // ends rather than the tail alone.
+    const embedQuery = text.length > 400 ? `${text.slice(0, 100)} ${text.slice(-300)}` : text
     const hits = embedQuery.trim() ? await window.doty.librarySearch(embedQuery, 'sfx', count).catch(() => null) : null
     const byFile = new Map(sfxList.map((s) => [s.filename, s.id]))
     const nearest = (hits?.items ?? []).map((hit) => byFile.get(hit.absolute)).filter((id): id is string => !!id)
@@ -482,6 +497,12 @@ export default function MainLayout() {
     },
     [runSfxRecommendation, showRanking],
   )
+
+  // A hint owns both shelves, so a session switch has to re-ask for them.
+  rerankHintRef.current = () => {
+    const hint = dmPromptRef.current.trim()
+    if (hint) void runDmRecommendation(hint)
+  }
 
   // When music folder becomes available, trigger default recommendations
   useEffect(() => {

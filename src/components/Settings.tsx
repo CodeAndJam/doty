@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
-import { CONTEXT_LIMITS, type ContextConfig, DEFAULT_CONTEXT } from '../lib/context'
+import { CONTEXT_LIMITS, type ContextConfig, DEFAULT_CONTEXT, mergeContext } from '../lib/context'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress, UpdateState } from '../types'
 import DiscordPanel from './DiscordPanel'
@@ -105,7 +105,7 @@ function ContextSlider({
   min: number
   max: number
   step: number
-  onCommit: (value: number) => void
+  onCommit: (value: number) => number
 }) {
   const helpId = useId()
   // The slider moves locally and only the release writes: a drag would
@@ -117,12 +117,22 @@ function ContextSlider({
   valueRef.current = value
   const commitRef = useRef(onCommit)
   commitRef.current = onCommit
+  const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => setDraft(value), [value])
 
   const flush = useCallback(() => {
-    if (draftRef.current !== valueRef.current) commitRef.current(draftRef.current)
+    if (draftRef.current === valueRef.current) return
+    // The parent returns what the store will keep; a clamped value must not stay
+    // on screen as if it had been saved.
+    setDraft(commitRef.current(draftRef.current))
   }, [])
+
+  // A held arrow key repeats; let it settle before writing.
+  const flushSoon = useCallback(() => {
+    if (keyTimer.current) clearTimeout(keyTimer.current)
+    keyTimer.current = setTimeout(flush, 400)
+  }, [flush])
 
   // A release can land outside the input, and assistive technology changes the
   // value without pointer or key events; flush on the document release and when
@@ -131,6 +141,7 @@ function ContextSlider({
     window.addEventListener('pointerup', flush)
     return () => {
       window.removeEventListener('pointerup', flush)
+      if (keyTimer.current) clearTimeout(keyTimer.current)
       flush()
     }
   }, [flush])
@@ -153,7 +164,7 @@ function ContextSlider({
         step={step}
         value={draft}
         onChange={(e) => setDraft(Number(e.target.value))}
-        onKeyUp={flush}
+        onKeyUp={flushSoon}
         onBlur={flush}
         style={{ width: '100%', accentColor: '#d9a441' }}
       />
@@ -224,6 +235,13 @@ export default function Settings({
   const refreshDebug = useCallback(async () => {
     setDebugState(await window.doty.debugGetState())
   }, [])
+
+  /** One budget at a time: returns the value the store will actually keep. */
+  const commitContext = (field: keyof ContextConfig) => (value: number) => {
+    const merged = mergeContext(context, { [field]: value })
+    onContextChange({ [field]: value })
+    return merged[field]
+  }
 
   // Read the machine's state when the group is opened, not on every render.
   useEffect(() => {
@@ -1519,7 +1537,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.windowChars[0]}
                 max={CONTEXT_LIMITS.windowChars[1]}
                 step={100}
-                onCommit={(v) => onContextChange({ windowChars: v })}
+                onCommit={commitContext('windowChars')}
               />
               <ContextSlider
                 label="Music context"
@@ -1529,7 +1547,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.rankerChars[0]}
                 max={CONTEXT_LIMITS.rankerChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ rankerChars: v })}
+                onCommit={commitContext('rankerChars')}
               />
               <ContextSlider
                 label="Effects context"
@@ -1539,7 +1557,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.sfxChars[0]}
                 max={CONTEXT_LIMITS.sfxChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ sfxChars: v })}
+                onCommit={commitContext('sfxChars')}
               />
               <ContextSlider
                 label="Hint length"
@@ -1549,7 +1567,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.hintChars[0]}
                 max={CONTEXT_LIMITS.hintChars[1]}
                 step={50}
-                onCommit={(v) => onContextChange({ hintChars: v })}
+                onCommit={commitContext('hintChars')}
               />
               <ContextSlider
                 label="Ranking delay"
@@ -1560,7 +1578,7 @@ export default function Settings({
                 min={CONTEXT_LIMITS.debounceMs[0]}
                 max={CONTEXT_LIMITS.debounceMs[1]}
                 step={250}
-                onCommit={(v) => onContextChange({ debounceMs: v })}
+                onCommit={commitContext('debounceMs')}
               />
               <button
                 type="button"
