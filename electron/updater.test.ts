@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkForUpdate, isNewer, parseVersion, pickDmg } from './updater'
+import { bundleFromExecutable, checkForUpdate, isNewer, parseVersion, pickDmg } from './updater'
 
 describe('parseVersion', () => {
   it('reads a plain and a v-prefixed release', () => {
@@ -45,19 +45,32 @@ describe('pickDmg', () => {
     expect(pickDmg(assets, 'arm64')).toEqual({ url: 'https://x/arm64.dmg', sizeMB: 234 })
   })
 
-  it('falls back to the only DMG, and to nothing when there is none', () => {
-    expect(
-      pickDmg(
-        assets.filter((a) => a.name.includes('x64')),
-        'arm64',
-      )?.url,
-    ).toBe('https://x/x64.dmg')
+  it('accepts a lone DMG, so a Rosetta process still finds the arm64 build', () => {
+    const arm64Only = assets.filter((a) => a.name.includes('arm64'))
+    expect(pickDmg(arm64Only, 'x64')?.url).toBe('https://x/arm64.dmg')
+  })
+
+  it('refuses to guess between two DMGs that match no arch', () => {
+    expect(pickDmg(assets, 'ia32')).toBeNull()
     expect(
       pickDmg(
         assets.filter((a) => a.name.endsWith('.txt')),
         'arm64',
       ),
     ).toBeNull()
+  })
+})
+
+describe('bundleFromExecutable', () => {
+  it('finds the .app above Contents/MacOS', () => {
+    expect(bundleFromExecutable('/Applications/Doty.app/Contents/MacOS/Doty')).toBe('/Applications/Doty.app')
+    expect(bundleFromExecutable('/Users/dm/doty/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')).toBe(
+      '/Users/dm/doty/node_modules/electron/dist/Electron.app',
+    )
+  })
+
+  it('returns null when there is no bundle to replace', () => {
+    expect(bundleFromExecutable('/usr/local/bin/doty')).toBeNull()
   })
 })
 
@@ -88,5 +101,11 @@ describe('checkForUpdate', () => {
       url: 'https://x/arm64.dmg',
       sizeMB: 0,
     })
+  })
+
+  it('never offers a draft or a prerelease', async () => {
+    const draft = { ...release, draft: true }
+    const prerelease = { ...release, tag_name: 'v5.5.0-rc.1', prerelease: true }
+    expect(await checkForUpdate('5.3.0', 'arm64', async () => [draft, prerelease])).toBeNull()
   })
 })

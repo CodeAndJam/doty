@@ -112,7 +112,7 @@ import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
 import { store } from './store'
 import { resolveLanguage } from './stt-language'
-import { checkForUpdate, installUpdate, type Release } from './updater'
+import { bundleFromExecutable, checkForUpdate, installUpdate, type Release } from './updater'
 import { WavWriter } from './wav-writer'
 
 // ponytail: no aux models needed — transcribe-cpp handles everything in one GGUF
@@ -233,9 +233,7 @@ const setUpdateState = (state: UpdateState) => {
 
 /** The .app this process runs from: the bundle an update replaces. */
 function runningBundle(): string | null {
-  if (!app.isPackaged) return null
-  const bundle = dirname(dirname(dirname(app.getPath('exe'))))
-  return bundle.endsWith('.app') ? bundle : null
+  return app.isPackaged ? bundleFromExecutable(app.getPath('exe')) : null
 }
 
 async function checkUpdates(): Promise<void> {
@@ -473,6 +471,18 @@ app.whenReady().then(async () => {
   // Initialize SQLite database and migrate legacy JSON cache
   getDb()
   migrateFromJson()
+
+  // The previous build is still on disk only as the swap's fallback. Reaching
+  // this line proves the new one runs, so the fallback can go. Never let a
+  // failed cleanup take the startup down with it.
+  const installed = runningBundle()
+  if (installed) {
+    try {
+      fs.rmSync(`${installed}.old`, { recursive: true, force: true })
+    } catch {
+      /* the fallback stays where it is */
+    }
+  }
 
   registerAppProtocol()
   registerMusicProtocol()
@@ -1536,7 +1546,7 @@ handle(INVOKE.updateInstall, async () => {
       targetApp,
       workDir: join(app.getPath('temp'), 'doty-update'),
       onProgress: (percent) => setUpdateState({ status: 'downloading', version, percent }),
-      download: (url, dest, onProgress) => downloadFile(url, dest, (percent) => onProgress(percent)),
+      download: downloadFile,
     })
     // The script waits for this process to exit, then swaps the bundle.
     setUpdateState({ status: 'installing', version })
