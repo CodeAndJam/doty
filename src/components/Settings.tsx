@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
@@ -89,37 +89,57 @@ export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'up
 function ContextSlider({
   label,
   help,
+  unit,
   value,
   min,
   max,
   step,
-  onChange,
+  onCommit,
 }: {
   label: string
   help: string
+  unit: string
   value: number
   min: number
   max: number
   step: number
-  onChange: (value: number) => void
+  onCommit: (value: number) => void
 }) {
+  const helpId = useId()
+  // The slider moves locally and only the release writes: a drag would
+  // otherwise rewrite config.json dozens of times on the main process.
+  const [draft, setDraft] = useState(value)
+  useEffect(() => setDraft(value), [value])
+  const commit = () => {
+    if (draft !== value) onCommit(draft)
+  }
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between mb-1">
         <span style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>{label}</span>
-        <span style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>{value}</span>
+        <span style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}>
+          {draft} {unit}
+        </span>
       </div>
       <input
         type="range"
         aria-label={label}
+        aria-valuetext={`${draft} ${unit}`}
+        aria-describedby={helpId}
         min={min}
         max={max}
         step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
+        value={draft}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
         style={{ width: '100%', accentColor: '#d9a441' }}
       />
-      <p style={{ fontSize: '13px', color: '#9d8b66', marginTop: '2px', fontFamily: "'Crimson Text', serif" }}>
+      <p
+        id={helpId}
+        style={{ fontSize: '13px', color: '#9d8b66', marginTop: '2px', fontFamily: "'Crimson Text', serif" }}
+      >
         {help}
       </p>
     </div>
@@ -174,6 +194,7 @@ export default function Settings({
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [updateNotice, setUpdateNotice] = useState<string | null>(null)
   const [modelMessage, setModelMessage] = useState<string | null>(null)
+  const [contextNotice, setContextNotice] = useState('')
   const [section, setSection] = useState<SectionId>(initialSection)
   const [debugState, setDebugState] = useState<DebugState | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -1450,8 +1471,20 @@ export default function Settings({
               </p>
             </div>
             {/* What the models read: the knobs that change a pick. */}
-            <div className="mb-5">
-              <Label>Model context</Label>
+            <fieldset className="mb-5" style={{ border: 0, padding: 0, margin: 0 }}>
+              <legend
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '15px',
+                  letterSpacing: '0.25em',
+                  color: '#a5813f',
+                  textTransform: 'uppercase',
+                  display: 'block',
+                  marginBottom: '8px',
+                }}
+              >
+                Model context
+              </legend>
               <p
                 style={{ fontSize: '14px', color: '#9d8b66', marginBottom: '8px', fontFamily: "'Crimson Text', serif" }}
               >
@@ -1460,51 +1493,59 @@ export default function Settings({
               <ContextSlider
                 label="Transcript window"
                 help="Characters kept from the live transcript."
+                unit="chars"
                 value={context.windowChars}
                 min={CONTEXT_LIMITS.windowChars[0]}
                 max={CONTEXT_LIMITS.windowChars[1]}
                 step={100}
-                onChange={(v) => onContextChange({ ...context, windowChars: v })}
+                onCommit={(v) => onContextChange({ ...context, windowChars: v })}
               />
               <ContextSlider
                 label="Music context"
                 help="Characters of that window sent to the music ranker."
+                unit="chars"
                 value={context.rankerChars}
                 min={CONTEXT_LIMITS.rankerChars[0]}
                 max={CONTEXT_LIMITS.rankerChars[1]}
                 step={50}
-                onChange={(v) => onContextChange({ ...context, rankerChars: v })}
+                onCommit={(v) => onContextChange({ ...context, rankerChars: v })}
               />
               <ContextSlider
                 label="Effects context"
                 help="Characters sent to the effects ranker."
+                unit="chars"
                 value={context.sfxChars}
                 min={CONTEXT_LIMITS.sfxChars[0]}
                 max={CONTEXT_LIMITS.sfxChars[1]}
                 step={50}
-                onChange={(v) => onContextChange({ ...context, sfxChars: v })}
+                onCommit={(v) => onContextChange({ ...context, sfxChars: v })}
               />
               <ContextSlider
                 label="Hint length"
-                help="How much of your typed hint reaches the models."
+                help="How much of your typed hint reaches the models. Zero silences it for them; the lights still read all of it."
+                unit="chars"
                 value={context.hintChars}
                 min={CONTEXT_LIMITS.hintChars[0]}
                 max={CONTEXT_LIMITS.hintChars[1]}
                 step={50}
-                onChange={(v) => onContextChange({ ...context, hintChars: v })}
+                onCommit={(v) => onContextChange({ ...context, hintChars: v })}
               />
               <ContextSlider
                 label="Ranking delay"
-                help="Milliseconds of quiet after a line before ranking."
+                help="Quiet after a line before ranking."
+                unit="ms"
                 value={context.debounceMs}
                 min={CONTEXT_LIMITS.debounceMs[0]}
                 max={CONTEXT_LIMITS.debounceMs[1]}
                 step={250}
-                onChange={(v) => onContextChange({ ...context, debounceMs: v })}
+                onCommit={(v) => onContextChange({ ...context, debounceMs: v })}
               />
               <button
                 type="button"
-                onClick={() => onContextChange(DEFAULT_CONTEXT)}
+                onClick={() => {
+                  onContextChange(DEFAULT_CONTEXT)
+                  setContextNotice('Model context reset to defaults')
+                }}
                 style={{
                   fontSize: '14px',
                   color: '#a5813f',
@@ -1514,7 +1555,10 @@ export default function Settings({
               >
                 Reset to defaults
               </button>
-            </div>
+              <span role="status" aria-live="polite" className="sr-only">
+                {contextNotice}
+              </span>
+            </fieldset>
             {/* Divider before Discord */}
             <div
               className="mb-5"

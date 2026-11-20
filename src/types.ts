@@ -403,7 +403,7 @@ export interface DotyAPI {
   getRecommendationCount: () => Promise<number>
   setRecommendationCount: (count: number) => Promise<{ ok: boolean }>
   getContext: () => Promise<import('./lib/context').ContextConfig>
-  setContext: (config: import('./lib/context').ContextConfig) => Promise<import('./lib/context').ContextConfig>
+  setContext: (config: Partial<import('./lib/context').ContextConfig>) => Promise<import('./lib/context').ContextConfig>
   onModelProgress: (cb: (p: ProgressPayload) => void) => () => void
   onModelStatus: (cb: (s: { ready: boolean }) => void) => () => void
   onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) => () => void

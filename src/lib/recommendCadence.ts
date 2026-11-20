@@ -25,3 +25,12 @@ export function waitBeforeRecommending(msSinceLast: number): number {
 export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length
 }
+
+/**
+ * Words spoken since the last ranking. A counter, not a buffer-length
+ * difference: the window is trimmed, so a seeded session makes the difference
+ * negative and no line ever ranks again.
+ */
+export function addSpokenWords(pending: number, line: string): number {
+  return pending + countWords(line)
+}

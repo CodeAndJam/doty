@@ -181,8 +181,8 @@ decision model is unavailable — two authorities at once would let one replace 
 track mid-phrase.
 
 The DM's **Session Hint** heads the state and the recent words follow it; each
-reader has its own character budget under Settings → Model context. The session
-file is never read: correcting a past cue changes no decision.
+reader has its own character budget under Settings → Director → Model context.
+The session file is read when a session is opened, never once per decision.
 
 Suggestions never stop. A manual pick is a label recorded in
 `session_preferences`; it does not silence the ranker, and it never causes a

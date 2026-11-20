@@ -54,7 +54,8 @@ export function composeState(
   transcript: string,
   budget: { hintChars: number; transcriptChars: number },
 ): string {
-  return [hint.slice(0, budget.hintChars).trim(), transcript.slice(-budget.transcriptChars).trim()]
-    .filter(Boolean)
-    .join('\n')
+  // A zero budget is nothing; `slice(-0)` would hand over the whole string.
+  const instruction = budget.hintChars > 0 ? hint.slice(0, budget.hintChars).trim() : ''
+  const room = budget.transcriptChars > 0 ? transcript.slice(-budget.transcriptChars).trim() : ''
+  return [instruction, room].filter(Boolean).join('\n')
 }

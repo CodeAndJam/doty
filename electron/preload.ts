@@ -88,7 +88,7 @@ const doty = {
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),
   setRecommendationCount: (count: number) => invoke(INVOKE.setRecommendationCount, count),
   getContext: () => invoke(INVOKE.getContext) as Promise<import('../src/lib/context').ContextConfig>,
-  setContext: (config: import('../src/lib/context').ContextConfig) =>
+  setContext: (config: Partial<import('../src/lib/context').ContextConfig>) =>
     invoke(INVOKE.setContext, config) as Promise<import('../src/lib/context').ContextConfig>,
   onModelProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVENTS.modelProgress, cb),
   onModelStatus: (cb: (s: { ready: boolean }) => void) => subscribe(EVENTS.modelStatus, cb),
