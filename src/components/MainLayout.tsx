@@ -135,8 +135,10 @@ export default function MainLayout() {
   const recommendDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** Words spoken since the last ranking and when that was, for the two gates. */
   const cadenceRef = useRef(seedCadence(0))
-  /** The state the shelf is already showing: the same words are not ranked twice. */
+  /** The state the shelf is showing; a session load wipes it and clears this. */
   const lastRecTextRef = useRef('')
+  /** The state a ranking is already working on, so two callers do not both run it. */
+  const recInFlightRef = useRef<string | null>(null)
   const dmDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const interimDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /** The prompt the shelf is following; empty means the transcript owns it. */
@@ -227,9 +229,10 @@ export default function MainLayout() {
     setSfxCandidates([])
     setSfxProbabilities({})
     setSfxAutopilot([])
-    // The effects dedupe holds the room that just went away.
+    // Both dedupes hold the room that just went away.
     sfxLastText.current = ''
     sfxLastAt.current = 0
+    lastRecTextRef.current = ''
     // The wipe above must not leave the DM looking at empty columns.
     rerankAfterLoadRef.current()
   }, [])
@@ -354,41 +357,46 @@ export default function MainLayout() {
     // A typed prompt owns the shelf. Doing the work and throwing it away only
     // queues behind the DM's answer in the same worker.
     if (dmPromptRef.current.trim()) return
-    const run = ++recSeq.current
-    // Words already spoken when this run starts are the ones it accounts for;
-    // anything said while it runs stays pending.
-    const rankedWords = cadenceRef.current.words
     const recentTranscript = transcriptBufferRef.current
       .slice(-Math.min(contextRef.current.rankerChars, MODEL_STATE_CHARS))
       .trim()
     const state = recentTranscript
-    // A folder event and a session load can both ask for the same state; the
-    // second answer would queue behind the first and paint the same cards.
-    if (state === lastRecTextRef.current && Date.now() - cadenceRef.current.at < 5_000) return
-    const files = await window.doty.listMusic()
-    console.log('[recommend] runRecommendation called, files:', files.length)
-    if (files.length === 0) {
-      console.log('[recommend] no files, skipping')
-      return
+    // The same words are not ranked twice: a folder event and a session load can
+    // both ask. A session load clears this, because it also cleared the shelf.
+    if (state === lastRecTextRef.current || state === recInFlightRef.current) return
+    const run = ++recSeq.current
+    // Words already spoken when this run starts are the ones it accounts for;
+    // anything said while it runs stays pending.
+    const rankedWords = cadenceRef.current.words
+    recInFlightRef.current = state
+    try {
+      const files = await window.doty.listMusic()
+      console.log('[recommend] runRecommendation called, files:', files.length)
+      if (files.length === 0) {
+        console.log('[recommend] no files, skipping')
+        return
+      }
+      console.log(
+        '[recommend] transcript context:',
+        recentTranscript.length,
+        'chars, preview:',
+        recentTranscript.slice(0, 80),
+      )
+      const result = await recommendRef.current(state, files, recommendCountRef.current)
+      // The DM prompt owns the shelf while it is set. An answer that started
+      // earlier may still land later; it only loses to a newer answer of the same
+      // kind, so the list can refine but never revert.
+      if (dmPromptRef.current.trim() || run < lastRecApplied.current) return
+      lastRecApplied.current = run
+      console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
+      showRanking(result)
+      setLastTranscriptSnippet(recentTranscript.slice(-120))
+      setSessionText(state)
+      lastRecTextRef.current = state
+      cadenceRef.current = noteRanked(cadenceRef.current, Date.now(), rankedWords)
+    } finally {
+      if (recInFlightRef.current === state) recInFlightRef.current = null
     }
-    console.log(
-      '[recommend] transcript context:',
-      recentTranscript.length,
-      'chars, preview:',
-      recentTranscript.slice(0, 80),
-    )
-    const result = await recommendRef.current(state, files, recommendCountRef.current)
-    // The DM prompt owns the shelf while it is set. An answer that started
-    // earlier may still land later; it only loses to a newer answer of the same
-    // kind, so the list can refine but never revert.
-    if (dmPromptRef.current.trim() || run < lastRecApplied.current) return
-    lastRecApplied.current = run
-    console.log('[recommend] results:', result.files.length, result.files, 'confidence:', result.confidence)
-    showRanking(result)
-    setLastTranscriptSnippet(recentTranscript.slice(-120))
-    setSessionText(state)
-    lastRecTextRef.current = state
-    cadenceRef.current = noteRanked(cadenceRef.current, Date.now(), rankedWords)
   }, [showRanking])
 
   const runSfxRecommendation = useCallback(async (overrideText?: string) => {
@@ -491,6 +499,9 @@ export default function MainLayout() {
         lastDmApplied.current = run
         console.log('[recommend] DM: results:', result.files.length, result.files, 'confidence:', result.confidence)
         showRanking(result)
+        // The DM's answer does not describe a transcript state: when the hint is
+        // cleared, the room must be allowed to rank that text again.
+        lastRecTextRef.current = ''
         setLastTranscriptSnippet(prompt.slice(-120))
         setSessionText(combined)
         // The effects ranker has its own budget: the same hint, less of the room.
@@ -522,6 +533,8 @@ export default function MainLayout() {
   // When music folder becomes available, trigger default recommendations
   useEffect(() => {
     if (musicFolder) {
+      // The files changed; the last answer described another library.
+      lastRecTextRef.current = ''
       runRecommendation()
       runSfxRecommendation()
     }

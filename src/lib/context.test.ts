@@ -14,6 +14,10 @@ import {
 const KEYS = Object.keys(CONTEXT_LIMITS) as Array<keyof ContextConfig>
 
 describe('normalizeContext', () => {
+  it('caps the state where the 1024-token row runs out', () => {
+    expect(MODEL_STATE_CHARS).toBe(1400)
+  })
+
   it('ships the defaults the rest of the app was built on', () => {
     expect(DEFAULT_CONTEXT).toEqual({
       windowChars: 800,
@@ -101,9 +105,18 @@ describe('composeState', () => {
     expect(composeState('   ', 'they open the door', budget)).toBe('pen the door')
   })
 
-  it('never hands the model more than its row can hold, and keeps the whole hint', () => {
+  it('caps the state at the row, hint first', () => {
     const long = composeState('h'.repeat(2000), 'w '.repeat(2000), { hintChars: 2000, transcriptChars: 4000 })
     expect(long).toBe('h'.repeat(MODEL_STATE_CHARS))
+  })
+
+  it('drops the room when the hint fills the row', () => {
+    const text = composeState('tomb '.repeat(300), 'they open the door', {
+      hintChars: MODEL_STATE_CHARS,
+      transcriptChars: 500,
+    })
+    expect(text.startsWith('tomb tomb')).toBe(true)
+    expect(text).not.toContain('door')
   })
 
   it('keeps the newest words when the transcript has to give way', () => {
