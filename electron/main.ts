@@ -648,7 +648,10 @@ app.on('before-quit', (event) => {
     stopScanner()
     closeDb()
     destroyDiscord()
-    app.quit()
+    // Every write is closed above. Electron's normal exit runs the ONNX native
+    // finalizers, which abort this process (Napi::Error) after any inference;
+    // exiting here skips destructors that no longer have work to protect.
+    process.exit(0)
   }, 3_000)
 })
 
