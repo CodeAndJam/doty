@@ -82,6 +82,8 @@ function nodeStreamToWeb(nodeStream: fs.ReadStream): ReadableStream {
 export interface MusicRequestInfo {
   url: string
   rangeHeader: string | null
+  /** The frame that asked. A remote frame has no business reading the library. */
+  referer?: string
 }
 
 export interface MusicProtocolOptions {
@@ -96,6 +98,12 @@ export interface MusicProtocolOptions {
  */
 export function handleMusicRequest(request: MusicRequestInfo, options: MusicProtocolOptions): Response {
   const { musicFolder, sfxFolder } = options
+  // Top-level navigation is denied, but an <audio> in a remote iframe can still
+  // request a guessed path. A media request from an app frame carries the app
+  // referrer; anything else is refused.
+  if (request.referer && !request.referer.startsWith('app://doty') && !request.referer.startsWith('file://')) {
+    return new Response('Forbidden', { status: 403 })
+  }
   const filename = parseMusicUrl(request.url)
   // Turn on when debugging playback: a seek that fails is a range request and
   // nothing else tells you which one the demuxer asked for.

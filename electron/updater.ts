@@ -170,12 +170,17 @@ export async function installUpdate(options: InstallOptions): Promise<void> {
     throw new Error('A session started; finish it before updating')
   }
 
-  fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o755 })
-  const child = spawn('/bin/sh', [script, dmg, mountPoint, targetApp, String(process.pid)], {
-    detached: true,
-    stdio: 'ignore',
-  })
-  child.unref()
+  try {
+    fs.writeFileSync(script, SWAP_SCRIPT, { mode: 0o755 })
+    const child = spawn('/bin/sh', [script, dmg, mountPoint, targetApp, String(process.pid)], {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.unref()
+  } catch (error) {
+    await run('hdiutil', ['detach', mountPoint, '-quiet']).catch(() => {})
+    throw error
+  }
 }
 
 function runCapture(command: string, args: string[]): Promise<string> {
@@ -187,7 +192,7 @@ function runCapture(command: string, args: string[]): Promise<string> {
   })
 }
 
-function sha256File(path: string): Promise<string> {
+export function sha256File(path: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
     fs.createReadStream(path)

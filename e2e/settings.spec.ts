@@ -26,12 +26,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'advanced'
-const SECTIONS: SectionId[] = ['audio', 'library', 'transcription', 'director', 'advanced']
+const SECTIONS: SectionId[] = ['audio', 'library', 'transcription', 'director', 'updates', 'advanced']
 const LABELS: Record<SectionId, string> = {
   audio: 'Audio',
   library: 'Library',
   transcription: 'Transcription',
   director: 'Director',
+  updates: 'Updates',
   advanced: 'Advanced',
 }
 
@@ -106,6 +107,7 @@ function uniqueControl(page: Page, section: SectionId): Locator {
   if (section === 'library') return d.getByTestId('index-summary')
   if (section === 'transcription') return d.getByText('Speech Recognition', { exact: true })
   if (section === 'director') return d.getByText('Autopilot Mode', { exact: true })
+  if (section === 'updates') return d.getByRole('button', { name: 'Check for updates' })
   return d.getByTestId('debug-diagnostics')
 }
 
@@ -113,7 +115,7 @@ async function activeElementId(page: Page): Promise<string> {
   return page.evaluate(() => document.activeElement?.id ?? '')
 }
 
-test('the gear opens one dialog whose rail is exactly the five groups', async () => {
+test('the gear opens one dialog whose rail is exactly the six groups', async () => {
   const h = harness()
   let app: ElectronApplication | undefined
   try {
@@ -123,7 +125,7 @@ test('the gear opens one dialog whose rail is exactly the five groups', async ()
 
     expect(await dialog(page).getAttribute('aria-modal')).toBe('true')
     const tabs = dialog(page).getByRole('tab')
-    await expect(tabs).toHaveCount(5)
+    await expect(tabs).toHaveCount(6)
     for (const section of SECTIONS) await expect(tab(page, section)).toHaveText(LABELS[section])
 
     // Each group is the only one on screen.

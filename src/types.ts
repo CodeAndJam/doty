@@ -503,6 +503,15 @@ export interface DotyAPI {
   updateState: () => Promise<UpdateState>
   /** Download and swap in the offered release, then quit. */
   updateInstall: () => Promise<{ ok: boolean; error?: string }>
+  updateCheck: () => Promise<{
+    ok: boolean
+    status: 'current' | 'available' | 'error'
+    version?: string
+    error?: string
+  }>
+  appVersion: () => Promise<string>
+  /** Delete a downloaded model; the next use downloads it again. */
+  deleteModel: (kind: 'stt' | 'ranker' | 'embedder', id?: string) => Promise<{ ok: boolean; reason?: string }>
   onUpdateState: (cb: (state: UpdateState) => void) => () => void
 }
 

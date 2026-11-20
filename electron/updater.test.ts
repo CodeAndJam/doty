@@ -1,5 +1,8 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { bundleFromExecutable, checkForUpdate, isNewer, parseVersion, pickDmg } from './updater'
+import { bundleFromExecutable, checkForUpdate, isNewer, parseVersion, pickDmg, sha256File } from './updater'
 
 describe('parseVersion', () => {
   it('reads a plain and a v-prefixed release', () => {
@@ -129,5 +132,14 @@ describe('checkForUpdate', () => {
     const draft = { ...release, draft: true }
     const prerelease = { ...release, tag_name: 'v5.5.0-rc.1', prerelease: true }
     expect(await checkForUpdate('5.3.0', 'arm64', async () => [draft, prerelease])).toBeNull()
+  })
+})
+
+describe('sha256File', () => {
+  it('hashes the bytes that were written, so a mismatch is detectable', async () => {
+    const file = join(os.tmpdir(), `doty-update-${Date.now()}.dmg`)
+    fs.writeFileSync(file, 'abc')
+    expect(await sha256File(file)).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+    fs.unlinkSync(file)
   })
 })

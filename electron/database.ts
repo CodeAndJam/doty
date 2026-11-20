@@ -126,10 +126,15 @@ export function pruneMissingTracks(folder: string, files: string[]): number {
     return 0
   }
   const del = db.prepare('DELETE FROM tracks WHERE path = ?')
-  // Tags stay: the file may return (a remount, a move back), and the DM's
-  // labelling is the one thing the scanner cannot rebuild.
+  const delTags = db.prepare('DELETE FROM track_tags WHERE filename = ?')
+  // Empty and mostly-empty folders are refused above, so a row that reaches here
+  // is a file the DM really removed. Its labels go with it instead of attaching
+  // to the next file that lands on the same relative path.
   db.transaction(() => {
-    for (const path of drop) del.run(path)
+    for (const path of drop) {
+      del.run(path)
+      delTags.run(path)
+    }
   })()
   if (folder) console.log(`[library] pruned ${drop.length} tracks no longer under ${folder}`)
   return drop.length

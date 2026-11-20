@@ -2,7 +2,18 @@ import fs from 'node:fs'
 import { dirname, join, resolve, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Worker as NodeWorker } from 'node:worker_threads'
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, safeStorage, shell } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  Menu,
+  type MenuItemConstructorOptions,
+  net,
+  protocol,
+  safeStorage,
+  shell,
+} from 'electron'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
@@ -249,21 +260,76 @@ function runningBundle(): string | null {
   return app.isPackaged ? bundleFromExecutable(app.getPath('exe')) : null
 }
 
-async function checkUpdates(): Promise<void> {
-  if (!runningBundle() || updateState.status !== 'idle') return
+type CheckResult = { ok: boolean; status: 'current' | 'available' | 'error'; version?: string; error?: string }
+
+async function checkUpdates(manual = false): Promise<CheckResult> {
+  if (!runningBundle()) {
+    return manual
+      ? { ok: false, status: 'error', error: 'Updates are available from the installed app, not a dev build' }
+      : { ok: true, status: 'current' }
+  }
+  if (updateState.status === 'downloading' || updateState.status === 'installing') {
+    return { ok: false, status: 'error', error: 'An update is already in progress' }
+  }
+  if (updateState.status === 'available' && pendingRelease) {
+    return { ok: true, status: 'available', version: pendingRelease.version }
+  }
   try {
     const release = await checkForUpdate(app.getVersion(), process.arch, async (url) => {
       const response = await net.fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
       if (!response.ok) throw new Error(`GitHub returned ${response.status}`)
       return response.json()
     })
-    if (!release) return
+    if (!release) return { ok: true, status: 'current' }
     pendingRelease = release
     setUpdateState({ status: 'available', version: release.version, sizeMB: release.sizeMB })
+    return { ok: true, status: 'available', version: release.version }
   } catch (error) {
-    // Offline, rate-limited, or no release yet: a check nobody asked for stays quiet.
-    console.error('[update] check failed:', error)
+    const message = error instanceof Error ? error.message : String(error)
+    // A check nobody asked for stays quiet; a manual one says why.
+    console.error('[update] check failed:', message)
+    return { ok: false, status: 'error', error: message }
   }
+}
+
+/** The app menu's "Check for Updates…": silence is a bad answer. */
+async function checkUpdatesFromMenu(): Promise<void> {
+  const result = await checkUpdates(true)
+  if (result.status === 'current') {
+    await dialog.showMessageBox({ type: 'info', message: 'Doty is up to date', detail: `Version ${app.getVersion()}` })
+  } else if (result.status === 'error') {
+    await dialog.showMessageBox({ type: 'warning', message: 'Could not check for updates', detail: result.error })
+  }
+  // `available` shows in the update bar; no dialog competes with it.
+}
+
+function installMenu(): void {
+  const template: MenuItemConstructorOptions[] = [
+    ...(process.platform === 'darwin'
+      ? [
+          {
+            label: app.name,
+            submenu: [
+              { role: 'about' as const },
+              { type: 'separator' as const },
+              { label: 'Check for Updates…', click: () => void checkUpdatesFromMenu() },
+              { type: 'separator' as const },
+              { role: 'services' as const },
+              { type: 'separator' as const },
+              { role: 'hide' as const },
+              { role: 'hideOthers' as const },
+              { role: 'unhide' as const },
+              { type: 'separator' as const },
+              { role: 'quit' as const },
+            ],
+          },
+        ]
+      : []),
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    { role: 'windowMenu' },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
 const sttDownloads = createModelDownloads({
@@ -584,6 +650,7 @@ app.whenReady().then(async () => {
   registerAppProtocol()
   registerMusicProtocol()
   createWindow()
+  installMenu()
 
   // Forward Discord state changes to renderer. Registered first: anything that
   // throws later in this callback used to skip it, which left the Discord panel
@@ -1735,6 +1802,57 @@ handle(INVOKE.setAutopilotConfig, (_e, config: Record<string, unknown>) => {
 // ── IPC: Updates ──────────────────────────────────────────────────────────────
 
 handle(INVOKE.updateGetState, () => updateState)
+handle(INVOKE.updateCheck, () => checkUpdates(true))
+handle(INVOKE.appVersion, () => app.getVersion())
+
+handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: string) => {
+  const label =
+    kind === 'stt'
+      ? (STT_MODELS.find((m) => m.id === id)?.label ?? 'speech model')
+      : kind === 'ranker'
+        ? 'decision model'
+        : 'embedding model'
+  const answer = await dialog.showMessageBox(mainWindow!, {
+    type: 'warning',
+    buttons: ['Delete', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    message: `Delete the ${label}?`,
+    detail: 'It downloads again the next time it is needed. Sessions and tags are not touched.',
+  })
+  if (answer.response !== 0) return { ok: false, reason: 'cancelled' }
+
+  if (kind === 'stt') {
+    const model = STT_MODELS.find((m) => m.id === id)
+    if (!model) return { ok: false, reason: 'unknown model' }
+    fs.rmSync(join(MODELS_DIR, model.ggufFile), { force: true })
+    if (store.get('sttModel', '') === model.id) {
+      store.set('sttModel', '')
+      freeRecognizer()
+      send(EVENTS.modelStatus, { ready: false })
+    }
+    return { ok: true }
+  }
+  if (kind === 'ranker') {
+    await disposeRanker().catch(() => {})
+    for (const file of [
+      rankerPaths().graph,
+      rankerPaths().manifest,
+      rankerPaths().archive,
+      join(MODELS_DIR, 'd1-omni-src'),
+    ]) {
+      fs.rmSync(file, { recursive: true, force: true })
+    }
+    send(EVENTS.rankerStatus, 'error')
+    return { ok: true }
+  }
+  await embedder?.dispose().catch(() => {})
+  embedder = null
+  fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  library.invalidate()
+  send(EVENTS.embeddingProgress, library.status())
+  return { ok: true }
+})
 
 handle(INVOKE.updateInstall, async () => {
   const release = pendingRelease
