@@ -1577,8 +1577,8 @@ export default function Settings({
               >
                 Reset to defaults
               </button>
-              <span key={contextNotice.id} role="status" aria-live="polite" className="sr-only">
-                {contextNotice.text}
+              <span role="status" aria-live="polite" className="sr-only">
+                <span key={contextNotice.id}>{contextNotice.text}</span>
               </span>
             </fieldset>
             {/* Divider before Discord */}

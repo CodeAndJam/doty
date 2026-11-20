@@ -49,8 +49,16 @@ describe('recommendation cadence', () => {
 
   it('starts counting again once a ranking was applied', () => {
     let cadence = noteSpokenWords(seedCadence(0), 'a b c d e')
-    cadence = noteRanked(5_000)
+    cadence = noteRanked(cadence, 5_000, cadence.words)
     expect(cadence).toEqual({ words: 0, at: 5_000 })
     expect(shouldRecommend(cadence.words, 7_000)).toBe(false)
+  })
+
+  it('keeps the words spoken while a ranking was running', () => {
+    let cadence = noteSpokenWords(seedCadence(0), 'a b c')
+    const rankedWords = cadence.words
+    cadence = noteSpokenWords(cadence, 'd e f')
+    cadence = noteRanked(cadence, 5_000, rankedWords)
+    expect(cadence.words).toBe(3)
   })
 })

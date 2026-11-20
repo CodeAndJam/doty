@@ -45,6 +45,7 @@ export function noteSpokenWords(cadence: Cadence, line: string): Cadence {
   return { words: cadence.words + countWords(line), at: cadence.at }
 }
 
-export function noteRanked(now: number): Cadence {
-  return { words: 0, at: now }
+/** A ranking just landed. Words spoken while it ran stay counted. */
+export function noteRanked(cadence: Cadence, now: number, fromWords: number): Cadence {
+  return { words: Math.max(0, cadence.words - fromWords), at: now }
 }

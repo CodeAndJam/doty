@@ -14,7 +14,7 @@ import {
   safeStorage,
   shell,
 } from 'electron'
-import { type ContextConfig, DEFAULT_CONTEXT, normalizeContext } from '../src/lib/context'
+import { type ContextConfig, DEFAULT_CONTEXT, mergeContext, normalizeContext } from '../src/lib/context'
 import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
@@ -1493,7 +1493,7 @@ handle(INVOKE.getContext, () => normalizeContext(store.get('context', DEFAULT_CO
 handle(INVOKE.setContext, (_e, config: Partial<ContextConfig>) => {
   // Merge into what is stored: a patch that arrives before the renderer has read
   // the config must not reset the budgets it did not mention.
-  const next = normalizeContext({ ...store.get('context', DEFAULT_CONTEXT), ...config })
+  const next = mergeContext(store.get('context', DEFAULT_CONTEXT) ?? DEFAULT_CONTEXT, config)
   store.set('context', next)
   return next
 })

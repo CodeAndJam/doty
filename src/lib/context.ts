@@ -49,8 +49,21 @@ export function normalizeContext(value: Partial<ContextConfig> | undefined): Con
 }
 
 /**
+ * Roughly what the model's fixed 1024-token row can hold for the state once the
+ * option block is in it. Past this the extra characters are tokenized and
+ * dropped, so the budget stops being honest.
+ */
+export const MODEL_STATE_CHARS = 1400
+
+/** Merge a patch the way main does, so the panel cannot show a value the store refuses. */
+export function mergeContext(stored: Partial<ContextConfig>, patch: Partial<ContextConfig>): ContextConfig {
+  return normalizeContext({ ...stored, ...patch })
+}
+
+/**
  * The hint first, then the recent words: the DM's instruction is the head of
- * the state, and the transcript is what it is about.
+ * the state, and the transcript is what it is about. When the two exceed what
+ * the model can read, the transcript gives way — never the hint.
  */
 export function composeState(
   hint: string,
@@ -58,7 +71,10 @@ export function composeState(
   budget: { hintChars: number; transcriptChars: number },
 ): string {
   // A zero budget is nothing; `slice(-0)` would hand over the whole string.
-  const instruction = budget.hintChars > 0 ? hint.slice(0, budget.hintChars).trim() : ''
-  const room = budget.transcriptChars > 0 ? transcript.slice(-budget.transcriptChars).trim() : ''
-  return [instruction, room].filter(Boolean).join('\n')
+  const hintLimit = Math.min(budget.hintChars, MODEL_STATE_CHARS)
+  const instruction = hintLimit > 0 ? hint.slice(0, hintLimit).trim() : ''
+  const room = Math.max(0, MODEL_STATE_CHARS - (instruction ? instruction.length + 1 : 0))
+  const chars = Math.min(budget.transcriptChars, room)
+  const words = chars > 0 ? transcript.slice(-chars).trim() : ''
+  return [instruction, words].filter(Boolean).join('\n')
 }

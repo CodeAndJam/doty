@@ -44,6 +44,16 @@ describe('rankTracks', () => {
     expect(decide).toHaveBeenCalledTimes(1)
   })
 
+  it('hands the model the whole state the caller composed', async () => {
+    const decide = vi.fn(async (_prompt: string, candidates: string[]) => candidates.map(() => 0.5))
+    // A long hint used to be beheaded by an 800-char cut inside rankTracks.
+    const prompt = `hint:${'h'.repeat(900)}`
+    await rankTracks(prompt, ['a.mp3', 'b.mp3'], signals, { ready: true, decide })
+
+    expect(decide).toHaveBeenCalledTimes(1)
+    expect(decide.mock.calls[0][0]).toBe(prompt)
+  })
+
   it('falls back to the heuristic when the model call fails', async () => {
     const decide = vi.fn(async () => {
       throw new Error('worker crashed')
