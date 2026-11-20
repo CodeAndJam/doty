@@ -10,6 +10,10 @@
       targets, `switch.*` lamps, switches as a device class, and OAuth consent
       (ADR v2). Thresholds and the 25 s dwell move only
       against `session_decisions` rows with `kind = 'light'`.
+- [ ] Updates: the bar, the 234 MB download and the post-quit swap ship
+      (`electron/updater.ts`). Untested against a real install: run one release
+      end to end on a machine where Doty lives in `/Applications`, and confirm
+      the swapped bundle opens with no `xattr` step.
 - [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
       soundboard until they are configured, the way the lights pane already
       hides itself. Needs its own before/after; it moves muscle memory.

@@ -12,6 +12,7 @@ import Settings from './Settings'
 import Soundboard from './Soundboard'
 import type { TranscriptSegment } from './Transcript'
 import Transcript from './Transcript'
+import UpdateBar from './UpdateBar'
 
 const MIC_STORAGE_KEY = 'doty:micDeviceId'
 const SPEAKER_STORAGE_KEY = 'doty:speakerDeviceId'
@@ -822,6 +823,8 @@ export default function MainLayout() {
           </div>
         </div>
       </div>
+
+      <UpdateBar />
 
       {/* Settings modal */}
       {showSettings && (
