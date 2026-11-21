@@ -9,6 +9,9 @@ process.env.DOTY_E2E_NO_MODEL_DOWNLOAD ??= '1'
 
 export default defineConfig({
   testDir: './e2e',
+  // One probe before any spec: a host that cannot run Electron must not read as
+  // a branch failure (see the file).
+  globalSetup: './e2e/global-setup.ts',
   timeout: 300_000, // 5 min — first run downloads the reranker model (~80 MB)
   // A firstWindow timeout under load is not a product failure; one retry keeps
   // the nightly signal about behaviour, not machine weather.

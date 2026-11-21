@@ -2,6 +2,24 @@
 
 ## Pending
 
+- [ ] Sessions: a session is a directory (`transcript.vtt`, `mic.wav`, `remote.wav`)
+      for new sessions; flat `session-*.vtt` files keep working. Decided so notes,
+      per-speaker audio and a possible video file have a home; nothing is migrated
+      in bulk.
+- [ ] Sessions: DM notes as WebVTT `NOTE` blocks inside `transcript.vtt`, appended
+      from the transcript header. A live note enters the model context; a note in
+      a finished session is a record only.
+- [ ] Sessions: detail view with per-cue text edit and delete through a lossless
+      `rewriteSessionCues`, refusing a rewrite whose tail cue no longer matches
+      the file. The recording session can be edited except its last cue.
+- [ ] Sessions: markdown export through a save dialog. The builder already
+      exists in `MainLayout` but writes to the clipboard.
+- [ ] Sessions: `rewriteSessionCues` is lossy (drops `<v>` spans, untested) and
+      slices the header by the substring `NOTE`, so a session whose name contains
+      it would be truncated. Fix before anything calls it.
+- [ ] Sessions: re-transcription from the session WAV (issue #52). Its own
+      project: transcribe-cpp batch decode, progress, and it must not clobber
+      edited cues.
 - [ ] Lights: the prototype ships token pairing, Area choice, group control and
       mood-driven presets (`docs/adr/0004-home-assistant-on-the-lan.md`). Open:
       the three `d1-omni` hint questions (hue, motion, brightness) once a real
@@ -17,11 +35,11 @@
       per-build cdhash, which is why Squirrel cannot update it. Still open: one
       release end to end on a machine where Doty lives in `/Applications`, the
       only way to watch the swap and the new build's first launch.
-- [ ] Stability: quitting after the embedder/index has run still prints a native
-      `Napi::Error` abort from onnxruntime's finalizers. The exit kills the helpers
-      and then the process, so no data is lost and no helper survives; the line
-      remains because the native library has no safe unload. Move the embedder to a
-      utilityProcess before the next model change.
+- [x] Stability: the embedder runs in a `utilityProcess`
+      (`electron/session/embedder-worker.ts`, forked by `embedder-client.ts`) and
+      is killed on quit, so onnxruntime's finalisers no longer abort the main
+      process. The worker is a build entry, not a module: `verify-build` fails if
+      its path resolves under `chunks/`.
 - [ ] Progressive minimalism: hide the Discord pane, the sfx tray and the
       soundboard until they are configured, the way the lights pane already
       hides itself. Needs its own before/after; it moves muscle memory.
@@ -135,6 +153,14 @@
       same track in the same scene demote it even when the model is confident;
       tie-breaks use the DM's choices. Previously a skip recorded a *preference*
       for the track that replaced it, teaching the opposite of the signal.
+- [ ] Ranker: coalescing merges a queued request only when the option list is
+      byte-identical, so a prefilter list that changes every tick still grows the
+      queue: a pass takes ~4.4 s against a ~2 s cadence, which is ~12 minutes of
+      lag after 10 minutes of continuous speech (`src/lib/heuristicRecommend.ts`
+      reorders on mood keywords). The bound is one queued job per question, with
+      the superseded replies failed — `rankTracks` already falls back to
+      `byHeuristic` on a ranker error, but `session:sfx-rank`'s caller does not,
+      so that decision comes first. Memory is not the limit (~4 KB per job).
 - [ ] Ranking recall: 84.6% of the DM's picks are among the twenty offered (was
       92% before the energy fix). Candidate sets are keyword-first; semantic
       retrieval is indexed but not merged into the prefilter. This is the next
@@ -221,6 +247,27 @@
       M4 Pro entry is provisional), add a Discord-connected stage (needs a token
       and a voice channel), a co-tenancy stage with OBS and a browser, and a
       clean way to run the gate without GitHub's 7 GB macOS runners.
+
+- [ ] STT: the readiness signal (`asr.ts`: `armReadiness`/`settleReadiness`, the
+      generation counter, the 60 s deadline) has no test, and the module has no
+      seam to give it one. Extract it to `electron/asr-readiness.ts` taking a
+      clock, the way `policy.ts` takes `now`.
+- [ ] Ranker: the 3 s teardown timeout resolves with the old thread still alive,
+      so a delete can unlink the graph under a running pass and a new `decide`
+      can put two 1.5 GB workers in memory for those seconds. Needs a decision:
+      wait for `closed` unconditionally, or refuse the delete while a pass runs.
+- [ ] Embedder: the utility process opens whatever `dir` its parent sends. Not
+      reachable today (one constant), but the root should travel with the request
+      and be checked where the file is opened.
+- [ ] Context: `rankerChars`/`sfxChars`/`hintChars` allow 1400 chars, but the
+      model row holds ~1024 tokens (~800 chars in Portuguese), and truncation
+      keeps the head, so raising the sliders spends tokens and drops the newest
+      words. Cap them at the row, or budget the composition in tokens.
+
+- [ ] Reprocess: `reprocessStart` returns "not yet available" and the three
+      `reprocess:*` events are declared and subscribed but never sent. The IPC
+      test names them as the only unwired events; deleting the exception and the
+      events together is the fix when the feature is either built or dropped.
 
 ## Music Player — Implementation Order
 

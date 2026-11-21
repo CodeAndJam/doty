@@ -41,14 +41,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      # One command, the same one a laptop runs: `pnpm check`.
+      # One command, the same one a laptop runs. It ends with `build` and
+      # `verify:build` because the build staying green is not enough: the worker
+      # entries have to be where the app looks for them, and a dependency that
+      # must not reach the preload must not reach it.
       - name: Check
         run: pnpm check
-
-      - name: Build
-        run: pnpm run build
-
-      # The build staying green is not enough: the worker entries have to be
-      # where the app looks for them.
-      - name: Verify build output
-        run: pnpm verify:build

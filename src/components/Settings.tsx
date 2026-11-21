@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import { useCrossfade } from '../hooks/useCrossfade'
 import { useFocusTrap } from '../hooks/useFocusTrap'
 import { confidenceLabel } from '../lib/autopilot'
+import { CONTEXT_LIMITS, type ContextConfig, DEFAULT_CONTEXT, mergeContext } from '../lib/context'
 import { indexSummary } from '../lib/indexStatus'
 import type { DebugState, IndexProgress, ScanProgress, UpdateState } from '../types'
 import DiscordPanel from './DiscordPanel'
@@ -52,6 +53,9 @@ interface Props {
   rankerStatus: 'loading' | 'ready' | 'error'
   recommendCount: number
   onRecommendCountChange: (count: number) => void
+  /** What the models may read: the DM's experiment surface. */
+  context: ContextConfig
+  onContextChange: (patch: Partial<ContextConfig>) => void
   /** Which group to open on; the transcript failures open Transcription. */
   initialSection?: SectionId
 }
@@ -81,6 +85,110 @@ function Label({ children }: { children: React.ReactNode }) {
 
 export type SectionId = 'audio' | 'library' | 'transcription' | 'director' | 'updates' | 'advanced'
 
+/** One context budget: a slider with its value and what it buys. */
+function ContextSlider({
+  label,
+  help,
+  unit,
+  spokenUnit = unit,
+  value,
+  defaultValue,
+  min,
+  max,
+  step,
+  onCommit,
+}: {
+  label: string
+  help: string
+  unit: string
+  spokenUnit?: string
+  value: number
+  /** The shipped value, named in the help text so a moved slider is identifiable. */
+  defaultValue: number
+  min: number
+  max: number
+  step: number
+  onCommit: (value: number) => number
+}) {
+  const helpId = useId()
+  const labelId = useId()
+  // The slider moves locally and only the release writes: a drag would
+  // otherwise rewrite config.json dozens of times on the main process.
+  const [draft, setDraft] = useState(value)
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  const valueRef = useRef(value)
+  valueRef.current = value
+  const commitRef = useRef(onCommit)
+  commitRef.current = onCommit
+  const keyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => setDraft(value), [value])
+
+  const flush = useCallback(() => {
+    if (draftRef.current === valueRef.current) return
+    // The parent returns what the store will keep; a clamped value must not stay
+    // on screen as if it had been saved.
+    setDraft(commitRef.current(draftRef.current))
+  }, [])
+
+  // A held arrow key repeats; let it settle before writing.
+  const flushSoon = useCallback(() => {
+    if (keyTimer.current) clearTimeout(keyTimer.current)
+    keyTimer.current = setTimeout(flush, 400)
+  }, [flush])
+
+  // A release can land outside the input, and assistive technology changes the
+  // value without pointer or key events; flush on the document release and when
+  // the panel closes, so neither loses the number on screen.
+  useEffect(() => {
+    window.addEventListener('pointerup', flush)
+    return () => {
+      window.removeEventListener('pointerup', flush)
+      if (keyTimer.current) clearTimeout(keyTimer.current)
+      flush()
+    }
+  }, [flush])
+
+  // A range snaps to its step; announce the value the thumb actually holds.
+  const shown = min + Math.round((draft - min) / step) * step
+  return (
+    <div className="mb-3">
+      <div className="flex items-center justify-between mb-1">
+        <label htmlFor={labelId} style={{ fontSize: '14px', color: '#e4d6b4', fontFamily: "'Crimson Text', serif" }}>
+          {label}
+        </label>
+        {/* `aria-valuetext` already speaks this; loose text would repeat it. */}
+        <span
+          aria-hidden="true"
+          style={{ fontSize: '14px', color: '#a5813f', fontFamily: "'IBM Plex Mono', monospace" }}
+        >
+          {shown} {unit}
+        </span>
+      </div>
+      <input
+        id={labelId}
+        type="range"
+        aria-valuetext={`${shown} ${spokenUnit}`}
+        aria-describedby={helpId}
+        min={min}
+        max={max}
+        step={step}
+        value={shown}
+        onChange={(e) => setDraft(Number(e.target.value))}
+        onKeyUp={flushSoon}
+        onBlur={flush}
+        style={{ width: '100%', accentColor: '#d9a441' }}
+      />
+      <p
+        id={helpId}
+        style={{ fontSize: '13px', color: '#9d8b66', marginTop: '2px', fontFamily: "'Crimson Text', serif" }}
+      >
+        {help} Default {defaultValue} {spokenUnit}.
+      </p>
+    </div>
+  )
+}
 const SECTIONS: Array<{ id: SectionId; label: string }> = [
   { id: 'audio', label: 'Audio' },
   { id: 'library', label: 'Library' },
@@ -100,6 +208,8 @@ export default function Settings({
   rankerStatus,
   recommendCount,
   onRecommendCountChange,
+  context,
+  onContextChange,
   initialSection = 'library',
 }: Props) {
   const [folder, setFolder] = useState('')
@@ -128,6 +238,7 @@ export default function Settings({
   const [update, setUpdate] = useState<UpdateState>({ status: 'idle' })
   const [updateNotice, setUpdateNotice] = useState<string | null>(null)
   const [modelMessage, setModelMessage] = useState<string | null>(null)
+  const [contextNotice, setContextNotice] = useState({ id: 0, text: '' })
   const [section, setSection] = useState<SectionId>(initialSection)
   const [debugState, setDebugState] = useState<DebugState | null>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -136,6 +247,13 @@ export default function Settings({
   const refreshDebug = useCallback(async () => {
     setDebugState(await window.doty.debugGetState())
   }, [])
+
+  /** One budget at a time: returns the value the store will actually keep. */
+  const commitContext = (field: keyof ContextConfig) => (value: number) => {
+    const merged = mergeContext(context, { [field]: value })
+    onContextChange({ [field]: value })
+    return merged[field]
+  }
 
   // Read the machine's state when the group is opened, not on every render.
   useEffect(() => {
@@ -1403,6 +1521,110 @@ export default function Settings({
                 Number of tracks to suggest per query
               </p>
             </div>
+            {/* What the models read: the knobs that change a pick. */}
+            <fieldset className="mb-5" style={{ border: 0, padding: 0, marginInline: 0 }}>
+              <legend
+                style={{
+                  fontFamily: "'Cinzel', serif",
+                  fontSize: '15px',
+                  letterSpacing: '0.25em',
+                  color: '#a5813f',
+                  textTransform: 'uppercase',
+                  display: 'block',
+                  marginBottom: '8px',
+                }}
+              >
+                Model context
+              </legend>
+              <p
+                style={{ fontSize: '14px', color: '#9d8b66', marginBottom: '8px', fontFamily: "'Crimson Text', serif" }}
+              >
+                How much of the room and of your own words the models read. Characters, not tokens.
+              </p>
+              <ContextSlider
+                label="Transcript window"
+                help="Characters kept from the live transcript."
+                unit="chars"
+                spokenUnit="characters"
+                value={context.windowChars}
+                defaultValue={DEFAULT_CONTEXT.windowChars}
+                min={CONTEXT_LIMITS.windowChars[0]}
+                max={CONTEXT_LIMITS.windowChars[1]}
+                step={100}
+                onCommit={commitContext('windowChars')}
+              />
+              <ContextSlider
+                label="Music context"
+                help="Characters of the window sent to the music ranker; the window caps it."
+                unit="chars"
+                spokenUnit="characters"
+                value={context.rankerChars}
+                defaultValue={DEFAULT_CONTEXT.rankerChars}
+                min={CONTEXT_LIMITS.rankerChars[0]}
+                max={CONTEXT_LIMITS.rankerChars[1]}
+                step={50}
+                onCommit={commitContext('rankerChars')}
+              />
+              <ContextSlider
+                label="Effects context"
+                help="Characters sent to the effects ranker; the window caps it."
+                unit="chars"
+                spokenUnit="characters"
+                value={context.sfxChars}
+                defaultValue={DEFAULT_CONTEXT.sfxChars}
+                min={CONTEXT_LIMITS.sfxChars[0]}
+                max={CONTEXT_LIMITS.sfxChars[1]}
+                step={50}
+                onCommit={commitContext('sfxChars')}
+              />
+              <ContextSlider
+                label="Hint length"
+                help="How much of your typed hint reaches the models. Zero silences it for them; the lights still read all of it."
+                unit="chars"
+                spokenUnit="characters"
+                value={context.hintChars}
+                defaultValue={DEFAULT_CONTEXT.hintChars}
+                min={CONTEXT_LIMITS.hintChars[0]}
+                max={CONTEXT_LIMITS.hintChars[1]}
+                step={50}
+                onCommit={commitContext('hintChars')}
+              />
+              <ContextSlider
+                label="Ranking delay"
+                help="The longest a line waits before ranking. A ranking still waits two seconds after the last one."
+                unit="ms"
+                spokenUnit="milliseconds"
+                value={context.debounceMs}
+                defaultValue={DEFAULT_CONTEXT.debounceMs}
+                min={CONTEXT_LIMITS.debounceMs[0]}
+                max={CONTEXT_LIMITS.debounceMs[1]}
+                step={250}
+                onCommit={commitContext('debounceMs')}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  onContextChange(DEFAULT_CONTEXT)
+                  // Read the values back: a live region with unchanged text is
+                  // not announced twice, and this also says what "defaults" are.
+                  setContextNotice((n) => ({
+                    id: n.id + 1,
+                    text: `Reset to defaults: transcript ${DEFAULT_CONTEXT.windowChars}, music ${DEFAULT_CONTEXT.rankerChars}, effects ${DEFAULT_CONTEXT.sfxChars}, hint ${DEFAULT_CONTEXT.hintChars}, delay ${DEFAULT_CONTEXT.debounceMs} ms`,
+                  }))
+                }}
+                style={{
+                  fontSize: '14px',
+                  color: '#a5813f',
+                  fontFamily: "'Crimson Text', serif",
+                  textDecoration: 'underline',
+                }}
+              >
+                Reset to defaults
+              </button>
+              <span role="status" aria-live="polite" className="sr-only">
+                <span key={contextNotice.id}>{contextNotice.text}</span>
+              </span>
+            </fieldset>
             {/* Divider before Discord */}
             <div
               className="mb-5"

@@ -82,7 +82,9 @@ export async function rankTracks(
     return { files: [], candidates: [], confidence: 0, choiceConfidence: 0, probabilities: {}, ranker: null }
   files = playable
 
-  const recentPrompt = prompt.slice(-800).trim()
+  // The caller composes the state within the DM's context budget; cutting it
+  // again here would silently drop the head of the hint.
+  const recentPrompt = prompt.trim()
   if (!deps.ready || !deps.decide || !recentPrompt) return byHeuristic(prompt)
 
   try {

@@ -1,7 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
+import type { DotyAPI } from '../src/types'
+import {
+  type DecisionInput,
+  EVENTS,
+  type EventChannel,
+  INVOKE,
+  type InvokeArgs,
+  type InvokeChannel,
+  type PreferenceInput,
+} from './ipc'
 
-const invoke = (channel: InvokeChannel, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args)
+const invoke = <C extends InvokeChannel>(channel: C, ...args: InvokeArgs<C>) => ipcRenderer.invoke(channel, ...args)
 
 const subscribe = <T>(channel: EventChannel, cb: (payload: T) => void) => {
   const handler = (_e: Electron.IpcRendererEvent, payload: T) => cb(payload)
@@ -11,7 +20,7 @@ const subscribe = <T>(channel: EventChannel, cb: (payload: T) => void) => {
 
 export type ProgressPayload = { modelId?: string; percent: number; downloadedMB: number; totalMB: number }
 
-contextBridge.exposeInMainWorld('doty', {
+const doty = {
   // Microphone Permission
   micCheckPermission: () => invoke(INVOKE.micCheckPermission),
   micRequestPermission: () => invoke(INVOKE.micRequestPermission),
@@ -53,8 +62,8 @@ contextBridge.exposeInMainWorld('doty', {
     msUntilTrackEnd: number | null
     musicEnabled: boolean
   }) => invoke(INVOKE.sessionEvaluate, request),
-  sessionDecision: (row: unknown) => invoke(INVOKE.sessionDecision, row),
-  sessionPreference: (row: unknown) => invoke(INVOKE.sessionPreference, row),
+  sessionDecision: (row: DecisionInput) => invoke(INVOKE.sessionDecision, row),
+  sessionPreference: (row: PreferenceInput) => invoke(INVOKE.sessionPreference, row),
   sessionReport: (since: number) => invoke(INVOKE.sessionReport, since),
   embeddingStatus: () => invoke(INVOKE.embeddingStatus),
   libraryLanes: () =>
@@ -78,6 +87,9 @@ contextBridge.exposeInMainWorld('doty', {
   onRankerStatus: (cb: (status: string) => void) => subscribe(EVENTS.rankerStatus, cb),
   getRecommendationCount: () => invoke(INVOKE.getRecommendationCount),
   setRecommendationCount: (count: number) => invoke(INVOKE.setRecommendationCount, count),
+  getContext: () => invoke(INVOKE.getContext) as Promise<import('../src/lib/context').ContextConfig>,
+  setContext: (config: Partial<import('../src/lib/context').ContextConfig>) =>
+    invoke(INVOKE.setContext, config) as Promise<import('../src/lib/context').ContextConfig>,
   onModelProgress: (cb: (p: ProgressPayload) => void) => subscribe(EVENTS.modelProgress, cb),
   onModelStatus: (cb: (s: { ready: boolean }) => void) => subscribe(EVENTS.modelStatus, cb),
   onModelDownloadError: (cb: (e: { modelId: string; error: string }) => void) =>
@@ -202,4 +214,6 @@ contextBridge.exposeInMainWorld('doty', {
   deleteModel: (kind: 'stt' | 'ranker' | 'embedder', id?: string) => invoke(INVOKE.deleteModel, kind, id),
   updateInstall: () => invoke(INVOKE.updateInstall) as Promise<{ ok: boolean; error?: string }>,
   onUpdateState: (cb: (state: import('../src/types').UpdateState) => void) => subscribe(EVENTS.updateState, cb),
-})
+} satisfies DotyAPI
+
+contextBridge.exposeInMainWorld('doty', doty)

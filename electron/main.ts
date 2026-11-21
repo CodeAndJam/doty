@@ -14,7 +14,7 @@ import {
   safeStorage,
   shell,
 } from 'electron'
-import { describeTrack } from '../src/lib/describeTrack'
+import { type ContextConfig, DEFAULT_CONTEXT, mergeContext, normalizeContext } from '../src/lib/context'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
 import type { LightPatch, UpdateState } from '../src/types'
@@ -94,6 +94,7 @@ import { downloadEmbedder } from './embedder-model'
 import { createHaClient } from './home-assistant'
 import { discoverHomeAssistants } from './home-assistant-discovery'
 import { EVENTS, type EventChannel, INVOKE, type InvokeChannel } from './ipc'
+import { decodeArgs, type InvokeArgs } from './ipc-schema'
 import { createLibrary } from './library'
 import { createLighting } from './lighting'
 import { debugLogger, enableDebugLogging } from './logger'
@@ -115,12 +116,12 @@ import { DOTY_HOME } from './profile'
 import { decide, disposeRanker, evaluateSession, rankSfx, setOnRankerStatus } from './ranker'
 import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from './scanner'
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
+import { createEmbedder } from './session/embedder-client'
 import type { Embedder } from './session/embedder-files'
-import { audioAvailable, embedderAvailable, RETRIEVAL_KEY } from './session/embedder-files'
-import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
-import { MOODS } from './session/moods'
+import { audioAvailable, embedderAvailable } from './session/embedder-files'
+import type { AudioKind } from './session/kindDecision'
+import { disambiguate, moveDestination } from './session/kindDecision'
 import { createSessionPass, type PassRequest } from './session/pass'
-import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
@@ -150,15 +151,12 @@ if (app.isPackaged) {
   process.env.TRANSCRIBE_LIBRARY ??= join(process.resourcesPath, 'transcribe-cpp', lib)
 }
 
-let rankerDownloading = false
-
 const rankerDownloads = createModelDownloads({
   download: downloadFile,
   onEvent: (event) => {
     if (event.type === 'progress') {
       send(EVENTS.rankerDownloadProgress, { percent: event.percent, status: 'downloading' })
     } else if (event.type === 'error') {
-      rankerDownloading = false
       // The reason travels with the event: a button that silently returns to its
       // resting state is indistinguishable from one that never ran.
       send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error', reason: event.error })
@@ -174,31 +172,27 @@ const rankerDownloads = createModelDownloads({
  */
 async function downloadRanker(): Promise<{ ok: boolean; reason?: string }> {
   if (isRankerInstalled()) return { ok: true }
-  if (rankerDownloading) return { ok: false, reason: 'already downloading' }
-
-  rankerDownloading = true
   const { archive } = rankerPaths()
-  try {
-    const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive)
-    if (!result.ok) {
-      rankerDownloading = false
-      return result
+  const result = await rankerDownloads.start({ id: 'ranker', url: RANKER_URL }, archive, (path) => {
+    try {
+      installRankerArchive(path)
+    } catch (e) {
+      // A broken archive is not resumable: drop it so the retry starts clean.
+      fs.rmSync(path, { force: true })
+      throw e
     }
-    installRankerArchive(archive)
-    rankerDownloading = false
-    send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
-    // Warm the fresh graph so the first prompt is not the first load.
-    decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
-    return { ok: true }
-  } catch (e) {
-    rankerDownloading = false
-    fs.rmSync(archive, { force: true })
-    const reason = e instanceof Error ? e.message : String(e)
-    console.error('[ranker] install failed:', reason)
-    send(EVENTS.rankerDownloadProgress, { percent: 0, status: 'error' })
-    return { ok: false, reason }
-  }
+  })
+  if (!result.ok) return result
+  send(EVENTS.rankerDownloadProgress, { percent: 100, status: 'done' })
+  // Warm the fresh graph so the first prompt is not the first load.
+  decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
+  return { ok: true }
 }
+
+// A run killed with a window open — an e2e timeout, a SIGKILL — leaves Chromium
+// offering to restore the session next launch, and that modal blocks readiness.
+// The packaged app keeps the prompt; a dev or test build never needs it.
+if (!app.isPackaged) app.commandLine.appendSwitch('disable-session-crashed-bubble')
 
 // Register app:// as a privileged scheme BEFORE app is ready.
 // This makes the renderer a secure context (like https://) so the Cache API
@@ -229,9 +223,18 @@ function isAllowedMediaPath(filePath: string): boolean {
 
 let mainWindow: BrowserWindow | null = null
 
-// Typed wrappers: a channel that is not declared in ipc.ts does not compile.
-const handle = (channel: InvokeChannel, listener: Parameters<typeof ipcMain.handle>[1]) =>
-  ipcMain.handle(channel, listener)
+// Typed wrappers: a channel that is not declared in ipc.ts does not compile,
+// and its arguments are decoded from the schema that file declares.
+const handle = <C extends InvokeChannel>(
+  channel: C,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: InvokeArgs<C>) => unknown,
+) =>
+  ipcMain.handle(channel, (event, ...raw: unknown[]) =>
+    (listener as (event: Electron.IpcMainInvokeEvent, ...args: unknown[]) => unknown)(
+      event,
+      ...decodeArgs(channel, raw),
+    ),
+  )
 
 /** Set once the app is tearing down: sending then is how a quit becomes a crash. */
 let quitting = false
@@ -1174,7 +1177,7 @@ handle(INVOKE.modelStatus, () => ({
 
 handle(INVOKE.rankerStatus, () => ({
   cached: isRankerInstalled(),
-  downloading: rankerDownloading,
+  downloading: rankerDownloads.state().downloading !== null,
   languageCovered: coversLanguage(rankerLanguages(), store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string),
 }))
 
@@ -1271,15 +1274,49 @@ handle(INVOKE.sessionReport, (_e, since: number) => sessionStore.report(since))
 // ── The library: one owner of membership, descriptions and vectors ────────────
 const EMBEDDER_DIR = join(MODELS_DIR, 'embeddinggemma-2')
 let embedder: Embedder | null = null
+/** The first load takes a fork plus a 200 MB read; concurrent callers join it. */
+let embedderLoad: Promise<Embedder | null> | null = null
+/** Set while the model is being deleted: no load may start or be believed. */
+let deletingEmbedder = false
 
-async function loadEmbedderOnce(): Promise<Embedder | null> {
-  if (embedder) return embedder
-  if (!embedderAvailable(EMBEDDER_DIR)) return null
-  // Loaded on demand: a session that never indexes must not initialise ONNX in
-  // the main process.
-  const { loadEmbedder } = await import('./session/embedder')
-  embedder = await loadEmbedder(EMBEDDER_DIR)
-  return embedder
+async function startEmbedder(): Promise<Embedder | null> {
+  // Loaded on demand, in a utility process: onnxruntime cannot be unloaded from
+  // the main process without a native abort on quit, and a session that never
+  // indexes should not pay for it at all. Imported statically so the worker path
+  // is built from `out/main`, not from a chunk.
+  try {
+    const model = await createEmbedder(EMBEDDER_DIR, {
+      // A process that died later clears only its own handle: another may have
+      // replaced it while this one was on its way out.
+      onExit: (died) => {
+        if (embedder === died) embedder = null
+      },
+    })
+    embedder = model
+    return model
+  } catch (e) {
+    // A process that will not start degrades search to names and tags; it never
+    // blocks the library.
+    console.warn('[library] the embedder process did not start:', e instanceof Error ? e.message : e)
+    return null
+  }
+}
+
+const embeddingDispose = (model: Embedder | null) => model?.dispose().catch(() => {}) ?? Promise.resolve()
+
+function loadEmbedderOnce(): Promise<Embedder | null> {
+  if (deletingEmbedder) return Promise.resolve(null)
+  if (embedder) return Promise.resolve(embedder)
+  if (!embedderAvailable(EMBEDDER_DIR)) return Promise.resolve(null)
+  if (!embedderLoad) {
+    const attempt = startEmbedder().finally(() => {
+      // Only the load that owns the memo may clear it: a delete settles the old
+      // one and a newer caller may already have started another.
+      if (embedderLoad === attempt) embedderLoad = null
+    })
+    embedderLoad = attempt
+  }
+  return embedderLoad
 }
 
 /**
@@ -1321,7 +1358,13 @@ const library = createLibrary({
   kindAnchors: (model) => loadKindAnchors(model),
   // The decoder needs the real path. A relative one makes ffmpeg fail for every
   // track, silently, because the audio indexer treats a failure as unclassified.
-  embedAudio: (absolute, durationSeconds) => embedTrackAudio(embedder!, absolute, clipWindow(durationSeconds)),
+  embedAudio: (absolute, durationSeconds) => {
+    // The process can die mid-pass; a missing handle is a skipped clip, not a
+    // TypeError inside the indexer.
+    const model = embedder
+    if (!model?.embedAudio) return Promise.resolve(null)
+    return embedTrackAudio(model, absolute, clipWindow(durationSeconds))
+  },
   store: sessionStore,
   onStatus: (status) => {
     send(EVENTS.embeddingProgress, status)
@@ -1447,6 +1490,17 @@ handle(INVOKE.setRecommendationCount, (_e, count: number) => {
   return { ok: true }
 })
 
+// The models' context budget: main owns the bounds, the renderer only reads them.
+handle(INVOKE.getContext, () => normalizeContext(store.get('context', DEFAULT_CONTEXT)))
+
+handle(INVOKE.setContext, (_e, config: Partial<ContextConfig>) => {
+  // Merge into what is stored: a patch that arrives before the renderer has read
+  // the config must not reset the budgets it did not mention.
+  const next = mergeContext(store.get('context', DEFAULT_CONTEXT) ?? DEFAULT_CONTEXT, config)
+  store.set('context', next)
+  return next
+})
+
 // ── IPC: Model downloads ──────────────────────────────────────────────────────
 
 /** Small optional GGUFs (VAD, language ID). A failure degrades, it does not block. */
@@ -1454,22 +1508,23 @@ async function ensureSideModels(): Promise<void> {
   for (const side of STT_SIDE_MODELS) {
     if (side.isReady()) continue
     const dest = join(MODELS_DIR, side.ggufFile)
-    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest)
-    if (!result.ok) {
-      console.warn(`[model] optional ${side.id} not installed:`, result)
-      continue
-    }
-    if (side.sha256 && sha256File(dest) !== side.sha256) {
-      fs.rmSync(dest, { force: true })
-      console.error(`[model] ${side.id} failed its checksum and was removed`)
-    }
+    const result = await sttDownloads.start({ id: side.id, url: side.url }, dest, (path) => {
+      if (side.sha256 && sha256File(path) !== side.sha256) {
+        fs.rmSync(path, { force: true })
+        throw new Error(`${side.id} failed its checksum`)
+      }
+    })
+    if (!result.ok) console.warn(`[model] optional ${side.id} not installed:`, result)
   }
 }
 
-handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
+handle(INVOKE.downloadModel, async (_e, modelId?: string) => {
   const modelInfo = modelId
-    ? (STT_MODELS.find((m) => m.id === modelId) ?? STT_MODELS[0])
+    ? STT_MODELS.find((m) => m.id === modelId)
     : (STT_MODELS.find((m) => m.id === DEFAULT_STT_MODEL) ?? STT_MODELS[0])
+  // A renderer-chosen id it does not recognise must say so, not quietly install
+  // whichever model happens to be first in the registry.
+  if (!modelInfo) return { ok: false, reason: 'unknown model' }
 
   if (modelInfo.isReady()) {
     store.set('sttModel', modelInfo.id)
@@ -1482,16 +1537,14 @@ handle(INVOKE.downloadModel, async (_e, modelId?: SttModelType) => {
   const result = await sttDownloads.start(
     { id: modelInfo.id, url: modelInfo.url },
     join(MODELS_DIR, modelInfo.ggufFile),
+    (path) => {
+      if (modelInfo.sha256 && sha256File(path) !== modelInfo.sha256) {
+        fs.rmSync(path, { force: true })
+        throw new Error('download failed its checksum')
+      }
+    },
   )
   if (!result.ok) return result
-
-  if (modelInfo.sha256) {
-    const dest = join(MODELS_DIR, modelInfo.ggufFile)
-    if (sha256File(dest) !== modelInfo.sha256) {
-      fs.rmSync(dest, { force: true })
-      return { ok: false, reason: 'download failed its checksum' }
-    }
-  }
 
   store.set('sttModel', modelInfo.id)
   await ensureSideModels()
@@ -1523,13 +1576,13 @@ handle(INVOKE.getSttModel, () => {
   return store.get('sttModel', DEFAULT_STT_MODEL) as string
 })
 
-handle(INVOKE.setSttModel, (_e, modelId: SttModelType) => {
+handle(INVOKE.setSttModel, (_e, modelId: string) => {
   const current = store.get('sttModel', '') as string
   if (current === modelId) return { ok: true }
   const modelInfo = STT_MODELS.find((m) => m.id === modelId)
   if (!modelInfo) return { ok: false, reason: 'unknown model' }
   if (!modelInfo.isReady()) return { ok: false, reason: 'model not downloaded' }
-  store.set('sttModel', modelId)
+  store.set('sttModel', modelInfo.id)
   // Keep the focused language only when the new model supports it.
   const language = store.get('sttLanguage', DEFAULT_STT_LANGUAGE) as string
   if (!supportsLanguage(modelInfo, language)) {
@@ -1537,7 +1590,7 @@ handle(INVOKE.setSttModel, (_e, modelId: SttModelType) => {
   }
   restartRecognizer()
   // Notify renderer about the switch
-  send(EVENTS.sttModelSwitched, { id: modelId, label: modelInfo.label })
+  send(EVENTS.sttModelSwitched, { id: modelInfo.id, label: modelInfo.label })
   return { ok: true }
 })
 
@@ -1854,9 +1907,25 @@ handle(INVOKE.deleteModel, async (_e, kind: 'stt' | 'ranker' | 'embedder', id?: 
     send(EVENTS.rankerStatus, 'error')
     return { ok: true }
   }
-  await embedder?.dispose().catch(() => {})
-  embedder = null
-  fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  // A handshake in flight would otherwise resolve after the delete and leave a
+  // live process serving a directory that is gone. The flag also refuses the
+  // search keystroke that would otherwise start a second one while we wait.
+  if (deletingEmbedder) return { ok: false, reason: 'already deleting the model' }
+  deletingEmbedder = true
+  try {
+    const inFlight = embedderLoad
+    embedderLoad = null
+    const settling = await inFlight?.catch(() => null)
+    await embeddingDispose(settling ?? null)
+    await embeddingDispose(embedder)
+    embedder = null
+    // A resolved fetch memo would make `ensureEmbedder` a no-op for the rest of
+    // the session, so the model would never come back.
+    embedderFetch = null
+    fs.rmSync(EMBEDDER_DIR, { recursive: true, force: true })
+  } finally {
+    deletingEmbedder = false
+  }
   library.invalidate()
   send(EVENTS.embeddingProgress, library.status())
   return { ok: true }

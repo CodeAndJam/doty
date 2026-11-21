@@ -14,6 +14,8 @@ async function fakeHa(options: {
   entities?: unknown[]
   devices?: unknown[]
   states?: unknown[]
+  /** Message types the fake accepts but never answers. */
+  swallow?: string[]
 }) {
   const token = options.token ?? 'good-token'
   const wss = new WebSocketServer({ port: 0 })
@@ -33,6 +35,7 @@ async function fakeHa(options: {
         return ws.send(JSON.stringify({ type: 'auth_ok', ha_version: '2026.11.0' }))
       }
       calls.push(msg)
+      if (options.swallow?.includes(msg.type)) return
       const reply = (result: unknown) => ws.send(JSON.stringify({ id: msg.id, type: 'result', success: true, result }))
       if (msg.type === 'config/area_registry/list') return reply(options.areas ?? [])
       if (msg.type === 'config/entity_registry/list') return reply(options.entities ?? [])
@@ -99,6 +102,19 @@ afterEach(async () => {
 })
 
 describe('Home Assistant client', () => {
+  it('times out one silent request without poisoning the next', async () => {
+    const ha = await fakeHa({ areas, states, swallow: ['get_states'] })
+    try {
+      const client = await createHaClient({ url: ha.url, token: 'good-token', timeoutMs: 300 })
+      await expect(client.lights('office')).rejects.toThrow('did not answer get_states')
+      // The timed-out slot is gone: the socket still answers the next question.
+      await expect(client.areas()).resolves.toHaveLength(2)
+      client.close()
+    } finally {
+      await ha.close()
+    }
+  })
+
   it('authenticates and lists areas', async () => {
     ha = await fakeHa({ areas })
     client = await createHaClient({ url: ha.url, token: 'good-token' })

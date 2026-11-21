@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
@@ -20,3 +21,17 @@ export const DOTY_HOME = PROFILE ? join(homedir(), '.doty', 'profiles', PROFILE)
 export const USER_DATA_DIR = PROFILE ? join(DOTY_HOME, 'electron') : app.getPath('userData')
 
 if (PROFILE) app.setPath('userData', USER_DATA_DIR)
+
+/**
+ * A profile the test harness created is disposable by construction; a hand-named
+ * dev profile is the DM's data. `pnpm profile:prune` trusts only this marker, so
+ * it never has to guess from a name.
+ */
+if (PROFILE && process.env.DOTY_TEST_PROFILE === '1') {
+  try {
+    fs.mkdirSync(DOTY_HOME, { recursive: true })
+    fs.writeFileSync(join(DOTY_HOME, '.ephemeral'), new Date().toISOString())
+  } catch {
+    // The profile still works; it just will not be pruned.
+  }
+}

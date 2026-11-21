@@ -6,6 +6,7 @@
  * and `endSession` are the two calls it makes.
  */
 
+import { Effect, Semaphore } from 'effect'
 import { moodFromHint, presetFor } from '../src/lib/lightsPreset'
 import type { LightPatch, LightStatus, LightsState } from '../src/types'
 import type { HaArea, HaClient, HaLight } from './home-assistant'
@@ -274,6 +275,35 @@ export function createLighting(deps: LightingDeps): Lighting {
     return connecting
   }
 
+  /**
+   * Every DM command runs alone. Two IPC calls against one socket used to
+   * interleave stopPulse/apply/refresh, so a slow write published the state the
+   * previous one had produced. The breath's own ticks stop at the first command
+   * and write directly, and the director's presets are not gated: a preset that
+   * is already in flight is not a DM command.
+   */
+  const gate = Effect.runSync(Semaphore.make(1))
+
+  function serial<A>(body: () => Promise<A>): Promise<A> {
+    return Effect.runPromise(gate.withPermit(Effect.promise(body)))
+  }
+
+  /** One body for every DM change: quiet the breath, write, refresh, tell the panel. */
+  function command(write: (ha: HaClient) => Promise<void>, log: [action: string, reason: string] | null) {
+    return serial(async () => {
+      // Read the client inside the gate: a command that waited behind a slow
+      // write may find the socket replaced, and the old one can only reject.
+      const ha = client
+      if (!ha) return publish()
+      stopPulse()
+      director?.noteManualChange()
+      await write(ha)
+      if (log) logPreset(log[0], log[1])
+      await refresh()
+      return publish()
+    })
+  }
+
   return {
     current: snapshot,
 
@@ -342,74 +372,65 @@ export function createLighting(deps: LightingDeps): Lighting {
       return publish()
     },
 
-    async setPower(on) {
-      if (!client) return publish()
-      stopPulse()
-      director?.noteManualChange()
-      if (on) await client.apply(entityIds(), presetFor('epic', 0.5), TRANSITION_SEC)
-      else await client.turnOff(entityIds(), TRANSITION_SEC)
-      logPreset(on ? 'on' : 'off', 'the DM switched the room')
-      await refresh()
-      return publish()
+    setPower(on) {
+      return command(
+        (ha) =>
+          on ? ha.apply(entityIds(), presetFor('epic', 0.5), TRANSITION_SEC) : ha.turnOff(entityIds(), TRANSITION_SEC),
+        [on ? 'on' : 'off', 'the DM switched the room'],
+      )
     },
 
-    async setBrightness(percent) {
-      if (!client) return publish()
-      stopPulse()
-      director?.noteManualChange()
+    setBrightness(percent) {
       const level = Math.min(100, Math.max(1, Math.round(percent)))
       const { rgb } = presetFor(mood ?? 'epic', 0.5)
-      await client.apply(entityIds(), { rgb, brightnessPct: level }, TRANSITION_SEC)
-      logPreset('brightness', 'the DM moved the slider')
-      await refresh()
-      return publish()
+      return command(
+        (ha) => ha.apply(entityIds(), { rgb, brightnessPct: level }, TRANSITION_SEC),
+        ['brightness', 'the DM moved the slider'],
+      )
     },
 
-    async setPulse(enabled) {
-      stopPulse()
-      if (enabled) startPulse()
-      else await refresh()
-      return publish()
+    setPulse(enabled) {
+      return serial(async () => {
+        stopPulse()
+        if (enabled) startPulse()
+        else await refresh()
+        return publish()
+      })
     },
 
-    async setMood(nextMood) {
-      if (!client) return publish()
-      stopPulse()
-      director?.noteManualChange()
-      await client.apply(entityIds(), presetFor(nextMood, 0.6), TRANSITION_SEC)
-      remember(nextMood, 'mood')
-      logPreset(nextMood, 'the DM picked a colour')
-      await refresh()
-      return publish()
+    setMood(nextMood) {
+      return command(
+        async (ha) => {
+          await ha.apply(entityIds(), presetFor(nextMood, 0.6), TRANSITION_SEC)
+          remember(nextMood, 'mood')
+        },
+        [nextMood, 'the DM picked a colour'],
+      )
     },
 
-    async setLight(entityId, patch) {
+    setLight(entityId, patch) {
       const light = lights.find((entry) => entry.entityId === entityId)
-      if (!client || !light) return publish()
-      stopPulse()
-      director?.noteManualChange()
-
-      if (patch.on === false) {
-        await client.turnOff([entityId], TRANSITION_SEC)
-        logPreset('off', `the DM switched ${light.name} off`)
-      } else {
-        // Only send what the light can actually take: a dimmer has no colour and
-        // a plain bulb no effect, and Home Assistant rejects the whole call.
-        const colors = light.colorModes.some((mode) => COLOR_MODES.has(mode))
-        await client.apply(
-          [entityId],
-          {
-            rgb: colors ? patch.rgb : undefined,
-            brightnessPct: patch.brightnessPct,
-            effect: light.effectList.length > 0 ? patch.effect : undefined,
-          },
-          TRANSITION_SEC,
-        )
-        logPreset(patch.effect ?? (patch.rgb ? 'colour' : 'brightness'), `the DM set ${light.name}`)
-      }
-
-      await refresh()
-      return publish()
+      if (!light) return Promise.resolve(publish())
+      // Only send what the light can actually take: a dimmer has no colour and a
+      // plain bulb no effect, and Home Assistant rejects the whole call.
+      const colors = light.colorModes.some((mode) => COLOR_MODES.has(mode))
+      return command(
+        (ha) =>
+          patch.on === false
+            ? ha.turnOff([entityId], TRANSITION_SEC)
+            : ha.apply(
+                [entityId],
+                {
+                  rgb: colors ? patch.rgb : undefined,
+                  brightnessPct: patch.brightnessPct,
+                  effect: light.effectList.length > 0 ? patch.effect : undefined,
+                },
+                TRANSITION_SEC,
+              ),
+        patch.on === false
+          ? ['off', `the DM switched ${light.name} off`]
+          : [patch.effect ?? (patch.rgb ? 'colour' : 'brightness'), `the DM set ${light.name}`],
+      )
     },
 
     async setHint(session, hint) {

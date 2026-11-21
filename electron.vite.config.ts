@@ -27,7 +27,11 @@ export default defineConfig({
   main: {
     build: {
       externalizeDeps: {
-        exclude: ['chokidar', 'music-metadata'],
+        // Effect ships ESM-only and is used by several modules; bundling it
+        // keeps the runtime off the preload path and out of `node_modules`
+        // resolution. The asar still carries the package unless `build.files`
+        // excludes it, which is a packaging decision, not this one.
+        exclude: ['chokidar', 'music-metadata', 'effect'],
       },
       rollupOptions: {
         input: {
@@ -35,6 +39,7 @@ export default defineConfig({
           'analyze-worker': resolve(__dirname, 'electron/analyze-worker.ts'),
           'transcribe-worker': resolve(__dirname, 'electron/transcribe-worker.ts'),
           'ranker-worker': resolve(__dirname, 'electron/ranker-worker.ts'),
+          'embedder-worker': resolve(__dirname, 'electron/session/embedder-worker.ts'),
         },
       },
     },

@@ -73,4 +73,59 @@ describe('model downloads', () => {
       error: { modelId: 'nemotron', error: 'HTTP 404' },
     })
   })
+
+  it('holds the slot through verification and install', async () => {
+    let release = () => {}
+    const download: Download = async () => {}
+    const { downloads, events } = harness(download)
+
+    const first = downloads.start(MODEL, DEST, () => new Promise<void>((resolve) => (release = resolve)))
+    await Promise.resolve()
+    await expect(downloads.start(MODEL, DEST)).resolves.toEqual({
+      ok: false,
+      reason: 'download already in progress',
+    })
+
+    release()
+    await expect(first).resolves.toEqual({ ok: true })
+    expect(events.at(-1)).toEqual({ type: 'done', modelId: 'nemotron' })
+  })
+
+  it('hands finish the artifact path it just downloaded', async () => {
+    const download: Download = async () => {}
+    const finish = vi.fn<(path: string) => void>()
+    const { downloads } = harness(download)
+
+    await expect(downloads.start(MODEL, DEST, finish)).resolves.toEqual({ ok: true })
+    expect(finish).toHaveBeenCalledWith(DEST)
+  })
+
+  it('does not run finish when the download was cancelled', async () => {
+    const download: Download = (_url, _dest, _onProgress, options) =>
+      new Promise<void>((_resolve, reject) => {
+        options?.signal?.addEventListener('abort', () => reject(new Error('Download cancelled')))
+      })
+    const finish = vi.fn<(path: string) => void>()
+    const { downloads } = harness(download)
+
+    const started = downloads.start(MODEL, DEST, finish)
+    downloads.cancel()
+
+    await expect(started).resolves.toEqual({ ok: false, reason: 'cancelled' })
+    // Installing a partial file is the data loss the slot exists to prevent.
+    expect(finish).not.toHaveBeenCalled()
+  })
+
+  it('reports a failed finish as the reason and releases the slot', async () => {
+    const download: Download = async () => {}
+    const { downloads, events } = harness(download)
+
+    await expect(
+      downloads.start(MODEL, DEST, () => {
+        throw new Error('checksum mismatch')
+      }),
+    ).resolves.toEqual({ ok: false, reason: 'checksum mismatch' })
+    expect(events.at(-1)).toEqual({ type: 'error', modelId: 'nemotron', error: 'checksum mismatch' })
+    expect(downloads.state().downloading).toBeNull()
+  })
 })

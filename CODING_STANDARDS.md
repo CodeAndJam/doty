@@ -45,3 +45,15 @@ that already has an owner, and drifts from it. Read the label.
 
 Review question: *is this a new derivation of something the library already
 resolved?*
+
+## A claim about behaviour survives review
+
+Some comments assert a guarantee: "one writer", "one pass at a time", "the
+socket is closed with the scope". Treat each as a question for review: *where is
+that held?* The answer is a test, a type, or a line the reviewer can point at.
+When the answer is nowhere, the comment is a wish — either write the check or
+soften the sentence to describe what the code does.
+
+Judgement, not a gate: no linter can read intent. It earns its place because
+three review rounds went to comments that were true when written and false
+after the next edit, and each sent a reader to the wrong conclusion.

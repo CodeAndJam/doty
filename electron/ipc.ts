@@ -4,6 +4,10 @@
  * preload.ts and main.ts reference these names, so a channel cannot be
  * half-wired: an undeclared name fails to typecheck, and ipc.test.ts rejects
  * raw channel strings in either process.
+ *
+ * The argument half of the contract lives in `ipc-schema.ts`, which imports
+ * Effect and is therefore kept out of the preload bundle. This file stays
+ * dependency-free because both processes load it.
  */
 
 export const INVOKE = {
@@ -44,6 +48,8 @@ export const INVOKE = {
   setLane: 'library:set-lane',
   getRecommendationCount: 'settings:get-recommendation-count',
   setRecommendationCount: 'settings:set-recommendation-count',
+  getContext: 'settings:get-context',
+  setContext: 'settings:set-context',
   // STT model selection
   getSttModel: 'stt:get-model',
   setSttModel: 'stt:set-model',
@@ -174,3 +180,5 @@ export const EVENTS = {
 
 export type InvokeChannel = (typeof INVOKE)[keyof typeof INVOKE]
 export type EventChannel = (typeof EVENTS)[keyof typeof EVENTS]
+
+export type { DecisionInput, InvokeArgs, PreferenceInput } from './ipc-schema'

@@ -299,7 +299,7 @@ test('measures idle and decision footprint with every model resident', async () 
   try {
     app = await electron.launch({
       args: [join(__dirname, '../out/main/index.js')],
-      env: { ...process.env, DOTY_PROFILE: profile, DOTY_E2E_MUTE: '1' },
+      env: { ...process.env, DOTY_TEST_PROFILE: '1', DOTY_PROFILE: profile, DOTY_E2E_MUTE: '1' },
     })
     const page: Page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')

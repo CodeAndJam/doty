@@ -31,7 +31,7 @@ test('a file added while the app runs becomes a labelled, measured track', async
   try {
     app = await electron.launch({
       args: [join(__dirname, '../out/main/index.js')],
-      env: { ...process.env, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
+      env: { ...process.env, DOTY_TEST_PROFILE: '1', DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
     })
     const page: Page = await app.firstWindow()
     await page.waitForLoadState('domcontentloaded')

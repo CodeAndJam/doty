@@ -164,10 +164,6 @@ export function stopScanner() {
   active = 0
 }
 
-function forceRescan(folder: string, progressCb: ProgressCallback, completeCb: CompleteCallback) {
-  startScanner(folder, progressCb, completeCb, true)
-}
-
 export function getMetadata(relativeOrAbsPath: string): FullTrackMetadata | null {
   const rel = relativeOrAbsPath.startsWith(musicRoot)
     ? relativeOrAbsPath.slice(musicRoot.length + 1)

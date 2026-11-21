@@ -9,6 +9,7 @@
  * logging throttle, and one pass at a time — with its dependencies injected.
  */
 
+import { Deferred, Effect } from 'effect'
 import { planStep } from './director'
 import { MOODS } from './moods'
 import { DEFAULT_POLICY } from './policy'
@@ -47,6 +48,12 @@ export interface PassResult {
 }
 
 export interface SessionPass {
+  /**
+   * At most one pass in flight. A request that arrives during it replaces any
+   * other waiting request, and every caller waiting on that batch receives the
+   * plan computed for the newest one. The answer is always a plan for the state
+   * the table was in when the pass ran, never a replay of an older request.
+   */
   run(request: PassRequest): Promise<PassResult>
 }
 
@@ -57,7 +64,8 @@ export function createSessionPass(deps: PassDeps): SessionPass {
   /** One pass at a time; later requests replace each other rather than queueing. */
   let running = false
   let queued: PassRequest | null = null
-  let waiting: Array<{ resolve: (result: PassResult) => void; reject: (reason: unknown) => void }> = []
+  /** Every caller waiting for the batch that is about to run. */
+  let waiting: Array<Deferred.Deferred<PassResult, Error>> = []
 
   async function pass(request: PassRequest): Promise<PassResult> {
     const { tracks, moods } = await deps.evaluate(request.state, request.candidates)
@@ -168,12 +176,17 @@ export function createSessionPass(deps: PassDeps): SessionPass {
         queued = null
         const batch = waiting
         waiting = []
-        try {
-          const result = await pass(request)
-          for (const waiter of batch) waiter.resolve(result)
-        } catch (reason) {
-          for (const waiter of batch) waiter.reject(reason)
-        }
+        const exit = await Effect.runPromise(
+          Effect.exit(
+            Effect.tryPromise({
+              try: () => pass(request),
+              catch: (reason) => (reason instanceof Error ? reason : new Error(String(reason))),
+            }),
+          ),
+        )
+        // One answer settles the whole batch: a caller that arrived during the
+        // forward pass receives the plan computed for the newest request.
+        for (const reply of batch) Deferred.doneUnsafe(reply, exit)
       }
     } finally {
       running = false
@@ -181,12 +194,16 @@ export function createSessionPass(deps: PassDeps): SessionPass {
   }
 
   return {
-    run(request) {
+    async run(request) {
       queued = request
-      return new Promise<PassResult>((resolve, reject) => {
-        waiting.push({ resolve, reject })
-        if (!running) void drain()
-      })
+      return Effect.runPromise(
+        Effect.gen(function* () {
+          const reply = yield* Deferred.make<PassResult, Error>()
+          waiting.push(reply)
+          if (!running) void drain()
+          return yield* Deferred.await(reply)
+        }),
+      )
     },
   }
 }

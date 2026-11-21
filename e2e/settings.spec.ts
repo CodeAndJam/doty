@@ -67,7 +67,7 @@ async function gracefulClose(app: ElectronApplication) {
 async function openApp(h: Harness): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [join(__dirname, '../out/main/index.js')],
-    env: { ...process.env, DOTY_PROFILE: h.profile },
+    env: { ...process.env, DOTY_TEST_PROFILE: '1', DOTY_PROFILE: h.profile },
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')
@@ -244,6 +244,51 @@ test('opening from the header model-missing chip lands on Transcription', async 
     await chip.click()
     await expect(dialog(page)).toBeVisible({ timeout: 10_000 })
     await expect(tab(page, 'transcription')).toHaveAttribute('aria-selected', 'true')
+  } finally {
+    if (app) await gracefulClose(app)
+    cleanup(h)
+  }
+})
+
+test('a context budget is clamped by main, not by the panel', async () => {
+  const h = harness()
+  let app: ElectronApplication | undefined
+  try {
+    let page: Page
+    ;({ app, page } = await openApp(h))
+
+    // Straight through the seam, bypassing the slider: the IPC schema decodes
+    // the patch, the store keeps it, and main normalises what it hands back.
+    const saved = await page.evaluate(() => window.doty.setContext({ hintChars: 1e9 }))
+    expect(saved.hintChars).toBe(1400)
+    expect((await page.evaluate(() => window.doty.getContext())).hintChars).toBe(1400)
+
+    // A key the schema does not know must not reach the store or reset a budget.
+    const partial = await page.evaluate(() =>
+      window.doty.setContext({ bogus: 1 } as unknown as { hintChars?: number }),
+    )
+    expect(partial.hintChars).toBe(1400)
+  } finally {
+    if (app) await gracefulClose(app)
+    cleanup(h)
+  }
+})
+
+test('the model-context budgets live in Director, not Advanced', async () => {
+  const h = harness()
+  let app: ElectronApplication | undefined
+  try {
+    let page: Page
+    ;({ app, page } = await openApp(h))
+    await openSettings(page)
+
+    // Director owns the knobs that change a pick.
+    await tab(page, 'director').click()
+    await expect(panel(page, 'director').getByText('Model context', { exact: true })).toBeVisible()
+
+    // Advanced is diagnostics; a budget there would be a second home for it.
+    await tab(page, 'advanced').click()
+    await expect(dialog(page).getByText('Model context', { exact: true })).toBeHidden()
   } finally {
     if (app) await gracefulClose(app)
     cleanup(h)

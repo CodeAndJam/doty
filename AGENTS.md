@@ -99,9 +99,10 @@ Concretely, when changing anything in the recommendation or playback path:
 
 ## Contracts before you grep
 
-- **An IPC channel is declared once** in `electron/ipc.ts` and then appears in
-  `electron/preload.ts`, `src/types.ts` and a handler in `electron/main.ts`.
-  Four files, no exceptions.
+- **An IPC channel is declared once** in `electron/ipc.ts`, with its argument
+  shape in `electron/ipc-schema.ts`, and then appears in `electron/preload.ts`,
+  `src/types.ts` and a handler in `electron/main.ts`. Five files, no exceptions.
+  The schema file is main-only: it imports Effect, and the preload must not.
 - **Every path names its space**: relative inside the music folder, absolute
   everywhere else (effects, sessions). Mixing the two is the defect behind most
   of the library bugs; `docs/ARCHITECTURE.md` has the diagram and the rules.
@@ -109,6 +110,9 @@ Concretely, when changing anything in the recommendation or playback path:
   transcript, transcript to a cue, library to search, and the data model.
 - **Review reads `CODING_STANDARDS.md`** for the judgement calls a check cannot
   make.
+- **A feature's spec is a file**, `docs/specs/<name>.md`, committed with the
+  branch and linked from the PR. A handoff in a temp directory is not a spec:
+  the next agent cannot find it.
 
 ## Local Development
 
@@ -118,7 +122,12 @@ older than that; security fixes can be exempted with `minimumReleaseAgeExclude`.
 
 `pnpm dev` in a git worktree uses its own profile (`~/.doty/profiles/<name>`),
 so several checkouts can run at once; `DOTY_PROFILE=<name>` overrides it and
-downloaded models stay shared in `~/.doty/models`.
+downloaded models stay shared in `~/.doty/models`. Worktrees live wherever they
+were created (`~/Git/…` or the harness's own root): `git worktree list` is the
+index, each has its own profile (`pnpm dev` derives one from the worktree path), and
+`pnpm profile:prune` clears the test profiles that killed runs left behind. It
+trusts the `.ephemeral` marker the harness writes, so a hand-named profile is
+never deleted; profiles created before that marker are not collected.
 
 Running the app yourself:
 
@@ -140,8 +149,10 @@ Running the app yourself:
   the same Mac (`test-fixtures/footprint/baseline.json`, keyed by hardware);
   `pnpm footprint:baseline` re-records on a quiet Mac. A busy machine is
   measured but not gated.
-- **`pnpm check` is the whole check** (lint, forbidden APIs, both typechecks,
-  tests). `pnpm verify:build` proves the build can actually run.
+- **`pnpm check` is the whole check**: lint, forbidden APIs, both typechecks,
+  tests, then `build` and `verify:build` — the same sequence CI runs. A check
+  that skips the build misses the failures only the bundle can show (a worker
+  path under `chunks/`, a dependency that must not reach the preload).
 
 ```bash
 # Install deps and rebuild native addons

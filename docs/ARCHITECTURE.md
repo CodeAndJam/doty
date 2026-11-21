@@ -11,7 +11,12 @@ Reading order: [process map](#process-map) → [audio to transcript](#audio-to-t
 
 ## Process map
 
-Three processes, one database, and models that are files on disk.
+Three processes — renderer, main, and the embedder's utility process — plus
+worker threads, one database, and models that are files on disk.
+
+The embedder is the exception to "a worker lives in a thread": onnxruntime
+cannot unload inside Electron's main process, so the encoder is forked as a
+`utilityProcess` that is killed on quit rather than finalised.
 
 ```mermaid
 flowchart LR
@@ -40,6 +45,10 @@ flowchart LR
     RK[ranker-worker<br/>d1-omni]
   end
 
+  subgraph utility["utilityProcess"]
+    EMB[embedder-worker<br/>EmbeddingGemma · audio encoder]
+  end
+
   MODELS[(~/.doty/models<br/>STT · VAD · embedder · ranker)]
 
   UI <--> API
@@ -63,6 +72,8 @@ flowchart LR
   LIB --> DB
   LIB --> FS
   LIB --> MODELS
+  LIB --> EMB
+  EMB --> MODELS
   STT --> MODELS
   RK --> MODELS
   RANK -->|librarySearch| API
@@ -89,7 +100,7 @@ flowchart TD
   FILTER[plausibleText<br/>script + invented-word guard]
   VTT[(session-*.vtt<br/>NOTE: name, created)]
   EVENT[event stt:transcript]
-  UI[Renderer transcript<br/>and rolling 800-char buffer]
+  UI[Renderer transcript<br/>and rolling context buffer]
 
   MIC --> WORKLET --> IPC1
   IPC1 --> WAV
@@ -131,8 +142,8 @@ Two authorities, by design, and only one of them runs at a time.
 
 ```mermaid
 flowchart TD
-  T[New final transcript] --> BUF[rolling buffer, last 800 chars]
-  BUF --> DEB[debounce 1.5 s]
+  T[New final transcript] --> BUF[rolling buffer<br/>800 chars by default]
+  BUF --> DEB[debounce 1.5 s by default]
   DEB --> RANK[rankTracks]
 
   RANK --> LANE{label is sfx?}
@@ -168,6 +179,10 @@ The split matters: the model path is planned by the **session pass** (main), so
 the rules cannot drift between processes. `useAutopilot` only takes over when the
 decision model is unavailable — two authorities at once would let one replace a
 track mid-phrase.
+
+The DM's **Session Hint** heads the state and the recent words follow it; each
+reader has its own character budget under Settings → Director → Model context.
+The session file is read when a session is opened, never once per decision.
 
 Suggestions never stop. A manual pick is a label recorded in
 `session_preferences`; it does not silence the ranker, and it never causes a
@@ -368,6 +383,7 @@ Nothing here may stop playback or hide the suggestions.
 
 | Area | Channels |
 |---|---|
+| Settings | `settings:get-context` · `settings:set-context` |
 | Transcript | `stt:start` · `stt:stop` · `stt:transcribe-chunk` · `stt:transcript` · `stt:interim` · `stt:status` |
 | Sessions | `session:create` · `session:list` · `session:load` · `session:rename` · `session:delete` |
 | Library | `music:list` · `music:get-all-metadata` · `library:search` · `library:set-lane` · `library:move-track` · `embedding:status` · `embedding:progress` |
@@ -378,6 +394,11 @@ Nothing here may stop playback or hide the suggestions.
 | Discord chat | `discord:get-send-transcript` · `discord:set-send-transcript` |
 | Lights | `lights:get-state` · `lights:configure` · `lights:clear` · `lights:discover` · `lights:set-area` · `lights:set-auto` · `lights:set-power` · `lights:set-brightness` · `lights:set-light` · `lights:set-pulse` · `lights:set-mood` · `lights:set-hint` · `lights:resume` · event `lights:state` |
 | Updates | `update:get-state` · `update:install` · event `update:state` |
+`electron/ipc.ts` declares the channel names; `electron/ipc-schema.ts` declares
+one argument tuple per channel, and `handle` decodes every call through it. The
+schema file is main-only because it imports Effect, and the preload must stay
+free of the runtime.
+
 `session:evaluate` is the only channel whose request shape encodes policy
 decisions (`musicEnabled`, `confidenceThreshold`); the answer is a plan, not a
 command, so the renderer stays the only thing that touches playback.

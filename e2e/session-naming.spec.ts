@@ -51,7 +51,7 @@ async function gracefulClose(app: ElectronApplication) {
 async function openApp(h: Harness): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [join(__dirname, '../out/main/index.js')],
-    env: { ...process.env, DOTY_PROFILE: h.profile },
+    env: { ...process.env, DOTY_TEST_PROFILE: '1', DOTY_PROFILE: h.profile },
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

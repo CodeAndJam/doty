@@ -11,7 +11,7 @@ import fs from 'node:fs'
 import { join } from 'node:path'
 
 const OUT = join(process.cwd(), 'out', 'main')
-const WORKERS = ['analyze-worker.js', 'transcribe-worker.js', 'ranker-worker.js']
+const WORKERS = ['analyze-worker.js', 'transcribe-worker.js', 'ranker-worker.js', 'embedder-worker.js']
 
 const problems = []
 
@@ -32,6 +32,13 @@ if (fs.existsSync(chunksDir)) {
       }
     }
   }
+}
+
+// Effect is ESM-only and is inlined into main. A value import that reaches the
+// preload emits `require("effect")`, which throws before `window.doty` exists.
+const preload = join(process.cwd(), 'out', 'preload', 'index.js')
+if (fs.existsSync(preload) && fs.readFileSync(preload, 'utf8').includes('require("effect")')) {
+  problems.push('out/preload/index.js requires Effect: it is ESM-only and will throw')
 }
 
 for (const required of ['index.js', join('..', 'preload', 'index.js')]) {

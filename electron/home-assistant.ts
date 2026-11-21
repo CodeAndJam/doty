@@ -10,6 +10,7 @@
  * commands. `lights.ts` decides what to write and when.
  */
 import { isIP } from 'node:net'
+import { Deferred, Duration, Effect, Exit, Option } from 'effect'
 import WebSocket from 'ws'
 import type { LightState, Rgb } from './lights'
 
@@ -50,11 +51,8 @@ export interface HaClient {
   close(): void
 }
 
-interface Pending {
-  resolve: (value: unknown) => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}
+/** One in-flight request, settled by the frame the socket answers with. */
+type Pending = Deferred.Deferred<unknown, Error>
 
 type WsMessage = {
   id?: number
@@ -122,10 +120,7 @@ export async function createHaClient(options: {
 
   const fail = (message: string) => {
     closed = true
-    for (const p of pending.values()) {
-      clearTimeout(p.timer)
-      p.reject(new Error(message))
-    }
+    for (const slot of pending.values()) Deferred.doneUnsafe(slot, Exit.fail(new Error(message)))
     pending.clear()
   }
 
@@ -138,14 +133,30 @@ export async function createHaClient(options: {
   function request<T>(type: string, payload: Record<string, unknown> = {}): Promise<T> {
     if (closed) return Promise.reject(new Error('Home Assistant connection closed'))
     const id = nextId++
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => {
+    const answer = Effect.gen(function* () {
+      const slot = yield* Deferred.make<unknown, Error>()
+      pending.set(id, slot)
+      try {
+        socket.send(JSON.stringify({ id, type, ...payload }))
+      } catch (err) {
+        // A socket closing under the send must not leave the slot behind.
         pending.delete(id)
-        reject(new Error(`Home Assistant did not answer ${type}`))
-      }, timeoutMs)
-      pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer })
-      socket.send(JSON.stringify({ id, type, ...payload }))
+        return yield* Effect.fail(err instanceof Error ? err : new Error(String(err)))
+      }
+      return yield* Deferred.await(slot).pipe(
+        // A slow lamp is not an error; a socket that never answers is. Only the
+        // timeout is rewritten: a refused write keeps its own reason.
+        Effect.timeoutOption(Duration.millis(timeoutMs)),
+        Effect.flatMap(
+          Option.match({
+            onNone: () => Effect.fail(new Error(`Home Assistant did not answer ${type}`)),
+            onSome: Effect.succeed,
+          }),
+        ),
+        Effect.ensuring(Effect.sync(() => pending.delete(id))),
+      )
     })
+    return Effect.runPromise(answer) as Promise<T>
   }
 
   function callService(service: 'turn_on' | 'turn_off', entityIds: string[], data: Record<string, unknown>) {
@@ -168,13 +179,16 @@ export async function createHaClient(options: {
       reject(new Error('Home Assistant did not answer the handshake'))
     }, timeoutMs)
 
-    const fail = (message: string) => {
+    const abortHandshake = (message: string) => {
       clearTimeout(timer)
       socket.off('message', onMessage)
+      // Nothing owns this socket when the handshake fails; close it here or
+      // every failed attempt leaves one open behind a "needs reconnect" panel.
+      socket.close()
       reject(new Error(message))
     }
-    socket.once('error', () => fail('Home Assistant unreachable'))
-    socket.once('close', () => fail('Home Assistant closed the connection'))
+    socket.once('error', () => abortHandshake('Home Assistant unreachable'))
+    socket.once('close', () => abortHandshake('Home Assistant closed the connection'))
 
     const onMessage = (raw: WebSocket.RawData) => {
       const message = JSON.parse(raw.toString()) as WsMessage
@@ -183,7 +197,7 @@ export async function createHaClient(options: {
         return
       }
       if (message.type === 'auth_invalid') {
-        fail(message.error?.message ?? 'Home Assistant refused the access token')
+        abortHandshake(message.error?.message ?? 'Home Assistant refused the access token')
         return
       }
       if (message.type === 'auth_ok') {
@@ -198,11 +212,14 @@ export async function createHaClient(options: {
     const handleMessage = (raw: WebSocket.RawData) => {
       const message = JSON.parse(raw.toString()) as WsMessage
       if (message.id !== undefined && pending.has(message.id)) {
-        const entry = pending.get(message.id)!
+        const slot = pending.get(message.id)!
         pending.delete(message.id)
-        clearTimeout(entry.timer)
-        if (message.success) entry.resolve(message.result)
-        else entry.reject(new Error(message.error?.message ?? 'Home Assistant rejected the request'))
+        Deferred.doneUnsafe(
+          slot,
+          message.success
+            ? Exit.succeed(message.result)
+            : Exit.fail(new Error(message.error?.message ?? 'Home Assistant rejected the request')),
+        )
         return
       }
       if (message.type === 'event' && message.event?.event_type === 'state_changed') {

@@ -25,7 +25,18 @@ export interface DownloadState {
 }
 
 export interface ModelDownloads {
-  start(model: DownloadableModel, destPath: string): Promise<{ ok: boolean; reason?: string }>
+  /**
+   * Fetch one artifact and finish it — verify, unpack, install — inside the
+   * same critical section, so a second caller cannot start work on a file the
+   * first is still turning into a model. `finish` receives the absolute path it
+   * is finishing, may delete it and throw; that becomes the caller's `reason`,
+   * and the slot is still released. Cancel stops the download, not the finish.
+   */
+  start(
+    model: DownloadableModel,
+    destPath: string,
+    finish?: (absolutePath: string) => void | Promise<void>,
+  ): Promise<{ ok: boolean; reason?: string }>
   cancel(): void
   state(): DownloadState
 }
@@ -43,7 +54,7 @@ export function createModelDownloads(deps: {
   let abort: AbortController | null = null
 
   return {
-    async start(model, destPath) {
+    async start(model, destPath, finish) {
       if (downloading) return { ok: false, reason: 'download already in progress' }
 
       const controller = new AbortController()
@@ -61,6 +72,9 @@ export function createModelDownloads(deps: {
           },
           { signal: controller.signal },
         )
+        // Verification and install belong to the same acquisition: a second
+        // click that arrived during them must not start over.
+        if (finish) await finish(destPath)
         deps.onEvent({ type: 'done', modelId: model.id })
         return { ok: true }
       } catch (e) {

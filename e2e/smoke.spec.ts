@@ -37,7 +37,7 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
   try {
     app = await electron.launch({
       args: [join(__dirname, '../out/main/index.js')],
-      env: { ...process.env, HOME: home, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
+      env: { ...process.env, DOTY_TEST_PROFILE: '1', HOME: home, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
     })
     app.process().stderr?.on('data', (chunk) => stderr.push(String(chunk)))
 
@@ -51,6 +51,13 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
       page.getByTestId('dm-input').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     ])
     if (await skip.isVisible().catch(() => false)) await skip.click()
+
+    // The one IPC argument Electron's structured clone produces rather than
+    // renderer JS: a live PCM buffer must survive the schema at the seam, or
+    // every transcript chunk is rejected. The handler swallows its own errors.
+    await expect(page.evaluate(() => window.doty.sttTranscribeChunk(new ArrayBuffer(128)))).resolves.toEqual({
+      text: '',
+    })
 
     await page.evaluate((dir: string) => window.doty.setMusicFolder(dir), music)
 
