@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.7.0](https://github.com/CodeAndJam/doty/compare/v5.6.1...v5.7.0) (2026-11-21)
+
+
+### Features
+
+* **director:** tunable model context on a deepened shell ([#160](https://github.com/CodeAndJam/doty/issues/160)) ([61f1584](https://github.com/CodeAndJam/doty/commit/61f1584a5cf493082bd8d1957a49f08a5f131d1b))
+
 ## [5.6.1](https://github.com/CodeAndJam/doty/compare/v5.6.0...v5.6.1) (2026-11-20)
 
 
