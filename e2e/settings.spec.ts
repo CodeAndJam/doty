@@ -273,3 +273,24 @@ test('a context budget is clamped by main, not by the panel', async () => {
     cleanup(h)
   }
 })
+
+test('the model-context budgets live in Director, not Advanced', async () => {
+  const h = harness()
+  let app: ElectronApplication | undefined
+  try {
+    let page: Page
+    ;({ app, page } = await openApp(h))
+    await openSettings(page)
+
+    // Director owns the knobs that change a pick.
+    await tab(page, 'director').click()
+    await expect(panel(page, 'director').getByText('Model context', { exact: true })).toBeVisible()
+
+    // Advanced is diagnostics; a budget there would be a second home for it.
+    await tab(page, 'advanced').click()
+    await expect(dialog(page).getByText('Model context', { exact: true })).toBeHidden()
+  } finally {
+    if (app) await gracefulClose(app)
+    cleanup(h)
+  }
+})
