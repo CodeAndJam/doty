@@ -48,7 +48,7 @@ function persisted(h: Harness): boolean | undefined {
 async function openApp(h: Harness, profile = h.profile): Promise<{ app: ElectronApplication; page: Page }> {
   const app = await electron.launch({
     args: [join(__dirname, '../out/main/index.js')],
-    env: { ...process.env, DOTY_PROFILE: profile },
+    env: { ...process.env, DOTY_TEST_PROFILE: '1', DOTY_PROFILE: profile },
   })
   const page = await app.firstWindow()
   await page.waitForLoadState('domcontentloaded')

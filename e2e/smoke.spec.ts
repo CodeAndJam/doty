@@ -37,7 +37,7 @@ test('starts, analyses, labels by seconds and quits cleanly', async () => {
   try {
     app = await electron.launch({
       args: [join(__dirname, '../out/main/index.js')],
-      env: { ...process.env, HOME: home, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
+      env: { ...process.env, DOTY_TEST_PROFILE: '1', HOME: home, DOTY_PROFILE: profile, DOTY_E2E_HIDE_WINDOW: '1' },
     })
     app.process().stderr?.on('data', (chunk) => stderr.push(String(chunk)))
 

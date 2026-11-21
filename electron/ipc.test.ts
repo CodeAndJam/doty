@@ -45,6 +45,34 @@ describe('IPC channel registry', () => {
     expect(rawCalls(read('main.ts'), /ipcMain\.handle\(/)).toHaveLength(1)
   })
 
+  it('exposes and handles every declared channel', () => {
+    const names = Object.keys(INVOKE)
+    const invokedInPreload = new Set(
+      [...read('preload.ts').matchAll(/invoke\(INVOKE\.([A-Za-z0-9]+)/g)].map((match) => match[1]),
+    )
+    const handledInMain = new Set(
+      [...read('main.ts').matchAll(/handle\(INVOKE\.([A-Za-z0-9]+)/g)].map((match) => match[1]),
+    )
+
+    // Declared but missing from the bridge, or from a handler, is half-wired.
+    expect(names.filter((name) => !invokedInPreload.has(name))).toEqual([])
+    expect(names.filter((name) => !handledInMain.has(name))).toEqual([])
+  })
+
+  it('subscribes to every declared event', () => {
+    // Declared and subscribed, but nothing sends them: reprocessing is a stub
+    // (TODO.md). The exception is named here so it cannot grow silently.
+    const UNWIRED = new Set(['reprocessProgress', 'reprocessDone', 'reprocessError'])
+    const names = Object.keys(EVENTS)
+    const subscribed = new Set(
+      [...read('preload.ts').matchAll(/subscribe\(EVENTS\.([A-Za-z0-9]+)/g)].map((match) => match[1]),
+    )
+    const sent = new Set([...read('main.ts').matchAll(/send\(EVENTS\.([A-Za-z0-9]+)/g)].map((match) => match[1]))
+
+    expect(names.filter((name) => !subscribed.has(name))).toEqual([])
+    expect(names.filter((name) => !sent.has(name) && !UNWIRED.has(name))).toEqual([])
+  })
+
   it('keeps every argument row on a declared channel', () => {
     const declared = new Set<string>(Object.values(INVOKE))
     for (const channel of Object.keys(ARGS)) expect(declared.has(channel)).toBe(true)

@@ -15,7 +15,6 @@ import {
   shell,
 } from 'electron'
 import { type ContextConfig, DEFAULT_CONTEXT, mergeContext, normalizeContext } from '../src/lib/context'
-import { describeTrack } from '../src/lib/describeTrack'
 import { showInMusicPanel } from '../src/lib/lane'
 import { speakerPrefix } from '../src/lib/speaker'
 import type { LightPatch, UpdateState } from '../src/types'
@@ -119,11 +118,10 @@ import { getAllMetadata, setOnLibraryChanged, startScanner, stopScanner } from '
 import { clipWindow, embedTrackAudio, loadKindAnchors } from './session/audio/track'
 import { createEmbedder } from './session/embedder-client'
 import type { Embedder } from './session/embedder-files'
-import { audioAvailable, embedderAvailable, RETRIEVAL_KEY } from './session/embedder-files'
-import { type AudioKind, decideKindFor, disambiguate, moveDestination } from './session/kindDecision'
-import { MOODS } from './session/moods'
+import { audioAvailable, embedderAvailable } from './session/embedder-files'
+import type { AudioKind } from './session/kindDecision'
+import { disambiguate, moveDestination } from './session/kindDecision'
 import { createSessionPass, type PassRequest } from './session/pass'
-import type { Scene } from './session/scene'
 import { createSessionStore } from './session/store'
 import * as sessionOps from './sessions'
 import { listSfx } from './sfx-library'
@@ -190,6 +188,11 @@ async function downloadRanker(): Promise<{ ok: boolean; reason?: string }> {
   decide('', []).catch((e) => console.error('[ranker] warmup after download failed:', e))
   return { ok: true }
 }
+
+// A run killed with a window open — an e2e timeout, a SIGKILL — leaves Chromium
+// offering to restore the session next launch, and that modal blocks readiness.
+// The packaged app keeps the prompt; a dev or test build never needs it.
+if (!app.isPackaged) app.commandLine.appendSwitch('disable-session-crashed-bubble')
 
 // Register app:// as a privileged scheme BEFORE app is ready.
 // This makes the renderer a secure context (like https://) so the Cache API

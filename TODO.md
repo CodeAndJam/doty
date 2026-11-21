@@ -264,6 +264,11 @@
       keeps the head, so raising the sliders spends tokens and drops the newest
       words. Cap them at the row, or budget the composition in tokens.
 
+- [ ] Reprocess: `reprocessStart` returns "not yet available" and the three
+      `reprocess:*` events are declared and subscribed but never sent. The IPC
+      test names them as the only unwired events; deleting the exception and the
+      events together is the fix when the feature is either built or dropped.
+
 ## Music Player — Implementation Order
 
 1. [x] #24 — Architecture refactor: extract composable hooks from `useAudioPlayer` (foundation)
